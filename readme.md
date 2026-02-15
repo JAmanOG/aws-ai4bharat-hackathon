@@ -8,13 +8,12 @@ An AI-powered mobile-first platform designed to bridge the digital divide for ru
 
 ## Submission Contents
 
-### 📄 Documentation
-- **[requirements.md](.kiro/specs/rural-ecosystem-platform/requirements.md)** - Complete requirements specification generated using Kiro
+### Documentation
+- **[requirements.md](.kiro/specs/rural-ecosystem-platform/requirements.md)** - Complete requirements specification generated using Kiro    
 - **[design.md](.kiro/specs/rural-ecosystem-platform/design.md)** - Detailed design document generated using Kiro
 
-### 📊 Presentation
-- **[presentation.pdf](presentation.pdf)** - Project presentation deck
-
+### Presentation
+- **[Idea_Submission_AWS_AI_for_Bharat_Hackathon.pdf](Idea_Submission_AWS_AI_for_Bharat_Hackathon.pdf)** - Project presentation deck
 
 ## Key Features
 
@@ -30,10 +29,6 @@ An AI-powered mobile-first platform designed to bridge the digital divide for ru
 - [Aman Jaiswal](https://github.com/JAmanOG)
 - [Rohit Rathod](https://github.com/rohitrath0d)
 - [Bhavik Prajapati](https://github.com/BhavikPrajapati18)
-
-
-## Generated with Kiro
-This project was developed using [Kiro](https://kiro.dev/downloads/?trk=78a2a745-7f5a-4b7f-9b32-8de81b7194b6&sc_channel=el) - an AI-powered development assistant.
 
 
 *Submission for AWS AI for Bharat Hackathon*
