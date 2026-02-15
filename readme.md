@@ -13,7 +13,7 @@ An AI-powered mobile-first platform designed to bridge the digital divide for ru
 - **[design.md](.kiro/specs/rural-ecosystem-platform/design.md)** - Detailed design document generated using Kiro
 
 ### Presentation
-- **[Idea_Submission_AWS_AI_for_Bharat_Hackathon.pdf](./Idea_Submission_%20AWS_AI_for_Bharat_Hackathon.pdf)** - Project presentation deck
+- **[Idea Submission _ AWS AI for Bharat Hackathon.pdf](./Idea%20Submission%20_%20AWS%20AI%20for%20Bharat%20Hackathon.pdf)** - Project presentation deck
 
 ## Key Features
 
