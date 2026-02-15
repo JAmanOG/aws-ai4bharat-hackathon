@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "awslabs.aws-diagram-mcp-server": {
+      "command": "C:\\Users\\Admin\\AppData\\Roaming\\Python\\Python314\\Scripts\\uvx.exe",
+      "args": [
+        "awslabs.aws-diagram-mcp-server"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "FASTMCP_DISABLE_ALARM": "1"
+      },
+      "autoApprove": [
+        "list_icons",
+        "generate_diagram"
+      ]
+    }
+  }
+}
