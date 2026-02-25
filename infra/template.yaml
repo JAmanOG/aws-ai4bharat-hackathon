@@ -1,0 +1,410 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Rural Ecosystem Platform – Knowledge Sharing & Learning Module
+  Requirement 7: Voice-based learning, AI peer groups, DigiLocker verification,
+  personalized learning paths, government training courses, and adaptive recommendations.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        AWS_REGION_CUSTOM: !Ref AWS::Region
+        CONTENT_BUCKET: !Ref ContentBucket
+        USER_LEARNING_PROFILE_TABLE: !Ref UserLearningProfileTable
+        PEER_GROUPS_TABLE: !Ref PeerGroupsTable
+        LEARNING_RECOMMENDATIONS_TABLE: !Ref LearningRecommendationsTable
+        CONTENT_INTERACTIONS_TABLE: !Ref ContentInteractionsTable
+        PG_HOST: !GetAtt AuroraCluster.Endpoint.Address
+        PG_PORT: '5432'
+        PG_DATABASE: 'rural_platform'
+        PG_USER: 'admin'
+        PG_SSL: 'true'
+        BEDROCK_MODEL_ID: 'anthropic.claude-3-haiku-20240307-v1:0'
+        DIGILOCKER_USE_MOCK: 'true'
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  DBMasterPassword:
+    Type: String
+    NoEcho: true
+    Default: 'ChangeMe123!'
+
+Resources:
+  # ═══════════════════════════════════════
+  #  API Gateway
+  # ═══════════════════════════════════════
+  KnowledgeApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'rural-knowledge-api-${Stage}'
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-User-Id'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+
+  # ═══════════════════════════════════════
+  #  Lambda Functions
+  # ═══════════════════════════════════════
+  KnowledgeApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'knowledge-api-${Stage}'
+      Handler: backend/lambdas/knowledge-api/index.handler
+      Description: 'Course CRUD, enrollment, content delivery with TTS'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ContentInteractionsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ContentBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - polly:SynthesizeSpeech
+                - translate:TranslateText
+              Resource: '*'
+      Events:
+        CoursesGet:
+          Type: Api
+          Properties:
+            Path: /knowledge/courses
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        CourseGet:
+          Type: Api
+          Properties:
+            Path: /knowledge/courses/{id}
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        CourseCreate:
+          Type: Api
+          Properties:
+            Path: /knowledge/courses
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        CourseEnroll:
+          Type: Api
+          Properties:
+            Path: /knowledge/courses/{id}/enroll
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        CourseContent:
+          Type: Api
+          Properties:
+            Path: /knowledge/courses/{id}/content
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        ModuleComplete:
+          Type: Api
+          Properties:
+            Path: /knowledge/courses/{courseId}/modules/{moduleId}/complete
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        MyCourses:
+          Type: Api
+          Properties:
+            Path: /knowledge/my-courses
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        GovtCourses:
+          Type: Api
+          Properties:
+            Path: /knowledge/govt-courses
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        GovtPortals:
+          Type: Api
+          Properties:
+            Path: /knowledge/govt-courses/portals
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        GovtSync:
+          Type: Api
+          Properties:
+            Path: /knowledge/govt-courses/sync
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+
+  PeerGroupingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'peer-grouping-${Stage}'
+      Handler: backend/lambdas/peer-grouping/index.handler
+      Description: 'AI peer group formation and DigiLocker verification'
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserLearningProfileTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PeerGroupsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+      Events:
+        PeerGroupJoin:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/join
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        MyGroups:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/my-groups
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        GroupGet:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/{id}
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        GroupJoin:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/{id}/join
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        GroupLeave:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/{id}/leave
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        GroupCreate:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        VerifyStart:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/verify/start
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        VerifyComplete:
+          Type: Api
+          Properties:
+            Path: /knowledge/peer-groups/verify/complete
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+
+  LearningPathFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'learning-path-${Stage}'
+      Handler: backend/lambdas/learning-path/index.handler
+      Description: 'Personalized recommendations, learning profile, analytics'
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserLearningProfileTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LearningRecommendationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ContentInteractionsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+      Events:
+        Recommendations:
+          Type: Api
+          Properties:
+            Path: /knowledge/recommendations
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        RecommendationsStatus:
+          Type: Api
+          Properties:
+            Path: /knowledge/recommendations/status
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        ProfileGet:
+          Type: Api
+          Properties:
+            Path: /knowledge/learning-profile
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        ProfileCreate:
+          Type: Api
+          Properties:
+            Path: /knowledge/learning-profile
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        ProgressSummary:
+          Type: Api
+          Properties:
+            Path: /knowledge/progress-summary
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+
+  # ═══════════════════════════════════════
+  #  DynamoDB Tables
+  # ═══════════════════════════════════════
+  UserLearningProfileTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'UserLearningProfile-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  PeerGroupsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'PeerGroups-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: groupId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: groupId
+          KeyType: HASH
+
+  LearningRecommendationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'LearningRecommendations-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: generatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: generatedAt
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  ContentInteractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ContentInteractions-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: interactionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: interactionId
+          KeyType: RANGE
+
+  # ═══════════════════════════════════════
+  #  S3 Bucket for Learning Content
+  # ═══════════════════════════════════════
+  ContentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'rural-platform-knowledge-content-${Stage}-${AWS::AccountId}'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # ═══════════════════════════════════════
+  #  Cognito User Pool
+  # ═══════════════════════════════════════
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'rural-platform-users-${Stage}'
+      AutoVerifiedAttributes: [phone_number]
+      UsernameAttributes: [phone_number]
+      MfaConfiguration: 'OFF'
+      Schema:
+        - Name: phone_number
+          Required: true
+          Mutable: true
+        - Name: name
+          Required: false
+          Mutable: true
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'rural-platform-app-${Stage}'
+      UserPoolId: !Ref CognitoUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+
+  # ═══════════════════════════════════════
+  #  Aurora Serverless v2
+  # ═══════════════════════════════════════
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub 'rural-platform-knowledge-${Stage}'
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: '15.4'
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBMasterPassword
+      DatabaseName: rural_platform
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 4
+      StorageEncrypted: true
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+
+  # ═══════════════════════════════════════
+  #  SNS Topic for Notifications
+  # ═══════════════════════════════════════
+  LearningNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'rural-learning-notifications-${Stage}'
+
+Outputs:
+  ApiUrl:
+    Description: Knowledge API URL
+    Value: !Sub 'https://${KnowledgeApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+  ContentBucketName:
+    Description: S3 bucket for learning content
+    Value: !Ref ContentBucket
+  AuroraEndpoint:
+    Description: Aurora PostgreSQL endpoint
+    Value: !GetAtt AuroraCluster.Endpoint.Address

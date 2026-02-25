@@ -1,0 +1,127 @@
+{
+  "tables": [
+    {
+      "tableName": "UserLearningProfile",
+      "description": "Stores user learning preferences, goals, and skill levels",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "displayName": "User display name",
+        "preferredLanguage": "Primary language code (hi, en, ta, etc.)",
+        "spokenLanguages": "List of languages user speaks",
+        "learningGoals": "List of learning goal strings",
+        "skillLevel": "beginner | intermediate | advanced",
+        "interests": "List of category interests",
+        "location": "{ state, district, pincode }",
+        "trustScore": "0-100 trust score based on DigiLocker verification",
+        "isVerified": "Boolean – DigiLocker verified",
+        "verificationDetails": "{ provider, verifiedAt, documentTypes }",
+        "totalCoursesCompleted": "Count of completed courses",
+        "totalTimeSpentMins": "Total learning time in minutes",
+        "lastActiveAt": "ISO timestamp of last activity",
+        "createdAt": "ISO timestamp",
+        "updatedAt": "ISO timestamp"
+      },
+      "gsi": [
+        {
+          "indexName": "ByLocation",
+          "partitionKey": "location.state",
+          "sortKey": "location.district",
+          "purpose": "Find nearby users for peer grouping"
+        },
+        {
+          "indexName": "BySkillLevel",
+          "partitionKey": "skillLevel",
+          "sortKey": "lastActiveAt",
+          "purpose": "Group users by skill level"
+        }
+      ]
+    },
+    {
+      "tableName": "PeerGroups",
+      "description": "AI-created peer learning groups",
+      "keySchema": {
+        "partitionKey": { "name": "groupId", "type": "S" }
+      },
+      "attributes": {
+        "groupId": "UUID of the group",
+        "name": "Auto-generated or user-set group name",
+        "description": "Group description / shared goals",
+        "goals": "List of shared learning goals",
+        "category": "Primary category (agriculture, digital-literacy, etc.)",
+        "language": "Primary group language",
+        "location": "{ state, district }",
+        "members": "List of { userId, displayName, role, joinedAt }",
+        "maxMembers": "Max allowed members (default 20)",
+        "activityScore": "0-100 group activity score",
+        "clusteringReason": "AI explanation of why members are grouped",
+        "isActive": "Boolean",
+        "createdAt": "ISO timestamp",
+        "updatedAt": "ISO timestamp"
+      },
+      "gsi": [
+        {
+          "indexName": "ByCategory",
+          "partitionKey": "category",
+          "sortKey": "activityScore",
+          "purpose": "Find active groups by category"
+        },
+        {
+          "indexName": "ByLocation",
+          "partitionKey": "location.state",
+          "sortKey": "createdAt",
+          "purpose": "Find regional peer groups"
+        }
+      ]
+    },
+    {
+      "tableName": "LearningRecommendations",
+      "description": "AI-generated personalized learning recommendations",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" },
+        "sortKey": { "name": "generatedAt", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "generatedAt": "ISO timestamp",
+        "recommendedCourses": "List of { courseId, title, reason, priority }",
+        "recommendedGroups": "List of { groupId, name, matchReason }",
+        "nextSteps": "List of suggested next actions",
+        "reasoning": "AI explanation for recommendations",
+        "modelVersion": "Bedrock model version used",
+        "isActedUpon": "Boolean – if user acted on any recommendation",
+        "expiresAt": "ISO timestamp – TTL"
+      }
+    },
+    {
+      "tableName": "ContentInteractions",
+      "description": "Tracks every user interaction with learning content",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" },
+        "sortKey": { "name": "interactionId", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "interactionId": "UUID",
+        "contentType": "course | module | govt-course | peer-discussion",
+        "contentId": "ID of the content item",
+        "interactionType": "view | start | complete | rate | share | bookmark",
+        "durationSecs": "Time spent in seconds",
+        "rating": "1-5 star rating (optional)",
+        "language": "Language content was consumed in",
+        "voiceUsed": "Boolean – if voice interface was used",
+        "timestamp": "ISO timestamp"
+      },
+      "gsi": [
+        {
+          "indexName": "ByContent",
+          "partitionKey": "contentId",
+          "sortKey": "timestamp",
+          "purpose": "Aggregate interactions for a content item"
+        }
+      ]
+    }
+  ]
+}
