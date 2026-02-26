@@ -1,0 +1,593 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Rural Community Platform – Voice Rooms, Business Registration,
+  Government Portals, Community Knowledge, Livelihood Recovery.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        AWS_REGION_CUSTOM: !Ref AWS::Region
+        VOICE_ROOMS_TABLE: !Ref VoiceRoomsTable
+        VOICE_ROOM_PARTICIPANTS_TABLE: !Ref VoiceRoomParticipantsTable
+        CHAT_MESSAGES_TABLE: !Ref ChatMessagesTable
+        WEBSOCKET_CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+        PG_HOST: !GetAtt AuroraCluster.Endpoint.Address
+        PG_PORT: '5432'
+        PG_DATABASE: 'rural_community'
+        PG_USER: 'admin'
+        PG_SSL: 'true'
+        WEBSOCKET_API_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  DBMasterPassword:
+    Type: String
+    NoEcho: true
+    Default: 'ChangeMe123!'
+
+Resources:
+  # ═══════════════════════════════════════
+  #  API Gateway (REST)
+  # ═══════════════════════════════════════
+  CommunityApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'rural-community-api-${Stage}'
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-User-Id'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+
+  # ═══════════════════════════════════════
+  #  API Gateway (WebSocket) – Voice Signaling + Chat
+  # ═══════════════════════════════════════
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'rural-community-ws-${Stage}'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Stage
+      AutoDeploy: true
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$connect'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$disconnect'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$default'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketFunction.Arn}/invocations'
+
+  WebSocketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WebSocketFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # ═══════════════════════════════════════
+  #  Lambda Functions
+  # ═══════════════════════════════════════
+  VoiceRoomFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'voice-room-api-${Stage}'
+      Handler: backend/lambdas/voice-room/index.handler
+      Description: 'Voice room CRUD, moderation, and chat messages'
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VoiceRoomsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VoiceRoomParticipantsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ChatMessagesTable
+      Events:
+        RoomsCreate:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomsList:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        RoomGet:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        RoomEnd:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/end
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomMute:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/mute/{userId}
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomUnmute:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/unmute/{userId}
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomKick:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/kick/{userId}
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomBan:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/ban/{userId}
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomTransferMod:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/transfer-moderator
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomToggleRecording:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/toggle-recording
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomTogglePrivacy:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/toggle-privacy
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        RoomChat:
+          Type: Api
+          Properties:
+            Path: /community/voice-rooms/{id}/chat
+            Method: GET
+            RestApiId: !Ref CommunityApi
+
+  BusinessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'business-api-${Stage}'
+      Handler: backend/lambdas/business/index.handler
+      Description: 'Business registration, search, and category management'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ['rds-data:*']
+              Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${AuroraCluster}'
+      Events:
+        BusinessCreate:
+          Type: Api
+          Properties:
+            Path: /community/businesses
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        BusinessList:
+          Type: Api
+          Properties:
+            Path: /community/businesses
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        BusinessGet:
+          Type: Api
+          Properties:
+            Path: /community/businesses/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        BusinessUpdate:
+          Type: Api
+          Properties:
+            Path: /community/businesses/{id}
+            Method: PUT
+            RestApiId: !Ref CommunityApi
+        BusinessDelete:
+          Type: Api
+          Properties:
+            Path: /community/businesses/{id}
+            Method: DELETE
+            RestApiId: !Ref CommunityApi
+        CategoriesList:
+          Type: Api
+          Properties:
+            Path: /community/businesses/categories
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        CategoryGet:
+          Type: Api
+          Properties:
+            Path: /community/businesses/categories/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+
+  GovernmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'government-api-${Stage}'
+      Handler: backend/lambdas/government/index.handler
+      Description: 'Government portals, schemes, and complaint tracking'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ['rds-data:*']
+              Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${AuroraCluster}'
+      Events:
+        PortalsList:
+          Type: Api
+          Properties:
+            Path: /community/government/portals
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        PortalGet:
+          Type: Api
+          Properties:
+            Path: /community/government/portals/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        SchemesList:
+          Type: Api
+          Properties:
+            Path: /community/government/schemes
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        SchemeGet:
+          Type: Api
+          Properties:
+            Path: /community/government/schemes/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        SchemeCategoriesList:
+          Type: Api
+          Properties:
+            Path: /community/government/schemes/categories
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        ComplaintSave:
+          Type: Api
+          Properties:
+            Path: /community/government/complaints
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        ComplaintsList:
+          Type: Api
+          Properties:
+            Path: /community/government/complaints
+            Method: GET
+            RestApiId: !Ref CommunityApi
+
+  CommunityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'community-api-${Stage}'
+      Handler: backend/lambdas/community/index.handler
+      Description: 'Knowledge posts, bookmarks, follows, content reports'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ['rds-data:*']
+              Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${AuroraCluster}'
+      Events:
+        PostCreate:
+          Type: Api
+          Properties:
+            Path: /community/posts
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        PostList:
+          Type: Api
+          Properties:
+            Path: /community/posts
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        PostGet:
+          Type: Api
+          Properties:
+            Path: /community/posts/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        PostBookmark:
+          Type: Api
+          Properties:
+            Path: /community/posts/{id}/bookmark
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        PostReport:
+          Type: Api
+          Properties:
+            Path: /community/posts/{id}/report
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        BookmarksList:
+          Type: Api
+          Properties:
+            Path: /community/bookmarks
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        FollowToggle:
+          Type: Api
+          Properties:
+            Path: /community/follow/{userId}
+            Method: POST
+            RestApiId: !Ref CommunityApi
+        FollowingList:
+          Type: Api
+          Properties:
+            Path: /community/following
+            Method: GET
+            RestApiId: !Ref CommunityApi
+
+  LivelihoodFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'livelihood-api-${Stage}'
+      Handler: backend/lambdas/livelihood/index.handler
+      Description: 'Livelihood recovery categories and guidance'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ['rds-data:*']
+              Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${AuroraCluster}'
+      Events:
+        LivelihoodCategories:
+          Type: Api
+          Properties:
+            Path: /community/livelihood/categories
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        LivelihoodGuidance:
+          Type: Api
+          Properties:
+            Path: /community/livelihood/guidance
+            Method: GET
+            RestApiId: !Ref CommunityApi
+        LivelihoodGuidanceGet:
+          Type: Api
+          Properties:
+            Path: /community/livelihood/guidance/{id}
+            Method: GET
+            RestApiId: !Ref CommunityApi
+
+  WebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'websocket-handler-${Stage}'
+      Handler: backend/lambdas/websocket/index.handler
+      Description: 'WebSocket handler for voice signaling and real-time chat'
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketConnectionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VoiceRoomsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VoiceRoomParticipantsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ChatMessagesTable
+        - Statement:
+            - Effect: Allow
+              Action: ['execute-api:ManageConnections']
+              Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  # ═══════════════════════════════════════
+  #  DynamoDB Tables
+  # ═══════════════════════════════════════
+  VoiceRoomsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'VoiceRooms-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: roomId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: roomId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ByStatus
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  VoiceRoomParticipantsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'VoiceRoomParticipants-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: roomId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: roomId
+          KeyType: HASH
+        - AttributeName: userId
+          KeyType: RANGE
+
+  ChatMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ChatMessages-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: roomId
+          AttributeType: S
+        - AttributeName: messageId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: roomId
+          KeyType: HASH
+        - AttributeName: messageId
+          KeyType: RANGE
+
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'WebSocketConnections-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ═══════════════════════════════════════
+  #  S3 Bucket
+  # ═══════════════════════════════════════
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'rural-community-media-${Stage}-${AWS::AccountId}'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # ═══════════════════════════════════════
+  #  Cognito User Pool
+  # ═══════════════════════════════════════
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'rural-community-users-${Stage}'
+      AutoVerifiedAttributes: [phone_number]
+      UsernameAttributes: [phone_number]
+      MfaConfiguration: 'OFF'
+      Schema:
+        - Name: phone_number
+          Required: true
+          Mutable: true
+        - Name: name
+          Required: false
+          Mutable: true
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'rural-community-app-${Stage}'
+      UserPoolId: !Ref CognitoUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+
+  # ═══════════════════════════════════════
+  #  Aurora Serverless v2
+  # ═══════════════════════════════════════
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub 'rural-community-db-${Stage}'
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: '15.4'
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBMasterPassword
+      DatabaseName: rural_community
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 4
+      StorageEncrypted: true
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+
+  # ═══════════════════════════════════════
+  #  SNS Topic for Notifications
+  # ═══════════════════════════════════════
+  CommunityNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'rural-community-notifications-${Stage}'
+
+Outputs:
+  ApiUrl:
+    Description: Community API URL
+    Value: !Sub 'https://${CommunityApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  WebSocketUrl:
+    Description: WebSocket API URL
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+  AuroraEndpoint:
+    Description: Aurora PostgreSQL endpoint
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+  MediaBucketName:
+    Description: S3 bucket for media
+    Value: !Ref MediaBucket
