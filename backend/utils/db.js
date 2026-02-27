@@ -43,10 +43,15 @@ async function query(text, params) {
 
 // ── Table Names (from environment) ──
 const TABLE_NAMES = {
+    // Knowledge module
     USER_LEARNING_PROFILE: process.env.USER_LEARNING_PROFILE_TABLE || 'UserLearningProfile',
     PEER_GROUPS: process.env.PEER_GROUPS_TABLE || 'PeerGroups',
     LEARNING_RECOMMENDATIONS: process.env.LEARNING_RECOMMENDATIONS_TABLE || 'LearningRecommendations',
     CONTENT_INTERACTIONS: process.env.CONTENT_INTERACTIONS_TABLE || 'ContentInteractions',
+    // Agriculture supply chain module
+    FARMER_PROFILES: process.env.FARMER_PROFILES_TABLE || 'FarmerProfiles',
+    PRICE_ALERTS: process.env.PRICE_ALERTS_TABLE || 'PriceAlerts',
+    PRICE_WATCH: process.env.PRICE_WATCH_TABLE || 'PriceWatch',
 };
 
 module.exports = { dynamoDB, query, TABLE_NAMES, getPostgresPool };

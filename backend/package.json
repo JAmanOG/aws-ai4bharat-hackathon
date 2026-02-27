@@ -1,16 +1,26 @@
 {
-  "name": "rural-ecosystem-knowledge-backend",
-  "version": "1.0.0",
-  "description": "Backend for Knowledge Sharing & Learning module - Rural Ecosystem Platform",
-  "main": "index.js",
+  "name": "rural-ecosystem-platform",
+  "version": "2.0.0",
+  "description": "Rural Ecosystem Platform – Production Backend (Fastify)",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
     "test": "jest --coverage",
     "test:unit": "jest --testPathPattern=tests/unit",
     "test:integration": "jest --testPathPattern=tests/integration",
     "lint": "eslint .",
-    "local": "sam local start-api --template ../infra/template.yaml"
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app"
   },
   "dependencies": {
+    "fastify": "^5.2.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^12.0.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
     "@aws-sdk/client-dynamodb": "^3.500.0",
     "@aws-sdk/lib-dynamodb": "^3.500.0",
     "@aws-sdk/client-polly": "^3.500.0",
@@ -23,7 +33,9 @@
     "@aws-sdk/client-sqs": "^3.500.0",
     "pg": "^8.12.0",
     "uuid": "^9.0.0",
-    "axios": "^1.7.0"
+    "axios": "^1.7.0",
+    "jsonwebtoken": "^9.0.0",
+    "jwks-rsa": "^3.1.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
@@ -35,8 +47,12 @@
     "coverageDirectory": "coverage",
     "collectCoverageFrom": [
       "lambdas/**/*.js",
-      "services/**/*.js",
+      "routes/**/*.js",
+      "middleware/**/*.js",
       "utils/**/*.js"
     ]
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

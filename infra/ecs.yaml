@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Rural Ecosystem Platform – ECS Fargate Production Infrastructure
+  Replaces Lambda functions with a containerized Fastify Node.js server.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the ECS Cluster and ALB
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Display ALB in these subnets
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Run ECS tasks in these subnets
+  ImageUrl:
+    Type: String
+    Description: ECR Image URI for the Fastify app (e.g., account.dkr.ecr.region.amazonaws.com/rural-app:latest)
+    Default: 'nginx' # Placeholder until pipeline builds image
+  
+  # Environment Variables for the App
+  DbHost:
+    Type: String
+  DbPort:
+    Type: String
+    Default: "5432"
+  DbName:
+    Type: String
+    Default: "rural_platform"
+  DbUser:
+    Type: String
+    Default: "admin"
+  DbPassword:
+    Type: String
+    NoEcho: true
+  BedrockModelId:
+    Type: String
+    Default: "anthropic.claude-3-haiku-20240307-v1:0"
+
+Resources:
+  # ═══════════════════════════════════════
+  #  ECS Cluster & Load Balancer
+  # ═══════════════════════════════════════
+  AppCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'rural-platform-cluster-${Stage}'
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic to ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from ALB to ECS tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'rural-alb-${Stage}'
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Scheme: internet-facing
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'rural-tg-${Stage}'
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  # ═══════════════════════════════════════
+  #  IAM Roles
+  # ═══════════════════════════════════════
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: AppServicesAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:*
+                  - s3:*
+                  - sns:Publish
+                  - polly:SynthesizeSpeech
+                  - translate:TranslateText
+                  - bedrock:InvokeModel
+                Resource: '*'
+
+  # ═══════════════════════════════════════
+  #  Task Definition & Service
+  # ═══════════════════════════════════════
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/rural-platform-${Stage}'
+      RetentionInDays: 30
+
+  AppTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'rural-platform-app-${Stage}'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: !Ref ImageUrl
+          PortMappings:
+            - ContainerPort: 3000
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: PORT
+              Value: '3000'
+            - Name: PG_HOST
+              Value: !Ref DbHost
+            - Name: PG_PORT
+              Value: !Ref DbPort
+            - Name: PG_DATABASE
+              Value: !Ref DbName
+            - Name: PG_USER
+              Value: !Ref DbUser
+            - Name: PG_PASSWORD
+              Value: !Ref DbPassword
+            - Name: PG_SSL
+              Value: 'true'
+            - Name: BEDROCK_MODEL_ID
+              Value: !Ref BedrockModelId
+            # Reusing existing DynamoDB tables (assumes matching suffix like -prod)
+            - Name: USER_LEARNING_PROFILE_TABLE
+              Value: !Sub 'UserLearningProfile-${Stage}'
+            - Name: PEER_GROUPS_TABLE
+              Value: !Sub 'PeerGroups-${Stage}'
+            - Name: LEARNING_RECOMMENDATIONS_TABLE
+              Value: !Sub 'LearningRecommendations-${Stage}'
+            - Name: CONTENT_INTERACTIONS_TABLE
+              Value: !Sub 'ContentInteractions-${Stage}'
+            - Name: FARMER_PROFILES_TABLE
+              Value: !Sub 'FarmerProfiles-${Stage}'
+            - Name: PRICE_ALERTS_TABLE
+              Value: !Sub 'PriceAlerts-${Stage}'
+            - Name: PRICE_WATCH_TABLE
+              Value: !Sub 'PriceWatch-${Stage}'
+
+  AppService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'rural-platform-service-${Stage}'
+      Cluster: !Ref AppCluster
+      TaskDefinition: !Ref AppTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref PrivateSubnetIds
+          SecurityGroups:
+            - !Ref EcsSecurityGroup
+      LoadBalancers:
+        - ContainerName: app
+          ContainerPort: 3000
+          TargetGroupArn: !Ref AlbTargetGroup
+      DependentServices:
+        - !Ref AlbListener
+
+Outputs:
+  ApiHostname:
+    Description: Production API Endpoint
+    Value: !GetAtt AppLoadBalancer.DNSName

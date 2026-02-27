@@ -1,0 +1,79 @@
+# Rural Ecosystem Platform – Local Development Stack
+# Usage: docker compose up -d
+
+services:
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: debug
+      CORS_ORIGIN: "*"
+
+      # PostgreSQL (local)
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: rural_platform
+      PG_USER: admin
+      PG_PASSWORD: localdev123
+      PG_SSL: "false"
+
+      # DynamoDB Local
+      AWS_REGION: ap-south-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+
+      # AI (uses mock in dev)
+      BEDROCK_MODEL_ID: anthropic.claude-3-haiku-20240307-v1:0
+      DIGILOCKER_USE_MOCK: "true"
+
+      # Table names
+      FARMER_PROFILES_TABLE: FarmerProfiles-dev
+      PRICE_ALERTS_TABLE: PriceAlerts-dev
+      PRICE_WATCH_TABLE: PriceWatch-dev
+      USER_LEARNING_PROFILE_TABLE: UserLearningProfile-dev
+      PEER_GROUPS_TABLE: PeerGroups-dev
+      LEARNING_RECOMMENDATIONS_TABLE: LearningRecommendations-dev
+      CONTENT_INTERACTIONS_TABLE: ContentInteractions-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: localdev123
+      POSTGRES_DB: rural_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d rural_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+
+volumes:
+  postgres_data:
