@@ -116,7 +116,17 @@ export default function ModuleScreen() {
             <Pressable
               key={a.title}
               style={[styles.tile, a.wide ? styles.tileWide : styles.tileHalf]}
-              onPress={() => nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title })}
+              onPress={() => {
+                if (a.title === "Market Prices") {
+                  nav.navigate("MarketPrices", { moduleTitle: titleRaw });
+                  return;
+                }
+                if (a.title === "Government Schemes") {
+                  nav.navigate("SchemesList", { moduleTitle: titleRaw });
+                  return;
+                }
+                nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title });
+              }}
             >
               <View style={styles.tileIcon}>
                 <Ionicons name={a.icon} size={18} color={colors.earth} />
