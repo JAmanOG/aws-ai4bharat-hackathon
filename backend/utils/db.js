@@ -52,6 +52,10 @@ const TABLE_NAMES = {
     FARMER_PROFILES: process.env.FARMER_PROFILES_TABLE || 'FarmerProfiles',
     PRICE_ALERTS: process.env.PRICE_ALERTS_TABLE || 'PriceAlerts',
     PRICE_WATCH: process.env.PRICE_WATCH_TABLE || 'PriceWatch',
+    FARM_PRACTICE_LOGS: process.env.FARM_PRACTICE_LOGS_TABLE || 'FarmPracticeLogs',
+    ECONOMIC_PROFILES: process.env.ECONOMIC_PROFILES_TABLE || 'EconomicProfiles',
+    INSURANCE_CLAIMS: process.env.INSURANCE_CLAIMS_TABLE || 'InsuranceClaims',
+    FINANCIAL_NUDGES: process.env.FINANCIAL_NUDGES_TABLE || 'FinancialNudges',
 };
 
 module.exports = { dynamoDB, query, TABLE_NAMES, getPostgresPool };

@@ -2,6 +2,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   Rural Ecosystem Platform – Knowledge & Agriculture Modules
+  Requirement 6: Precision Agriculture Support
+  Requirement 8: Economic Services Integration
   Requirement 5: Agriculture Supply Chain (buyer connections, market prices, logistics)
   Requirement 7: Voice-based learning, AI peer groups, DigiLocker, learning paths
 
@@ -21,14 +23,20 @@ Globals:
         FARMER_PROFILES_TABLE: !Ref FarmerProfilesTable
         PRICE_ALERTS_TABLE: !Ref PriceAlertsTable
         PRICE_WATCH_TABLE: !Ref PriceWatchTable
+        FARM_PRACTICE_LOGS_TABLE: !Ref FarmPracticeLogsTable
+        ECONOMIC_PROFILES_TABLE: !Ref EconomicProfilesTable
+        INSURANCE_CLAIMS_TABLE: !Ref InsuranceClaimsTable
+        FINANCIAL_NUDGES_TABLE: !Ref FinancialNudgesTable
         PG_HOST: !GetAtt AuroraCluster.Endpoint.Address
         PG_PORT: '5432'
         PG_DATABASE: 'rural_platform'
         PG_USER: 'admin'
         PG_SSL: 'true'
         BEDROCK_MODEL_ID: 'anthropic.claude-3-haiku-20240307-v1:0'
+        PRECISION_ENABLE_BEDROCK: 'false'
         DIGILOCKER_USE_MOCK: 'true'
         PRICE_ALERTS_TOPIC_ARN: !Ref PriceAlertsTopic
+        FINANCIAL_NOTIFICATIONS_TOPIC_ARN: !Ref FinancialNotificationsTopic
 
 Parameters:
   Stage:
@@ -401,6 +409,11 @@ Resources:
     Properties:
       TopicName: !Sub 'rural-price-alerts-${Stage}'
 
+  FinancialNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'rural-financial-notifications-${Stage}'
+
   # ═══════════════════════════════════════
   #  Agriculture Lambda Functions
   # ═══════════════════════════════════════
@@ -635,6 +648,143 @@ Resources:
             Method: POST
             RestApiId: !Ref KnowledgeApi
 
+  PrecisionAgricultureFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'precision-agriculture-${Stage}'
+      Handler: backend/lambdas/precision-agriculture/index.handler
+      Description: 'Precision agriculture image analysis, pest warnings, carbon scoring, weather advisories, practice tracking'
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FarmPracticeLogsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+      Events:
+        PrecisionAnalyze:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/analyze
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        PrecisionPestAnalyze:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/pest-disease/analyze
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        PrecisionCarbon:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/carbon/calculate
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        PrecisionWeather:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/weather/advisory
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        PrecisionPracticesAnalyze:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/practices/analyze
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        PrecisionPracticesLog:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/practices/log
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        PrecisionPracticesLogs:
+          Type: Api
+          Properties:
+            Path: /agriculture/precision/practices/logs
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+
+  EconomicServicesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'economic-services-${Stage}'
+      Handler: backend/lambdas/economic-services/index.handler
+      Description: 'Government schemes, eligibility checks, savings plans, insurance claims, and seasonal nudges'
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EconomicProfilesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InsuranceClaimsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FinancialNudgesTable
+        - SNSPublishMessagePolicy:
+            TopicArn: !Ref FinancialNotificationsTopic
+      Events:
+        EconomicsProfileGet:
+          Type: Api
+          Properties:
+            Path: /economics/profile
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        EconomicsProfileSave:
+          Type: Api
+          Properties:
+            Path: /economics/profile
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        EconomicsSchemes:
+          Type: Api
+          Properties:
+            Path: /economics/schemes
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        EconomicsSchemeGet:
+          Type: Api
+          Properties:
+            Path: /economics/schemes/{id}
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        EconomicsEligibility:
+          Type: Api
+          Properties:
+            Path: /economics/eligibility/assess
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        EconomicsSavings:
+          Type: Api
+          Properties:
+            Path: /economics/savings/plan
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        EconomicsInsuranceCreate:
+          Type: Api
+          Properties:
+            Path: /economics/insurance/claims
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        EconomicsInsuranceList:
+          Type: Api
+          Properties:
+            Path: /economics/insurance/claims
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+        EconomicsNudgeGenerate:
+          Type: Api
+          Properties:
+            Path: /economics/nudges/generate
+            Method: POST
+            RestApiId: !Ref KnowledgeApi
+        EconomicsNudges:
+          Type: Api
+          Properties:
+            Path: /economics/nudges
+            Method: GET
+            RestApiId: !Ref KnowledgeApi
+
   # ═══════════════════════════════════════
   #  Agriculture DynamoDB Tables
   # ═══════════════════════════════════════
@@ -685,6 +835,66 @@ Resources:
         AttributeName: ttl
         Enabled: true
 
+  FarmPracticeLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'FarmPracticeLogs-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: loggedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: loggedAt
+          KeyType: RANGE
+
+  EconomicProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'EconomicProfiles-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  InsuranceClaimsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'InsuranceClaims-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: claimId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: claimId
+          KeyType: RANGE
+
+  FinancialNudgesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'FinancialNudges-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: generatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: generatedAt
+          KeyType: RANGE
+
 Outputs:
   ApiUrl:
     Description: Platform API URL
@@ -704,3 +914,6 @@ Outputs:
   PriceAlertsTopicArn:
     Description: SNS topic for price change alerts
     Value: !Ref PriceAlertsTopic
+  FinancialNotificationsTopicArn:
+    Description: SNS topic for financial nudges
+    Value: !Ref FinancialNotificationsTopic

@@ -137,6 +137,30 @@ const QUALITY_GRADES = ['premium', 'standard', 'economy'];
 
 const MARKET_DATA_SOURCES = ['e-NAM', 'agmarknet', 'manual'];
 
+// ── Precision Agriculture Constants ──
+
+const PRECISION_IMAGE_TYPES = ['crop', 'leaf', 'soil', 'field'];
+const PRECISION_RISK_LEVELS = ['low', 'medium', 'high', 'critical'];
+const FARM_PRACTICE_TYPES = [
+    'urea_application',
+    'diesel_use',
+    'crop_residue_burning',
+    'grid_irrigation',
+    'flood_irrigation',
+    'drip_irrigation',
+    'pesticide_spray',
+    'pest_scouting',
+    'organic_manure',
+    'mulching',
+    'soil_testing',
+];
+
+// ── Economic Services Constants ──
+
+const ECONOMIC_SCHEME_TYPES = ['loan', 'insurance', 'subsidy'];
+const FINANCIAL_SEASONS = ['pre-sowing', 'sowing', 'mid-season', 'harvest', 'post-harvest'];
+const INSURANCE_CLAIM_STATUS = ['awaiting_consent', 'draft_ready', 'submitted', 'under_review', 'settled'];
+
 module.exports = {
     SUPPORTED_LANGUAGES,
     POLLY_VOICE_MAP,
@@ -157,4 +181,10 @@ module.exports = {
     BARGAINING_STATUS,
     QUALITY_GRADES,
     MARKET_DATA_SOURCES,
+    PRECISION_IMAGE_TYPES,
+    PRECISION_RISK_LEVELS,
+    FARM_PRACTICE_TYPES,
+    ECONOMIC_SCHEME_TYPES,
+    FINANCIAL_SEASONS,
+    INSURANCE_CLAIM_STATUS,
 };

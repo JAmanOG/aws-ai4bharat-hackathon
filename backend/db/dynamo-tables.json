@@ -122,6 +122,99 @@
           "purpose": "Aggregate interactions for a content item"
         }
       ]
+    },
+    {
+      "tableName": "FarmPracticeLogs",
+      "description": "Stores farmer-entered precision agriculture practice logs for advisory analysis",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" },
+        "sortKey": { "name": "loggedAt", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "loggedAt": "ISO timestamp of the practice event",
+        "practiceId": "UUID of the log entry",
+        "crop_type": "Crop tied to the practice",
+        "field_id": "Optional field identifier",
+        "practice_type": "Normalized practice type",
+        "quantity": "Numeric amount logged",
+        "unit": "Unit for quantity",
+        "notes": "Farmer note or transcription",
+        "metadata": "Additional structured context such as source or device state"
+      },
+      "gsi": [
+        {
+          "indexName": "ByCropType",
+          "partitionKey": "crop_type",
+          "sortKey": "loggedAt",
+          "purpose": "Analyze recent practice patterns by crop"
+        }
+      ]
+    },
+    {
+      "tableName": "EconomicProfiles",
+      "description": "Stores farmer financial and farm profile details used for scheme and savings guidance",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "full_name": "Farmer name",
+        "state": "State name",
+        "district": "District name",
+        "primary_language": "Preferred language code",
+        "land_size_acres": "Total farm land in acres",
+        "crop_types": "Primary crops",
+        "annual_income_inr": "Approximate annual income",
+        "expected_harvest_income_inr": "Expected harvest income",
+        "seasonal_expenses": "Expected seasonal farm expenses",
+        "harvest_months": "Likely harvest months",
+        "has_bank_account": "Bank account readiness",
+        "has_kcc": "Existing Kisan Credit Card status",
+        "digilocker_verified": "KYC readiness through DigiLocker",
+        "insurance_provider": "Active insurance provider if any",
+        "createdAt": "ISO timestamp",
+        "updatedAt": "ISO timestamp"
+      }
+    },
+    {
+      "tableName": "InsuranceClaims",
+      "description": "Stores draft and submitted agriculture insurance claim records",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" },
+        "sortKey": { "name": "claimId", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "claimId": "UUID of the claim",
+        "scheme_id": "Insurance scheme identifier",
+        "crop_type": "Affected crop",
+        "loss_date": "Loss incident date",
+        "area_affected_acres": "Affected area",
+        "location": "Structured location object",
+        "damage_signals": "Damage evidence list",
+        "notes": "Voice/text notes from farmer",
+        "digilocker_consent": "Consent flag for document retrieval",
+        "status": "Claim processing status",
+        "damage_assessment": "System-generated damage interpretation",
+        "createdAt": "ISO timestamp"
+      }
+    },
+    {
+      "tableName": "FinancialNudges",
+      "description": "Stores proactive seasonal financial planning nudges",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" },
+        "sortKey": { "name": "generatedAt", "type": "S" }
+      },
+      "attributes": {
+        "userId": "Cognito user sub ID",
+        "generatedAt": "ISO timestamp",
+        "season": "Seasonal farming phase",
+        "channel": "push | sms | voice",
+        "message": "Localized nudge text",
+        "related_crop_types": "Crops referenced by the nudge"
+      }
     }
   ]
 }
