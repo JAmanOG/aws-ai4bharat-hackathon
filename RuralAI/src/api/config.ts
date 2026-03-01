@@ -1,24 +1,17 @@
 /**
  * Centralized API configuration.
- * All backend base URLs in one place — fill in after deployment.
+ * All backend base URLs are now fetched from environment variables.
  */
 
-// TODO: Replace with actual API Gateway URLs after SAM deployment
 const API_CONFIG = {
   /** Feature 1 — Community, Voice Rooms, Government */
-  FEATURE1_BASE: 'https://YOUR_FEATURE1_API.execute-api.ap-south-1.amazonaws.com/Prod',
-
-  /** Feature 2 — Knowledge, Learning Paths, Peer Groups */
-  FEATURE2_BASE: 'https://YOUR_FEATURE2_API.execute-api.ap-south-1.amazonaws.com/Prod',
+  FEATURE1_BASE: process.env.API_FEATURE_1 || '',
 
   /** Feature 3 — Open Data Export */
-  FEATURE3_BASE: 'https://YOUR_FEATURE3_API.execute-api.ap-south-1.amazonaws.com/Prod',
+  FEATURE2_BASE: process.env.API_FEATURE_2 || '',
 
   /** Feature 4 — Health Services */
-  FEATURE4_BASE: 'https://YOUR_FEATURE4_API.execute-api.ap-south-1.amazonaws.com/Prod',
-
-  /** Feature 6 — Agriculture + Economics */
-  FEATURE6_BASE: 'https://YOUR_FEATURE6_API.execute-api.ap-south-1.amazonaws.com/Prod',
+  FEATURE3_BASE: process.env.API_FEATURE_3 || '',
 };
 
 /**

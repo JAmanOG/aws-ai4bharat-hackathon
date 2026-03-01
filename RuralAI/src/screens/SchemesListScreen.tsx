@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, TextInput, ScrollView } from "react-native";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
+import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { governmentApi } from "../api/community";
 
 type Scheme = {
   id: string;
@@ -27,19 +28,47 @@ const FILTERS: Array<Scheme["category"] | "All"> = ["All", "Farmer", "Loan", "Su
 export default function SchemesListScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
-  const moduleTitle = route?.params?.moduleTitle ?? "FINANCE";
+  const moduleTitle = route?.params?.moduleTitle ?? "SCHEMES";
 
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [loading, setLoading] = useState(false);
+  const [schemes, setSchemes] = useState<Scheme[]>(SCHEMES); // Start with hardcoded
+
+  const fetchSchemes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await governmentApi.listSchemes({ limit: 20 } as any);
+      if (res.data?.schemes?.length) {
+        const remote = res.data.schemes.map((s: any) => ({
+          id: s.id,
+          title: s.name || s.title,
+          category: s.category || "Govt",
+          benefit: s.budget_allocated || "Govt backed",
+          eligibility: s.eligibility_criteria || s.description || "See details",
+          verified: true,
+        }));
+        setSchemes(remote);
+      }
+    } catch (err) {
+      console.log("Schemes failed, using fallback");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSchemes();
+  }, [fetchSchemes]);
 
   const filtered = useMemo(() => {
     const text = q.trim().toLowerCase();
-    return SCHEMES.filter((s) => {
+    return schemes.filter((s) => {
       const matchText = !text || s.title.toLowerCase().includes(text);
       const matchFilter = filter === "All" || s.category === filter;
       return matchText && matchFilter;
     });
-  }, [q, filter]);
+  }, [q, filter, schemes]);
 
   return (
     <SafeAreaView style={styles.safe}>

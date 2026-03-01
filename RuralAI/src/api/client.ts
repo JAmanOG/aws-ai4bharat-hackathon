@@ -76,23 +76,12 @@ export const feature1 = {
   del: <T = any>(path: string) => request<T>('FEATURE1_BASE', path, 'DELETE'),
 };
 
-export const feature2 = {
-  get: <T = any>(path: string) => request<T>('FEATURE2_BASE', path, 'GET'),
-  post: <T = any>(path: string, body?: any) => request<T>('FEATURE2_BASE', path, 'POST', body),
-};
-
 export const feature3 = {
-  get: <T = any>(path: string) => request<T>('FEATURE3_BASE', path, 'GET'),
+  get: <T = any>(path: string) => request<T>('FEATURE2_BASE', path, 'GET'),
 };
 
 export const feature4 = {
-  get: <T = any>(path: string) => request<T>('FEATURE4_BASE', path, 'GET'),
-  post: <T = any>(path: string, body?: any) => request<T>('FEATURE4_BASE', path, 'POST', body),
+  get: <T = any>(path: string) => request<T>('FEATURE3_BASE', path, 'GET'),
+  post: <T = any>(path: string, body?: any) => request<T>('FEATURE3_BASE', path, 'POST', body),
 };
 
-export const feature6 = {
-  get: <T = any>(path: string) => request<T>('FEATURE6_BASE', path, 'GET'),
-  post: <T = any>(path: string, body?: any) => request<T>('FEATURE6_BASE', path, 'POST', body),
-  put: <T = any>(path: string, body?: any) => request<T>('FEATURE6_BASE', path, 'PUT', body),
-  del: <T = any>(path: string) => request<T>('FEATURE6_BASE', path, 'DELETE'),
-};
