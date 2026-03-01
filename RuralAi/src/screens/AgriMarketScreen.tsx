@@ -15,22 +15,29 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useMarketPrices } from "../hooks/useData";
+import { useMarketPrices, useMandis, useHealthCheck } from "../hooks/useData";
 import { LoadingView, ErrorView } from "../components/ui";
 
 export default function AgriMarketScreen() {
   const nav = useNavigation<any>();
   const wheat = useMarketPrices("wheat");
   const rice = useMarketPrices("rice");
+  const mandis = useMandis();
+  const health = useHealthCheck();
+  const synced = !health.error;
+
+  const wheatPrices = (wheat.data as any)?.prices ?? [];
+  const ricePrices = (rice.data as any)?.prices ?? [];
+  const mandiList = (mandis.data as any)?.mandis ?? [];
 
   return (
     <SafeAreaView style={styles.safe}>
       {/* Status bar */}
       <View style={styles.statusBar}>
-        <Ionicons name="cloud-offline-outline" size={14} color={colors.muted} />
-        <Text style={styles.statusLabel}>Offline</Text>
+        <Ionicons name={synced ? "wifi" : "cloud-offline-outline"} size={14} color={synced ? colors.primary : colors.muted} />
+        <Text style={styles.statusLabel}>{synced ? "Online" : "Offline"}</Text>
         <View style={styles.divider} />
-        <Text style={styles.statusLabel}>Offline Mode - Sync Pending</Text>
+        <Text style={styles.statusLabel}>{synced ? "Data synced" : "Sync pending"}</Text>
       </View>
 
       {/* Header */}
@@ -67,12 +74,12 @@ export default function AgriMarketScreen() {
           <View style={styles.pill}>
             <View style={[styles.pillDot, { backgroundColor: colors.success }]} />
             <Text style={styles.pillText}>Verified Buyers</Text>
-            <Text style={styles.pillBold}>Property 18</Text>
+            <Text style={styles.pillBold}>{mandiList.length > 0 ? `${mandiList.length} mandis` : "—"}</Text>
           </View>
           <View style={styles.pill}>
             <View style={[styles.pillDot, { backgroundColor: colors.danger }]} />
-            <Text style={styles.pillText}>High-Volume Buyers</Text>
-            <Text style={styles.pillBold}>Property 11</Text>
+            <Text style={styles.pillText}>Market Data</Text>
+            <Text style={styles.pillBold}>{wheatPrices.length + ricePrices.length > 0 ? `${wheatPrices.length + ricePrices.length} records` : "—"}</Text>
           </View>
         </View>
 
@@ -81,28 +88,30 @@ export default function AgriMarketScreen() {
           <View style={styles.infoTile}>
             <Ionicons name="leaf" size={18} color={colors.success} />
             <Text style={styles.infoLabel}>Crops</Text>
-            <Text style={styles.infoValue}>Property 5-4</Text>
+            <Text style={styles.infoValue}>{wheat.data ? "Wheat, Rice" : "Loading…"}</Text>
           </View>
           <View style={[styles.infoTile, { borderColor: colors.dangerTint }]}>
             <Ionicons name="time-outline" size={18} color={colors.danger} />
             <Text style={styles.infoLabel}>Historical</Text>
-            <Text style={styles.infoValue}>Property 11</Text>
+            <Text style={styles.infoValue}>{wheatPrices.length > 0 ? `${wheatPrices.length} records` : "—"}</Text>
           </View>
         </View>
 
         {/* Price mini-cards */}
         <View style={styles.priceRow}>
           <PriceCard
-            label="Price"
-            value={wheat.data?.summary?.average_price ?? 130}
+            label="Wheat"
+            value={wheat.data?.summary?.average_price}
             loading={wheat.loading}
             trend="up"
+            prices={wheatPrices}
           />
           <PriceCard
-            label="Price"
-            value={rice.data?.summary?.average_price ?? 100}
+            label="Rice"
+            value={rice.data?.summary?.average_price}
             loading={rice.loading}
             trend="down"
+            prices={ricePrices}
           />
         </View>
 
@@ -122,15 +131,25 @@ export default function AgriMarketScreen() {
 
 /* ── Price Card ── */
 
-function PriceCard({ label, value, loading, trend }: { label: string; value: number; loading: boolean; trend: "up" | "down" }) {
+function PriceCard({ label, value, loading, trend, prices }: { label: string; value: number | undefined; loading: boolean; trend: "up" | "down"; prices: any[] }) {
   const trendColor = trend === "up" ? colors.success : colors.danger;
+  /* Build sparkline from real price data or show flat line */
+  const sparkData = React.useMemo(() => {
+    if (prices.length >= 3) {
+      const vals = prices.slice(-7).map((p: any) => p.modal_price ?? p.price ?? 0);
+      const max = Math.max(...vals, 1);
+      return vals.map((v: number) => v / max);
+    }
+    return [0.3, 0.3, 0.3, 0.3, 0.3]; // flat line when no data
+  }, [prices]);
+
   return (
     <View style={styles.priceCard}>
       <Text style={styles.priceLabel}>{label}</Text>
-      <Text style={styles.priceValue}>{loading ? "…" : `₹${value}`}</Text>
-      {/* Mini sparkline placeholder */}
+      <Text style={styles.priceValue}>{loading ? "…" : value != null ? `₹${value}` : "N/A"}</Text>
+      {/* Mini sparkline */}
       <View style={styles.sparkline}>
-        {[0.4, 0.5, 0.3, 0.7, 0.6, 0.8, 0.5].map((h, i) => (
+        {sparkData.map((h: number, i: number) => (
           <View key={i} style={[styles.sparkBar, { height: h * 28, backgroundColor: trendColor }]} />
         ))}
       </View>

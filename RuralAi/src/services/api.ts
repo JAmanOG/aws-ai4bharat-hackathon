@@ -315,3 +315,28 @@ export const economicsApi = {
   getNudges: (limit = 20) =>
     api.get('/economics/nudges', { limit }),
 };
+
+// ═══════════ Voice (Req 2) ═══════════
+
+export const voiceApi = {
+  chat: (text: string, opts?: { language_code?: string; session_id?: string; generate_audio?: boolean }) =>
+    api.post('/voice/chat', { text, language_code: opts?.language_code ?? 'hi', session_id: opts?.session_id, generate_audio: opts?.generate_audio ?? true }),
+
+  synthesize: (text: string, languageCode = 'hi') =>
+    api.post<{ audio_base64: string; request_id: string }>('/voice/synthesize', { text, language_code: languageCode }),
+
+  translate: (text: string, targetLanguage: string, sourceLanguage = 'auto') =>
+    api.post<{ translated_text: string }>('/voice/translate', { text, source_language: sourceLanguage, target_language: targetLanguage }),
+
+  getLanguages: () =>
+    api.get<{ languages: Array<{ code: string; bcp47: string; name: string; tts_available: boolean }> }>('/voice/languages'),
+
+  getSessions: (limit = 10) =>
+    api.get('/voice/sessions', { limit }),
+
+  getSessionHistory: (sessionId: string, limit = 50) =>
+    api.get(`/voice/sessions/${sessionId}`, { limit }),
+
+  getMemoryFacts: () =>
+    api.get<{ facts: Record<string, string> }>('/voice/memory/facts'),
+};

@@ -1,10 +1,11 @@
-import React from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import React, { useState, useCallback } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { SyncPill } from "../components/ui";
 import { usePeerGroups } from "../hooks/useData";
+import { useNavigation } from "@react-navigation/native";
 
 type Space = {
   id: string;
@@ -23,46 +24,15 @@ type Post = {
   tags: string[];
 };
 
-/* Fallback spaces if backend returns none */
-const FALLBACK_SPACES: Space[] = [
-  { id: "s1", title: "Water supply update", status: "LIVE", meta: "2 speakers • Join now", listeners: 128 },
-  { id: "s2", title: "Crop price discussion", status: "LIVE", meta: "1 speaker • Q&A", listeners: 76 },
-  { id: "s3", title: "Govt scheme help", status: "SCHEDULED", meta: "Today • 6:30 PM" },
-];
-
-const POSTS: Post[] = [
-  {
-    id: "p1",
-    name: "Ramesh Patil",
-    verified: true,
-    time: "10m ago",
-    text: "Wheat mandi price today? Anyone from nearby market share rate?",
-    tags: ["Market", "Agriculture"],
-  },
-  {
-    id: "p2",
-    name: "Seema Devi",
-    time: "42m ago",
-    text: "Electricity cut since morning. Complaint portal link anyone?",
-    tags: ["Infrastructure"],
-  },
-  {
-    id: "p3",
-    name: "Amit Kumar",
-    verified: true,
-    time: "1h ago",
-    text: "PM-Kisan registration: CSC helped me. Keep Aadhaar + land records ready.",
-    tags: ["Scheme", "Finance"],
-  },
-];
-
 export default function CommunityScreen() {
+  const nav = useNavigation<any>();
   const peerGroups = usePeerGroups();
+  const [newPostText, setNewPostText] = useState("");
 
   /* Map backend peer groups to Space cards when available */
   const spaces: Space[] = React.useMemo(() => {
     const raw = (peerGroups.data as any)?.groups;
-    if (!Array.isArray(raw) || raw.length === 0) return FALLBACK_SPACES;
+    if (!Array.isArray(raw) || raw.length === 0) return [];
     return raw.map((g: any, i: number) => ({
       id: g.group_id ?? `g${i}`,
       title: g.group_name ?? g.crop_type ?? "Peer group",
@@ -89,7 +59,7 @@ export default function CommunityScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Quick actions */}
           <View style={styles.quickRow}>
-            <Pressable style={styles.quickCardPrimary}>
+            <Pressable style={styles.quickCardPrimary} onPress={() => nav.navigate("Voice")}>
               <Ionicons name="mic" size={18} color={colors.ink} />
               <Text style={styles.quickPrimaryText}>Post by Voice</Text>
             </Pressable>
@@ -106,11 +76,16 @@ export default function CommunityScreen() {
           </View>
 
           {/* Community Spaces */}
-          <SectionHeader title="Community Spaces" right={peerGroups.loading ? "Loading…" : "See all"} />
+          <SectionHeader title="Community Spaces" right={peerGroups.loading ? "Loading…" : spaces.length > 0 ? "See all" : undefined} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 14 }}>
             {peerGroups.loading ? (
               <View style={{ width: 220, height: 130, alignItems: "center", justifyContent: "center" }}>
                 <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : spaces.length === 0 ? (
+              <View style={{ width: 220, height: 130, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border }}>
+                <Ionicons name="people-outline" size={28} color={colors.muted} />
+                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.muted, marginTop: 8, textAlign: "center" }}>No active spaces{"\n"}Join or create one!</Text>
               </View>
             ) : (
               spaces.map((s) => (
@@ -137,10 +112,26 @@ export default function CommunityScreen() {
 
           {/* Forum Feed */}
           <SectionHeader title="Forum" right="Filter" />
-          <View style={{ gap: 12 }}>
-            {POSTS.map((p) => (
-              <PostCard key={p.id} post={p} />
-            ))}
+
+          {/* Post input */}
+          <View style={{ backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 12 }}>
+            <TextInput
+              style={{ fontSize: 13, fontWeight: "600", color: colors.ink, minHeight: 40 }}
+              placeholder="Share something with your community…"
+              placeholderTextColor={colors.muted}
+              value={newPostText}
+              onChangeText={setNewPostText}
+              multiline
+            />
+          </View>
+
+          {/* Empty state when no posts */}
+          <View style={{ alignItems: "center", paddingVertical: 30 }}>
+            <Ionicons name="chatbubbles-outline" size={40} color={colors.muted} />
+            <Text style={{ fontSize: 14, fontWeight: "800", color: colors.ink, marginTop: 10 }}>No posts yet</Text>
+            <Text style={{ fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center", marginTop: 4 }}>
+              Be the first to share in your community!{"\n"}Use voice or type above.
+            </Text>
           </View>
 
           <View style={{ height: 26 }} />

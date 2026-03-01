@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import React, { useMemo, useState, useCallback } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { requestMicPermission, startRecording, stopRecording, chatWithText } from "../services/voice";
 
 type Sym = { key: string; label: string; icon: any };
 
@@ -22,6 +23,9 @@ export default function SymptomCheckerScreen() {
   const nav = useNavigation<any>();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [listening, setListening] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [voiceResult, setVoiceResult] = useState<string | null>(null);
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
 
   const picked = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
 
@@ -39,6 +43,46 @@ export default function SymptomCheckerScreen() {
   }, [risk]);
 
   const toggle = (key: string) => setSelected((p) => ({ ...p, [key]: !p[key] }));
+
+  const handleVoiceStart = useCallback(async () => {
+    const ok = await requestMicPermission();
+    if (!ok) return;
+    setListening(true);
+    await startRecording();
+  }, []);
+
+  const handleVoiceStop = useCallback(async () => {
+    setListening(false);
+    setProcessing(true);
+    try {
+      const uri = await stopRecording();
+      if (!uri) throw new Error("No recording");
+      // Use the voice chat to describe symptoms
+      const prompt = `I described health symptoms via voice. Based on selected symptoms: ${picked.join(", ") || "none yet"}. Please analyze and provide health guidance for a rural user. Keep it simple and actionable.`;
+      const res = await chatWithText(prompt, { language: "en" });
+      setVoiceResult(res.transcript ?? "Voice processed");
+      setAiAdvice(res.response_text);
+    } catch {
+      setVoiceResult(null);
+      setAiAdvice("Could not process voice. Please try again or select symptoms manually.");
+    } finally {
+      setProcessing(false);
+    }
+  }, [picked]);
+
+  const handleGetAdvice = useCallback(async () => {
+    if (picked.length === 0) return;
+    setProcessing(true);
+    try {
+      const prompt = `I'm experiencing these symptoms: ${picked.join(", ")}. Risk level appears: ${risk}. What should I do? Give brief actionable health guidance for someone in a rural area with limited medical access. Keep it under 100 words.`;
+      const res = await chatWithText(prompt, { language: "en" });
+      setAiAdvice(res.response_text);
+    } catch {
+      setAiAdvice("Unable to get AI advice. Based on your symptoms, please consult a local health worker.");
+    } finally {
+      setProcessing(false);
+    }
+  }, [picked, risk]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -71,12 +115,17 @@ export default function SymptomCheckerScreen() {
           <View style={styles.voiceCard}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <Text style={styles.sectionTitle}>Describe by voice</Text>
-              <Pressable style={styles.voiceBtn} onPress={() => setListening(true)}>
+              <Pressable style={styles.voiceBtn} onPress={handleVoiceStart}>
                 <Ionicons name="mic" size={18} color={colors.ink} />
                 <Text style={styles.voiceBtnText}>Tap</Text>
               </Pressable>
             </View>
-            <Text style={styles.helper}>Example: “I have fever and cough for 2 days.”</Text>
+            <Text style={styles.helper}>Example: "I have fever and cough for 2 days."</Text>
+            {voiceResult && (
+              <View style={{ marginTop: 8, padding: 10, backgroundColor: "rgba(74,144,217,0.08)", borderRadius: 12 }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.ink }}>You said: {voiceResult}</Text>
+              </View>
+            )}
           </View>
 
           {/* Symptom chips */}
@@ -122,6 +171,27 @@ export default function SymptomCheckerScreen() {
             </Text>
           </View>
 
+          {/* AI Advice */}
+          {(aiAdvice || processing) && (
+            <View style={{ backgroundColor: "rgba(74,144,217,0.08)", borderRadius: 18, borderWidth: 1, borderColor: "rgba(74,144,217,0.18)", padding: 14 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <Ionicons name="sparkles" size={16} color={colors.primary} />
+                <Text style={{ fontSize: 13, fontWeight: "900", color: colors.ink }}>AI Health Guidance</Text>
+              </View>
+              {processing ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.ink, lineHeight: 18 }}>{aiAdvice}</Text>
+              )}
+            </View>
+          )}
+
+          {picked.length > 0 && !aiAdvice && !processing && (
+            <Pressable style={{ backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 12, alignItems: "center" }} onPress={handleGetAdvice}>
+              <Text style={{ fontSize: 13, fontWeight: "900", color: "#FFF" }}>Get AI Advice</Text>
+            </Pressable>
+          )}
+
           {/* Next steps */}
           <Text style={styles.sectionTitle}>Next steps</Text>
           <View style={{ gap: 10 }}>
@@ -145,15 +215,19 @@ export default function SymptomCheckerScreen() {
           <View style={{ height: 18 }} />
         </ScrollView>
 
-        {/* Simple Listening overlay (demo) */}
-        {listening ? (
+        {/* Real Recording / Processing overlay */}
+        {(listening || processing) ? (
           <View style={styles.overlay}>
             <View style={styles.listenCard}>
-              <Text style={styles.listenTitle}>Listening…</Text>
-              <Text style={styles.listenSub}>Speak your symptoms</Text>
-              <Pressable style={styles.cancelBtn} onPress={() => setListening(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
+              <Ionicons name={listening ? "mic" : "hourglass-outline"} size={32} color={colors.primary} />
+              <Text style={styles.listenTitle}>{listening ? "Listening…" : "Processing…"}</Text>
+              <Text style={styles.listenSub}>{listening ? "Speak your symptoms clearly" : "Analyzing with AI…"}</Text>
+              {listening && (
+                <Pressable style={styles.cancelBtn} onPress={handleVoiceStop}>
+                  <Text style={styles.cancelText}>Stop & Analyze</Text>
+                </Pressable>
+              )}
+              {processing && <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />}
             </View>
           </View>
         ) : null}

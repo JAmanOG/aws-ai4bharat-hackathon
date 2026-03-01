@@ -28,6 +28,11 @@ export default function KnowledgeDashboardScreen() {
   const groupList = (groups.data as any)?.groups ?? [];
   const progressData = profile.data as any;
 
+  /* Derive real stats from API data */
+  const completionPct = progressData?.completion_percentage ?? (courseList.length > 0 ? Math.round((courseList.filter((c: any) => c.status === "completed").length / courseList.length) * 100) : 0);
+  const skillCount = courseList.length;
+  const scoreValue = progressData?.score ?? skillCount;
+
   const loading = courses.loading || groups.loading;
   const error = courses.error || groups.error;
 
@@ -59,17 +64,17 @@ export default function KnowledgeDashboardScreen() {
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.progressTitle}>Your progress in an{"\n"}skill course</Text>
+                <Text style={styles.progressTitle}>Your progress in{"\n"}skill courses</Text>
                 <View style={styles.progressBarWrap}>
                   <Text style={styles.progressLabel}>Your progress</Text>
                   <View style={styles.trackBg}>
-                    <View style={[styles.trackFill, { width: "65%" }]} />
+                    <View style={[styles.trackFill, { width: `${completionPct}%` }]} />
                   </View>
                 </View>
-                <Text style={styles.progressSub}>Progress in 3 Skills</Text>
+                <Text style={styles.progressSub}>Progress in {skillCount} Skill{skillCount !== 1 ? "s" : ""}</Text>
               </View>
               <View style={styles.scoreBadge}>
-                <Text style={styles.scoreText}>33</Text>
+                <Text style={styles.scoreText}>{scoreValue}</Text>
               </View>
             </View>
           </View>
@@ -81,49 +86,57 @@ export default function KnowledgeDashboardScreen() {
           </View>
 
           {/* Group card */}
-          <Pressable style={styles.groupCard}>
-            <View style={styles.groupIcon}>
-              <Ionicons name="people" size={18} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Text style={styles.groupName}>st.clusters</Text>
-                <Text style={styles.groupProp}>Property 15</Text>
+          {groupList.length > 0 ? (
+            <Pressable style={styles.groupCard}>
+              <View style={styles.groupIcon}>
+                <Ionicons name="people" size={18} color={colors.primary} />
               </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
-                {/* avatar dots */}
-                {["#4A90D9", "#22C55E", "#F59E0B"].map((c, i) => (
-                  <View key={i} style={[styles.avatar, { backgroundColor: c, marginLeft: i > 0 ? -6 : 0 }]} />
-                ))}
-                <Ionicons name="checkmark-circle" size={14} color={colors.success} style={{ marginLeft: 4 }} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={styles.groupName}>{groupList[0]?.group_name ?? "Peer Group"}</Text>
+                  <Text style={styles.groupProp}>{groupList[0]?.member_count ?? 0} members</Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.muted }}>{groupList[0]?.crop_type ?? "General"}</Text>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.success} style={{ marginLeft: 4 }} />
+                </View>
               </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+            </Pressable>
+          ) : (
+            <View style={[styles.groupCard, { justifyContent: "center" }]}>
+              <Ionicons name="people-outline" size={22} color={colors.muted} />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.muted, marginLeft: 10 }}>No peer groups yet</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-          </Pressable>
+          )}
 
-          {/* Audio stream LIVE */}
+          {/* Audio stream — show only when course content is available */}
           <View style={styles.audioCard}>
             <View style={styles.audioRow}>
               <Ionicons name="volume-high" size={18} color={colors.primary} />
-              <Text style={styles.audioLabel}>Audio stream</Text>
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
-              </View>
+              <Text style={styles.audioLabel}>Audio Learning</Text>
+              {courseList.length > 0 && (
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>AVAILABLE</Text>
+                </View>
+              )}
             </View>
-            <Text style={styles.audioTitle}>Dairy Production Discussion</Text>
-            <Text style={styles.audioSub}>(Twitter Space-like)</Text>
-            {/* Avatars + Expert */}
+            <Text style={styles.audioTitle}>{courseList[0]?.title ?? "No courses enrolled yet"}</Text>
+            <Text style={styles.audioSub}>{courseList.length > 0 ? `${courseList.length} course${courseList.length !== 1 ? "s" : ""} available` : "Enroll to start learning"}</Text>
+            {/* Expert badge */}
             <View style={styles.audioFooter}>
               <View style={{ flexDirection: "row" }}>
-                {["#4A90D9", "#F59E0B", "#22C55E"].map((c, i) => (
-                  <View key={i} style={[styles.avatar, { backgroundColor: c, marginLeft: i > 0 ? -6 : 0, width: 28, height: 28, borderRadius: 14 }]} />
+                {courseList.slice(0, 3).map((_: any, i: number) => (
+                  <View key={i} style={[styles.avatar, { backgroundColor: ["#4A90D9", "#F59E0B", "#22C55E"][i], marginLeft: i > 0 ? -6 : 0, width: 28, height: 28, borderRadius: 14 }]} />
                 ))}
               </View>
-              <View style={styles.expertBadge}>
-                <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
-                <Text style={styles.expertText}>Expert</Text>
-              </View>
+              {courseList.length > 0 && (
+                <View style={styles.expertBadge}>
+                  <Ionicons name="school" size={12} color={colors.primary} />
+                  <Text style={styles.expertText}>Learn</Text>
+                </View>
+              )}
             </View>
           </View>
 

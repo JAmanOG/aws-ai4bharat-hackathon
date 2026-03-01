@@ -1,22 +1,126 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal } from "react-native";
+/**
+ * Ask Screen — voice assistant landing page.
+ * Real mic recording with Sarvam STT → LLM → TTS pipeline.
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable, Animated, Easing, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import * as voiceService from "../services/voice";
 
 export default function AskScreen() {
   const nav = useNavigation<any>();
-  const [listening, setListening] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [lastResponse, setLastResponse] = useState<string | null>(null);
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
 
-  const openCommunity = () => {
-    // stack screen "Community" is in RootNavigator (Stack)
-    nav.navigate("Community");
-  };
+  /* Pulse animation */
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!recording) { pulse.setValue(1); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.2, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [recording, pulse]);
 
-  const openProfile = () => {
-    nav.navigate("Profile"); // tab route
-  };
+  /* Request mic permission on mount */
+  useEffect(() => {
+    voiceService.requestMicPermission().then(setHasMicPermission);
+  }, []);
+
+  const handleMicPress = useCallback(async () => {
+    if (processing) return;
+
+    if (recording) {
+      // Stop and process
+      setRecording(false);
+      setProcessing(true);
+      setLastResponse(null);
+
+      try {
+        const uri = await voiceService.stopRecording();
+        if (!uri) { setProcessing(false); return; }
+
+        // Read file as base64
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            resolve(dataUrl.split(",")[1] || "");
+          };
+          reader.readAsDataURL(blob);
+        });
+
+        if (!base64) { setProcessing(false); return; }
+
+        // Transcribe
+        const transcribeRes = await fetch(
+          `${require("../config/env").ENV.API_BASE_URL}/voice/transcribe`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-User-Id": require("../config/env").ENV.DEMO_USER_ID,
+            },
+            body: JSON.stringify({ audio_base64: base64, language_code: "unknown" }),
+          },
+        );
+        const transcribeData = await transcribeRes.json();
+        const transcript = transcribeData.transcript || "";
+
+        if (!transcript.trim()) {
+          setLastResponse("Could not understand audio. Please try again.");
+          setProcessing(false);
+          return;
+        }
+
+        // Chat
+        const chatResult = await voiceService.chatWithText(transcript, {
+          language_code: transcribeData.language_code || "hi",
+          generate_audio: true,
+        });
+
+        setLastResponse(chatResult.response_text);
+
+        // Play audio
+        if (chatResult.audio_base64) {
+          voiceService.playBase64Audio(chatResult.audio_base64).catch(() => {});
+        }
+      } catch (err: any) {
+        setLastResponse(`Error: ${err.message || "Something went wrong"}`);
+      } finally {
+        setProcessing(false);
+      }
+    } else {
+      // Start recording
+      if (hasMicPermission === false) {
+        Alert.alert("Microphone Permission", "Please enable microphone access in Settings.");
+        return;
+      }
+      try {
+        await voiceService.startRecording();
+        setRecording(true);
+        setLastResponse(null);
+      } catch (err: any) {
+        Alert.alert("Recording Error", err.message || "Could not start recording");
+      }
+    }
+  }, [recording, processing, hasMicPermission]);
+
+  const openVoiceChat = () => nav.navigate("Voice");
+  const openCommunity = () => nav.navigate("Community");
+  const openProfile = () => nav.navigate("Profile");
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -26,9 +130,7 @@ export default function AskScreen() {
           <Pressable style={styles.iconBtn}>
             <Ionicons name="menu" size={22} color={colors.ink} />
           </Pressable>
-
           <Text style={styles.headerTitle}>Assistant</Text>
-
           <View style={{ flexDirection: "row", gap: 6 }}>
             <Pressable style={styles.iconBtn} onPress={openCommunity}>
               <Ionicons name="people-outline" size={22} color={colors.ink} />
@@ -39,78 +141,50 @@ export default function AskScreen() {
           </View>
         </View>
 
-        {/* Center Logo Glow */}
+        {/* Center */}
         <View style={styles.center}>
           <View style={styles.logoWrap}>
-            <View style={styles.ringOuter} />
+            <Animated.View style={[styles.ringOuter, recording && { transform: [{ scale: pulse }] }]} />
             <View style={styles.ringMid} />
-            <View style={styles.logoCore}>
-              <Ionicons name="leaf" size={34} color={colors.primary} />  
-            </View>
+            <Pressable
+              style={[styles.logoCore, processing && { opacity: 0.7 }]}
+              onPress={handleMicPress}
+              disabled={processing}
+            >
+              {processing ? (
+                <ActivityIndicator size="large" color={colors.primary} />
+              ) : (
+                <Ionicons name={recording ? "stop" : "mic"} size={38} color={colors.primary} />
+              )}
+            </Pressable>
           </View>
 
-          {/* Text like your inspiration */}
-          <View style={styles.promptRow}>
-            
-            <Text style={styles.promptText}> नमस्ते, how can I help you?</Text>
-          </View>
-
-          <Text style={styles.helper}>
-            Tap the glowing button below to speak. I can help with farming tips, market prices, and weather.
+          <Text style={styles.promptText}>
+            {recording
+              ? "Listening... tap to stop"
+              : processing
+              ? "Processing..."
+              : "Namaste, how can I help you?"}
           </Text>
+
+          {lastResponse ? (
+            <View style={styles.responseCard}>
+              <Text style={styles.responseText}>{lastResponse}</Text>
+            </View>
+          ) : (
+            <Text style={styles.helper}>
+              Tap the button above to speak. I can help with farming tips, market prices, weather, and government schemes.
+            </Text>
+          )}
         </View>
 
-        {/* Optional: big CTA button (matches “glowing button below”) */}
-        <Pressable style={styles.speakBtn} onPress={() => setListening(true)}>
-          <Ionicons name="mic" size={22} color={colors.ink} />
-          <Text style={styles.speakText}>Tap to Speak</Text>
+        {/* Chat button */}
+        <Pressable style={styles.chatBtn} onPress={openVoiceChat}>
+          <Ionicons name="chatbubbles" size={18} color="#FFF" />
+          <Text style={styles.chatBtnText}>Open Full Chat</Text>
         </Pressable>
-
-        {/* Listening Overlay */}
-        <ListeningOverlay
-          visible={listening}
-          onCancel={() => setListening(false)}
-          onFakeSubmit={() => setListening(false)}
-        />
       </View>
     </SafeAreaView>
-  );
-}
-
-function ListeningOverlay({
-  visible,
-  onCancel,
-  onFakeSubmit,
-}: {
-  visible: boolean;
-  onCancel: () => void;
-  onFakeSubmit: () => void;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
-        <View style={styles.listenCard}>
-          <View style={styles.listenRings}>
-            <View style={styles.listenRingOuter} />
-            <View style={styles.listenRingMid} />
-            <View style={styles.listenCore}>
-              <Ionicons name="mic" size={34} color={colors.surface} />
-            </View>
-          </View>
-
-          <Text style={styles.listenTitle}>Listening…</Text>
-          <Text style={styles.listenSub}>Speak now</Text>
-
-          <Pressable style={styles.fakeBtn} onPress={onFakeSubmit}>
-            <Text style={styles.fakeBtnText}>Demo: submit</Text>
-          </Pressable>
-
-          <Pressable style={styles.cancelBtn} onPress={onCancel}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -124,15 +198,15 @@ const styles = StyleSheet.create({
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
   logoWrap: { width: 190, height: 190, alignItems: "center", justifyContent: "center" },
-  ringOuter: { position: "absolute", width: 190, height: 190, borderRadius: 95, backgroundColor: "rgba(19,236,91,0.10)" },
-  ringMid: { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: "rgba(19,236,91,0.18)" },
+  ringOuter: { position: "absolute", width: 190, height: 190, borderRadius: 95, backgroundColor: "rgba(74,144,217,0.10)" },
+  ringMid: { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: "rgba(74,144,217,0.18)" },
   logoCore: {
     width: 104,
     height: 104,
     borderRadius: 52,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.25)",
+    borderColor: "rgba(74,144,217,0.25)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: colors.primary,
@@ -141,47 +215,36 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 5,
   },
-  logoImg: { width: 56, height: 56 },
 
-  promptRow: { marginTop: 18, flexDirection: "row", alignItems: "center", gap: 10 },
-  bars: { flexDirection: "row", gap: 3 },
-  bar: { width: 3, height: 14, borderRadius: 2, backgroundColor: colors.ink, opacity: 0.6 },
-  promptText: { fontSize: 14, fontWeight: "900", color: colors.ink },
+  promptText: { marginTop: 18, fontSize: 15, fontWeight: "900", color: colors.ink, textAlign: "center" },
+  helper: { marginTop: 10, fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center", lineHeight: 18, paddingHorizontal: 20 },
 
-  helper: { marginTop: 10, fontSize: 12, fontWeight: "700", color: colors.muted, textAlign: "center", lineHeight: 17 },
+  responseCard: {
+    marginTop: 14,
+    padding: 14,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    maxWidth: "100%",
+  },
+  responseText: { fontSize: 14, fontWeight: "600", color: colors.ink, lineHeight: 20 },
 
-  speakBtn: {
+  chatBtn: {
     marginBottom: 16,
     alignSelf: "center",
     backgroundColor: colors.primary,
-    borderRadius: 18,
+    borderRadius: 22,
     paddingVertical: 14,
-    paddingHorizontal: 18,
+    paddingHorizontal: 24,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.35)",
-    shadowColor: colors.primary,
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
+    gap: 8,
     elevation: 4,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
   },
-  speakText: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: colors.ink },
-
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.08)", alignItems: "center", justifyContent: "center", padding: 18 },
-  listenCard: { width: "100%", backgroundColor: colors.bg, borderRadius: 24, borderWidth: 1, borderColor: colors.border, padding: 18, alignItems: "center" },
-  listenRings: { width: 190, height: 190, alignItems: "center", justifyContent: "center", marginTop: 6 },
-  listenRingOuter: { position: "absolute", width: 190, height: 190, borderRadius: 95, backgroundColor: "rgba(19,236,91,0.10)" },
-  listenRingMid: { position: "absolute", width: 135, height: 135, borderRadius: 67.5, backgroundColor: "rgba(19,236,91,0.18)" },
-  listenCore: { width: 96, height: 96, borderRadius: 48, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", elevation: 5 },
-  listenTitle: { marginTop: 10, fontSize: 22, fontWeight: "900", color: colors.ink },
-  listenSub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: colors.muted },
-
-  fakeBtn: { marginTop: 14, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, backgroundColor: "rgba(139,94,60,0.10)", borderWidth: 1, borderColor: "rgba(139,94,60,0.22)" },
-  fakeBtnText: { fontSize: 12, fontWeight: "900", color: colors.earth },
-
-  cancelBtn: { marginTop: 12, width: "100%", backgroundColor: colors.surface, borderRadius: 14, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border },
-  cancelText: { fontSize: 13, fontWeight: "900", color: colors.ink },
+  chatBtnText: { fontSize: 13, fontWeight: "900", color: "#FFF", letterSpacing: 0.5 },
 });

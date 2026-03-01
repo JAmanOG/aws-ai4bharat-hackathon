@@ -86,8 +86,8 @@ export default function HomeScreen() {
         <Ionicons name={synced ? "wifi" : "cloud-offline-outline"} size={14} color={synced ? colors.primary : colors.muted} />
         <Text style={styles.statusLabel}>{synced ? "Online" : "Offline"}</Text>
         <View style={styles.statusDivider} />
-        <Ionicons name="sync-outline" size={13} color={colors.muted} />
-        <Text style={styles.statusLabel}>Offline Mode - Sync Pending</Text>
+        <Ionicons name="sync-outline" size={13} color={synced ? colors.primary : colors.muted} />
+        <Text style={styles.statusLabel}>{synced ? "All synced" : "Sync pending"}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -137,11 +137,11 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* ── Bottom user avatar badge (AJ) ── */}
+      {/* ── Bottom user avatar badge ── */}
       <View style={styles.bottomRow}>
         <Pressable style={styles.avatarBadge} onPress={() => nav.navigate("Profile")}>
           <Ionicons name="person" size={14} color={colors.muted} />
-          <Text style={styles.avatarText}>AJ</Text>
+          <Text style={styles.avatarText}>Profile</Text>
         </Pressable>
       </View>
     </SafeAreaView>

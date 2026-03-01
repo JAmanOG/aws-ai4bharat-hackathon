@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, Switch, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, Switch, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import { useMemoryFacts, useHealthCheck } from "../hooks/useData";
 
 export default function ProfileScreen() {
   const [lowData, setLowData] = useState(true);
@@ -13,6 +14,27 @@ export default function ProfileScreen() {
   const [shareFarming, setShareFarming] = useState(true);
   const [shareHealth, setShareHealth] = useState(false);
   const [shareLearning, setShareLearning] = useState(true);
+
+  const memoryFacts = useMemoryFacts();
+  const health = useHealthCheck();
+  const synced = !health.error;
+
+  /* Derive profile info from memory facts if available */
+  const facts = (memoryFacts.data as any)?.facts ?? [];
+  const getName = () => {
+    const f = facts.find((f: any) => f.factKey === "user_name");
+    return f?.factValue ?? "User";
+  };
+  const getLocation = () => {
+    const state = facts.find((f: any) => f.factKey === "location_state")?.factValue;
+    const lang = facts.find((f: any) => f.factKey === "preferred_language")?.factValue;
+    const parts = [lang, state].filter(Boolean);
+    return parts.length ? parts.join(" • ") : "Set up your profile via voice";
+  };
+  const getInitial = () => {
+    const name = getName();
+    return name[0]?.toUpperCase() ?? "U";
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -26,21 +48,25 @@ export default function ProfileScreen() {
           <Text style={styles.title}>Profile</Text>
 
           <View style={styles.syncPill}>
-            <View style={styles.syncDot} />
-            <Text style={styles.syncText}>SYNCED</Text>
+            <View style={[styles.syncDot, !synced && { backgroundColor: colors.muted }]} />
+            <Text style={styles.syncText}>{synced ? "SYNCED" : "OFFLINE"}</Text>
           </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Profile card */}
           <View style={styles.profileCard}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>R</Text>
-            </View>
+            {memoryFacts.loading ? (
+              <ActivityIndicator color={colors.primary} style={{ flex: 1, paddingVertical: 10 }} />
+            ) : (
+              <>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{getInitial()}</Text>
+                </View>
 
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>Rural User</Text>
-              <Text style={styles.sub}>Hindi • Maharashtra</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{getName()}</Text>
+                  <Text style={styles.sub}>{getLocation()}</Text>
 
               <View style={styles.badgesRow}>
                 <View style={styles.badge}>
@@ -57,6 +83,8 @@ export default function ProfileScreen() {
             <Pressable style={styles.editBtn}>
               <Text style={styles.editText}>EDIT</Text>
             </Pressable>
+              </>
+            )}
           </View>
 
           {/* Preferences */}

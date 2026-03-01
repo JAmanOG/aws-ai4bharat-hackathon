@@ -10,6 +10,7 @@ import {
   economicsApi,
   knowledgeApi,
   precisionApi,
+  voiceApi,
   healthCheck,
   type PricesResult,
   type PriceAlert,
@@ -112,6 +113,37 @@ export function useWeatherAdvisory(lat: number, lon: number, crop?: string) {
 export function useHealthCheck() {
   return useApi(
     () => healthCheck(),
+    [],
+  );
+}
+
+/* ─── Voice ─── */
+
+export function useVoiceLanguages() {
+  return useApi(
+    () => voiceApi.getLanguages(),
+    [],
+  );
+}
+
+export function useVoiceSessions(limit = 10) {
+  return useApi(
+    () => voiceApi.getSessions(limit),
+    [limit],
+  );
+}
+
+export function useSessionHistory(sessionId: string) {
+  return useApi(
+    () => voiceApi.getSessionHistory(sessionId),
+    [sessionId],
+    !sessionId,
+  );
+}
+
+export function useMemoryFacts() {
+  return useApi(
+    () => voiceApi.getMemoryFacts(),
     [],
   );
 }

@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,7 +21,14 @@ import { useNudges } from "../hooks/useData";
 export default function SavingsNudgeScreen() {
   const nav = useNavigation<any>();
   const nudges = useNudges(5);
-  const nudgeData = (nudges.data as any)?.nudges?.[0];
+  const nudgeList = (nudges.data as any)?.nudges ?? [];
+  const nudgeData = nudgeList[0];
+
+  const expectedHarvest = nudgeData?.expected_harvest ?? nudgeData?.harvest_value;
+  const currentSavings = nudgeData?.current_savings ?? nudgeData?.savings_value;
+  const nudgeMessage = nudgeData?.message ?? nudgeData?.nudge_text;
+  const hindiText = nudgeData?.hindi_text;
+  const savingsRatio = expectedHarvest && currentSavings ? Math.round((currentSavings / expectedHarvest) * 100) : 0;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -41,35 +49,52 @@ export default function SavingsNudgeScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>AI Savings Nudge</Text>
 
-        {/* Stats row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Expected</Text>
-            <Text style={styles.statSub}>Harvest</Text>
+        {nudges.loading ? (
+          <View style={{ alignItems: "center", paddingVertical: 40 }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: 10, fontSize: 12, fontWeight: "700", color: colors.muted }}>Loading nudge data…</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Current</Text>
-            <Text style={styles.statSub}>Savings</Text>
+        ) : !nudgeData ? (
+          <View style={{ alignItems: "center", paddingVertical: 40 }}>
+            <Ionicons name="analytics-outline" size={48} color={colors.muted} />
+            <Text style={{ marginTop: 10, fontSize: 14, fontWeight: "800", color: colors.ink }}>No nudges yet</Text>
+            <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center" }}>
+              Your AI savings recommendations will appear here{"\n"}once enough data is collected.
+            </Text>
           </View>
-        </View>
-
-        {/* Donut placeholder */}
-        <View style={styles.donutWrap}>
-          <View style={styles.donutOuter}>
-            <View style={styles.donutInner}>
-              <Ionicons name="analytics-outline" size={28} color={colors.primary} />
-              <Text style={styles.donutText}>Nudge</Text>
+        ) : (
+          <>
+            {/* Stats row */}
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Expected</Text>
+                <Text style={styles.statSub}>{expectedHarvest ? `₹${expectedHarvest.toLocaleString()}` : "Harvest"}</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Current</Text>
+                <Text style={styles.statSub}>{currentSavings ? `₹${currentSavings.toLocaleString()}` : "Savings"}</Text>
+              </View>
             </View>
-          </View>
-        </View>
 
-        {/* Hindi CTA message */}
-        <View style={styles.messageCard}>
-          <Text style={styles.hindiTitle}>समय पर बचत!</Text>
-          <Text style={styles.hindiBody}>
-            फसल के बाद 10% बीज कोष{"\n"}में जोड़ें?
-          </Text>
-        </View>
+            {/* Donut — real ratio */}
+            <View style={styles.donutWrap}>
+              <View style={styles.donutOuter}>
+                <View style={styles.donutInner}>
+                  <Text style={{ fontSize: 24, fontWeight: "900", color: colors.primary }}>{savingsRatio}%</Text>
+                  <Text style={styles.donutText}>Saved</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Nudge CTA message */}
+            <View style={styles.messageCard}>
+              <Text style={styles.hindiTitle}>{hindiText ?? (nudgeMessage ? "💡 Savings Tip" : "समय पर बचत!")}</Text>
+              <Text style={styles.hindiBody}>
+                {nudgeMessage ?? "Start saving a portion of your harvest earnings for the next season."}
+              </Text>
+            </View>
+          </>
+        )}
 
         {/* Save Now button */}
         <Pressable style={styles.saveBtn}>
