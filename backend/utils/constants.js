@@ -18,19 +18,20 @@ const SUPPORTED_LANGUAGES = {
 };
 
 // Amazon Polly voice IDs for Indian languages
+// Uses neural/generative voices where available for higher quality TTS
 const POLLY_VOICE_MAP = {
-    en: { voiceId: 'Aditi', engine: 'standard' },   // English-Indian accent
-    hi: { voiceId: 'Aditi', engine: 'standard' },   // Hindi
-    ta: { voiceId: 'Aditi', engine: 'standard' },   // Fallback – translate first then TTS
-    te: { voiceId: 'Aditi', engine: 'standard' },
-    bn: { voiceId: 'Aditi', engine: 'standard' },
-    mr: { voiceId: 'Aditi', engine: 'standard' },
-    gu: { voiceId: 'Aditi', engine: 'standard' },
-    pa: { voiceId: 'Aditi', engine: 'standard' },
-    kn: { voiceId: 'Aditi', engine: 'standard' },
-    ml: { voiceId: 'Aditi', engine: 'standard' },
-    or: { voiceId: 'Aditi', engine: 'standard' },
-    as: { voiceId: 'Aditi', engine: 'standard' },
+    en: { voiceId: 'Kajal', engine: 'neural', langCode: 'en-IN' },   // English-Indian neural
+    hi: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },   // Hindi neural
+    ta: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },   // Fallback – translate to Hindi then TTS
+    te: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    bn: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    mr: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    gu: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    pa: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    kn: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    ml: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    or: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
+    as: { voiceId: 'Kajal', engine: 'neural', langCode: 'hi-IN' },
 };
 
 // Amazon Translate language codes

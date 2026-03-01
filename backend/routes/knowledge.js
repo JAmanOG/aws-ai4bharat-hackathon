@@ -58,7 +58,25 @@ async function knowledgeRoutes(fastify) {
 
     fastify.get('/knowledge/courses/:id/content', async (req) => {
         const { lang = 'hi', audio = 'true' } = req.query;
-        return content.getModuleContent(req.params.id, lang, audio === 'true');
+        const course = await courses.getCourseById(req.params.id);
+        if (!course) throw { statusCode: 404, message: 'Course not found' };
+
+        const moduleContents = [];
+        for (const mod of course.modules) {
+            const moduleContent = await content.getModuleContent(
+                mod.id,
+                lang,
+                audio === 'true'
+            );
+            if (moduleContent) moduleContents.push(moduleContent);
+        }
+
+        return {
+            course_title: course.title,
+            course_id: req.params.id,
+            language: lang,
+            modules: moduleContents,
+        };
     });
 
     // ═══════════════════════════════════════
@@ -70,11 +88,11 @@ async function knowledgeRoutes(fastify) {
     });
 
     fastify.get('/knowledge/govt-courses/portals', async () => {
-        return govtIntegration.listPortals();
+        return { portals: govtIntegration.getAvailablePortals() };
     });
 
     fastify.post('/knowledge/govt-courses/sync', async (req) => {
-        return govtIntegration.syncCourses(req.body.portal_id);
+        return govtIntegration.syncGovtCourses(req.body.portal);
     });
 
     // ═══════════════════════════════════════
@@ -125,19 +143,23 @@ async function knowledgeRoutes(fastify) {
     // ═══════════════════════════════════════
 
     fastify.get('/knowledge/recommendations', async (req) => {
-        return recommendations.getRecommendations(req.userId);
+        const forceRefresh = req.query.refresh === 'true';
+        return recommendations.getLatestRecommendations(req.userId, forceRefresh);
     });
 
     fastify.get('/knowledge/recommendations/status', async (req) => {
-        return recommendations.getRecommendationStatus(req.userId);
+        const needsRefresh = await analytics.shouldRefreshRecommendations(req.userId);
+        return { needsRefresh };
     });
 
     fastify.get('/knowledge/learning-profile', async (req) => {
-        return learningProfile.getProfile(req.userId);
+        const profile = await learningProfile.getLearningProfile(req.userId);
+        if (!profile) throw { statusCode: 404, message: 'Learning profile not found. Create one first.' };
+        return profile;
     });
 
     fastify.post('/knowledge/learning-profile', async (req, reply) => {
-        const result = await learningProfile.createOrUpdateProfile(req.userId, req.body);
+        const result = await learningProfile.upsertLearningProfile(req.userId, req.body);
         return reply.status(201).send(result);
     });
 

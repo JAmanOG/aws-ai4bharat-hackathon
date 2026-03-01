@@ -1,0 +1,43 @@
+name: CI — Test & Lint
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'backend/**'
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npm test -- --ci --coverage --forceExit
+        env:
+          NODE_ENV: test
+          DIGILOCKER_USE_MOCK: 'true'
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: backend/coverage/
+          retention-days: 7

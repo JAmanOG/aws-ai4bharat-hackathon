@@ -1,5 +1,11 @@
-# Rural Ecosystem Platform – Local Development Stack
-# Usage: docker compose up -d
+# Rural Ecosystem Platform – Development Stack
+# ──────────────────────────────────────────────
+# Two profiles:
+#   docker compose up -d                    → uses AWS managed services (Aurora, DynamoDB)
+#   docker compose --profile local up -d    → uses local Postgres + DynamoDB-local
+#
+# Start Expo dev server separately:
+#   cd RuralAi && npx expo start
 
 services:
   app:
@@ -14,25 +20,31 @@ services:
       LOG_LEVEL: debug
       CORS_ORIGIN: "*"
 
-      # PostgreSQL (local)
-      PG_HOST: postgres
-      PG_PORT: 5432
-      PG_DATABASE: rural_platform
-      PG_USER: admin
-      PG_PASSWORD: localdev123
-      PG_SSL: "false"
+      # ── Database ──
+      # Default: Aurora Serverless v2 (set via .env or CI).
+      # Override PG_HOST / PG_PASSWORD etc. in .env for your account.
+      PG_HOST: ${PG_HOST:-postgres}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_DATABASE: ${PG_DATABASE:-rural_platform}
+      PG_USER: ${PG_USER:-admin}
+      PG_PASSWORD: ${PG_PASSWORD:-localdev123}
+      PG_SSL: ${PG_SSL:-false}
 
-      # DynamoDB Local
-      AWS_REGION: ap-south-1
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
-      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      # ── DynamoDB ──
+      # When DYNAMODB_ENDPOINT is empty the SDK auto-targets the real service.
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
+      DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT:-}
 
-      # AI (uses mock in dev)
+      # ── AI / Bedrock ──
       BEDROCK_MODEL_ID: anthropic.claude-3-haiku-20240307-v1:0
       DIGILOCKER_USE_MOCK: "true"
 
-      # Table names
+      # ── SNS / SES ──
+      PRICE_ALERT_SNS_TOPIC: ${PRICE_ALERT_SNS_TOPIC:-arn:aws:sns:ap-south-1:000000000000:PriceAlerts-dev}
+
+      # ── DynamoDB table names ──
       FARMER_PROFILES_TABLE: FarmerProfiles-dev
       PRICE_ALERTS_TABLE: PriceAlerts-dev
       PRICE_WATCH_TABLE: PriceWatch-dev
@@ -40,11 +52,6 @@ services:
       PEER_GROUPS_TABLE: PeerGroups-dev
       LEARNING_RECOMMENDATIONS_TABLE: LearningRecommendations-dev
       CONTENT_INTERACTIONS_TABLE: ContentInteractions-dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-      dynamodb-local:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
@@ -52,8 +59,10 @@ services:
       timeout: 5s
       retries: 3
 
+  # ── Local-only services (activate with --profile local) ──
   postgres:
     image: postgres:15-alpine
+    profiles: ["local"]
     ports:
       - "5432:5432"
     environment:
@@ -71,6 +80,7 @@ services:
 
   dynamodb-local:
     image: amazon/dynamodb-local:latest
+    profiles: ["local"]
     ports:
       - "8000:8000"
     command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"

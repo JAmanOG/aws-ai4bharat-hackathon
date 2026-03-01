@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Rural Ecosystem Platform – Open Data & Interoperability Service
+  Requirement 11: Open data standards, secure export, government integration ready.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        AWS_REGION_CUSTOM: !Ref AWS::Region
+        EXPORT_AUDIT_TABLE: !Ref ExportAuditTable
+        # Base URLs for feature1/feature2 APIs (set after deployment)
+        FEATURE1_API_BASE: !Sub 'https://${OpenDataApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+        FEATURE2_API_BASE: !Sub 'https://${OpenDataApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+        RATE_LIMIT_MAX: '5'
+        RATE_LIMIT_WINDOW_HOURS: '1'
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  Feature1ApiUrl:
+    Type: String
+    Default: ''
+    Description: 'Base URL for Feature 1 (Community Platform) API'
+  Feature2ApiUrl:
+    Type: String
+    Default: ''
+    Description: 'Base URL for Feature 2 (Knowledge Platform) API'
+
+Resources:
+  # ═══════════════════════════════════════
+  #  API Gateway (REST)
+  # ═══════════════════════════════════════
+  OpenDataApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'rural-open-data-api-${Stage}'
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-User-Id'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+
+  # ═══════════════════════════════════════
+  #  Lambda Function — Export Handler
+  # ═══════════════════════════════════════
+  ExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'open-data-export-${Stage}'
+      Handler: backend/lambdas/open-data/index.handler
+      Description: 'Open Data export — aggregates user data from all services'
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          FEATURE1_API_BASE: !If [HasFeature1Url, !Ref Feature1ApiUrl, !Sub 'https://PLACEHOLDER.execute-api.${AWS::Region}.amazonaws.com/${Stage}']
+          FEATURE2_API_BASE: !If [HasFeature2Url, !Ref Feature2ApiUrl, !Sub 'https://PLACEHOLDER.execute-api.${AWS::Region}.amazonaws.com/${Stage}']
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExportAuditTable
+      Events:
+        ExportAll:
+          Type: Api
+          Properties:
+            Path: /api/v1/export/{userId}
+            Method: GET
+            RestApiId: !Ref OpenDataApi
+        AuditList:
+          Type: Api
+          Properties:
+            Path: /api/v1/export/audit
+            Method: GET
+            RestApiId: !Ref OpenDataApi
+
+  # ═══════════════════════════════════════
+  #  DynamoDB — Export Audit Log
+  # ═══════════════════════════════════════
+  ExportAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'ExportAudit-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: exportedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: exportedAt
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ═══════════════════════════════════════
+  #  Cognito User Pool
+  # ═══════════════════════════════════════
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'rural-open-data-users-${Stage}'
+      AutoVerifiedAttributes: [phone_number]
+      UsernameAttributes: [phone_number]
+      MfaConfiguration: 'OFF'
+      Schema:
+        - Name: phone_number
+          Required: true
+          Mutable: true
+        - Name: name
+          Required: false
+          Mutable: true
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'rural-open-data-app-${Stage}'
+      UserPoolId: !Ref CognitoUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+
+Conditions:
+  HasFeature1Url: !Not [!Equals [!Ref Feature1ApiUrl, '']]
+  HasFeature2Url: !Not [!Equals [!Ref Feature2ApiUrl, '']]
+
+Outputs:
+  ApiUrl:
+    Description: Open Data API URL
+    Value: !Sub 'https://${OpenDataApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+  ExportAuditTableName:
+    Description: DynamoDB table for export audit logs
+    Value: !Ref ExportAuditTable

@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Rural Ecosystem Platform – ECS Fargate Production Infrastructure
-  Replaces Lambda functions with a containerized Fastify Node.js server.
+  Rural Ecosystem Platform - ECS Fargate Production Stack
+  Cost-optimized for 100 USD/month AWS budget.
 
 Parameters:
   Stage:
@@ -10,82 +10,112 @@ Parameters:
     AllowedValues: [dev, staging, prod]
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Description: VPC for the ECS Cluster and ALB
-  PublicSubnetIds:
+  SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Display ALB in these subnets
-  PrivateSubnetIds:
-    Type: List<AWS::EC2::Subnet::Id>
-    Description: Run ECS tasks in these subnets
-  ImageUrl:
+    Description: Public subnets (ALB + tasks with public IP)
+  ImageUri:
     Type: String
-    Description: ECR Image URI for the Fastify app (e.g., account.dkr.ecr.region.amazonaws.com/rural-app:latest)
-    Default: 'nginx' # Placeholder until pipeline builds image
-  
-  # Environment Variables for the App
+    Default: 'nginx'
+
+  # ── Database ──
   DbHost:
     Type: String
+    Default: ''
   DbPort:
     Type: String
-    Default: "5432"
+    Default: '5432'
   DbName:
     Type: String
-    Default: "rural_platform"
+    Default: rural_platform
   DbUser:
     Type: String
-    Default: "admin"
+    Default: admin
   DbPassword:
     Type: String
     NoEcho: true
+    Default: ''
+
+  # ── AI ──
   BedrockModelId:
     Type: String
-    Default: "anthropic.claude-3-haiku-20240307-v1:0"
+    Default: 'anthropic.claude-3-haiku-20240307-v1:0'
+
+  # ── Cognito ──
+  CognitoUserPoolId:
+    Type: String
+  CognitoAppClientId:
+    Type: String
+
+  # ── S3 Buckets ──
+  ContentBucket:
+    Type: String
+  CommunityMediaBucket:
+    Type: String
+  HealthImagingBucket:
+    Type: String
+
+  # ── SNS Topics ──
+  PriceAlertSnsTopic:
+    Type: String
+  FinancialNotificationsTopic:
+    Type: String
+  LearningNotificationsTopic:
+    Type: String
+  CommunityNotificationsTopic:
+    Type: String
 
 Resources:
   # ═══════════════════════════════════════
-  #  ECS Cluster & Load Balancer
+  #  ECS Cluster
   # ═══════════════════════════════════════
-  AppCluster:
+  Cluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub 'rural-platform-cluster-${Stage}'
+      ClusterName: !Sub 'rural-${Stage}'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled
 
-  AlbSecurityGroup:
+  # ═══════════════════════════════════════
+  #  Networking — Security Groups
+  # ═══════════════════════════════════════
+  AlbSg:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP traffic to ALB
+      GroupDescription: ALB ingress - HTTP
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
 
-  EcsSecurityGroup:
+  TaskSg:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow traffic from ALB to ECS tasks
+      GroupDescription: ECS task - allow from ALB only
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 3000
           ToPort: 3000
-          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          SourceSecurityGroupId: !Ref AlbSg
 
-  AppLoadBalancer:
+  # ═══════════════════════════════════════
+  #  Application Load Balancer
+  # ═══════════════════════════════════════
+  Alb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Sub 'rural-alb-${Stage}'
-      Subnets: !Ref PublicSubnetIds
-      SecurityGroups:
-        - !Ref AlbSecurityGroup
       Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [!Ref AlbSg]
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
 
-  AlbTargetGroup:
+  TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: !Sub 'rural-tg-${Stage}'
@@ -97,146 +127,252 @@ Resources:
       HealthCheckIntervalSeconds: 30
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
 
-  AlbListener:
+  Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      LoadBalancerArn: !Ref AppLoadBalancer
+      LoadBalancerArn: !Ref Alb
       Port: 80
       Protocol: HTTP
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref AlbTargetGroup
+          TargetGroupArn: !Ref TargetGroup
 
   # ═══════════════════════════════════════
   #  IAM Roles
   # ═══════════════════════════════════════
-  TaskExecutionRole:
+  ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub 'rural-exec-${Stage}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: [ecs-tasks.amazonaws.com]
-            Action: ['sts:AssumeRole']
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub 'rural-task-${Stage}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: [ecs-tasks.amazonaws.com]
-            Action: ['sts:AssumeRole']
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
       Policies:
-        - PolicyName: AppServicesAccess
+        - PolicyName: AppAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Effect: Allow
+              - Sid: DynamoDB
+                Effect: Allow
                 Action:
-                  - dynamodb:*
-                  - s3:*
-                  - sns:Publish
-                  - polly:SynthesizeSpeech
-                  - translate:TranslateText
-                  - bedrock:InvokeModel
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*-${Stage}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*-${Stage}/index/*'
+              - Sid: S3
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:ListBucket, s3:DeleteObject]
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ContentBucket}'
+                  - !Sub 'arn:aws:s3:::${ContentBucket}/*'
+                  - !Sub 'arn:aws:s3:::${CommunityMediaBucket}'
+                  - !Sub 'arn:aws:s3:::${CommunityMediaBucket}/*'
+                  - !Sub 'arn:aws:s3:::${HealthImagingBucket}'
+                  - !Sub 'arn:aws:s3:::${HealthImagingBucket}/*'
+              - Sid: SNS
+                Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  - !Ref PriceAlertSnsTopic
+                  - !Ref FinancialNotificationsTopic
+                  - !Ref LearningNotificationsTopic
+                  - !Ref CommunityNotificationsTopic
+              - Sid: AI
+                Effect: Allow
+                Action: [polly:SynthesizeSpeech, translate:TranslateText, bedrock:InvokeModel]
                 Resource: '*'
+              - Sid: Cognito
+                Effect: Allow
+                Action: [cognito-idp:AdminGetUser, cognito-idp:AdminUpdateUserAttributes]
+                Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
 
   # ═══════════════════════════════════════
-  #  Task Definition & Service
+  #  CloudWatch Logs
   # ═══════════════════════════════════════
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/ecs/rural-platform-${Stage}'
-      RetentionInDays: 30
+      LogGroupName: !Sub '/ecs/rural-${Stage}'
+      RetentionInDays: 14
 
-  AppTaskDefinition:
+  # ═══════════════════════════════════════
+  #  Task Definition (all 18 DynamoDB tables + S3 + SNS + Cognito)
+  # ═══════════════════════════════════════
+  TaskDef:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub 'rural-platform-app-${Stage}'
-      Cpu: '512'
-      Memory: '1024'
+      Family: !Sub 'rural-app-${Stage}'
+      Cpu: '256'
+      Memory: '512'
       NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
       TaskRoleArn: !GetAtt TaskRole.Arn
       ContainerDefinitions:
         - Name: app
-          Image: !Ref ImageUrl
+          Image: !Ref ImageUri
+          Essential: true
           PortMappings:
             - ContainerPort: 3000
+              Protocol: tcp
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: ecs
+              awslogs-stream-prefix: app
+          HealthCheck:
+            Command: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
           Environment:
-            - Name: NODE_ENV
-              Value: production
-            - Name: PORT
-              Value: '3000'
-            - Name: PG_HOST
-              Value: !Ref DbHost
-            - Name: PG_PORT
-              Value: !Ref DbPort
-            - Name: PG_DATABASE
-              Value: !Ref DbName
-            - Name: PG_USER
-              Value: !Ref DbUser
-            - Name: PG_PASSWORD
-              Value: !Ref DbPassword
-            - Name: PG_SSL
-              Value: 'true'
-            - Name: BEDROCK_MODEL_ID
-              Value: !Ref BedrockModelId
-            # Reusing existing DynamoDB tables (assumes matching suffix like -prod)
-            - Name: USER_LEARNING_PROFILE_TABLE
-              Value: !Sub 'UserLearningProfile-${Stage}'
-            - Name: PEER_GROUPS_TABLE
-              Value: !Sub 'PeerGroups-${Stage}'
-            - Name: LEARNING_RECOMMENDATIONS_TABLE
-              Value: !Sub 'LearningRecommendations-${Stage}'
-            - Name: CONTENT_INTERACTIONS_TABLE
-              Value: !Sub 'ContentInteractions-${Stage}'
-            - Name: FARMER_PROFILES_TABLE
-              Value: !Sub 'FarmerProfiles-${Stage}'
-            - Name: PRICE_ALERTS_TABLE
-              Value: !Sub 'PriceAlerts-${Stage}'
-            - Name: PRICE_WATCH_TABLE
-              Value: !Sub 'PriceWatch-${Stage}'
+            # ── Core ──
+            - { Name: NODE_ENV, Value: production }
+            - { Name: PORT, Value: '3000' }
+            - { Name: AWS_REGION, Value: !Ref 'AWS::Region' }
+            - { Name: STAGE, Value: !Ref Stage }
 
-  AppService:
+            # ── Database ──
+            - { Name: PG_HOST, Value: !Ref DbHost }
+            - { Name: PG_PORT, Value: !Ref DbPort }
+            - { Name: PG_DATABASE, Value: !Ref DbName }
+            - { Name: PG_USER, Value: !Ref DbUser }
+            - { Name: PG_PASSWORD, Value: !Ref DbPassword }
+            - { Name: PG_SSL, Value: 'true' }
+
+            # ── AI ──
+            - { Name: BEDROCK_MODEL_ID, Value: !Ref BedrockModelId }
+            - { Name: DIGILOCKER_USE_MOCK, Value: 'true' }
+
+            # ── Cognito ──
+            - { Name: COGNITO_USER_POOL_ID, Value: !Ref CognitoUserPoolId }
+            - { Name: COGNITO_APP_CLIENT_ID, Value: !Ref CognitoAppClientId }
+
+            # ── S3 ──
+            - { Name: CONTENT_BUCKET, Value: !Ref ContentBucket }
+            - { Name: COMMUNITY_MEDIA_BUCKET, Value: !Ref CommunityMediaBucket }
+            - { Name: HEALTH_IMAGING_BUCKET, Value: !Ref HealthImagingBucket }
+
+            # ── SNS ──
+            - { Name: PRICE_ALERT_SNS_TOPIC, Value: !Ref PriceAlertSnsTopic }
+            - { Name: FINANCIAL_NOTIFICATIONS_TOPIC_ARN, Value: !Ref FinancialNotificationsTopic }
+            - { Name: LEARNING_NOTIFICATIONS_TOPIC_ARN, Value: !Ref LearningNotificationsTopic }
+            - { Name: COMMUNITY_NOTIFICATIONS_TOPIC_ARN, Value: !Ref CommunityNotificationsTopic }
+
+            # ── DynamoDB: Reqs 5-8 ──
+            - { Name: USER_LEARNING_PROFILE_TABLE, Value: !Sub 'UserLearningProfile-${Stage}' }
+            - { Name: PEER_GROUPS_TABLE, Value: !Sub 'PeerGroups-${Stage}' }
+            - { Name: LEARNING_RECOMMENDATIONS_TABLE, Value: !Sub 'LearningRecommendations-${Stage}' }
+            - { Name: CONTENT_INTERACTIONS_TABLE, Value: !Sub 'ContentInteractions-${Stage}' }
+            - { Name: FARMER_PROFILES_TABLE, Value: !Sub 'FarmerProfiles-${Stage}' }
+            - { Name: PRICE_ALERTS_TABLE, Value: !Sub 'PriceAlerts-${Stage}' }
+            - { Name: PRICE_WATCH_TABLE, Value: !Sub 'PriceWatch-${Stage}' }
+            - { Name: FARM_PRACTICE_LOGS_TABLE, Value: !Sub 'FarmPracticeLogs-${Stage}' }
+            - { Name: ECONOMIC_PROFILES_TABLE, Value: !Sub 'EconomicProfiles-${Stage}' }
+            - { Name: INSURANCE_CLAIMS_TABLE, Value: !Sub 'InsuranceClaims-${Stage}' }
+            - { Name: FINANCIAL_NUDGES_TABLE, Value: !Sub 'FinancialNudges-${Stage}' }
+
+            # ── DynamoDB: Req 9 (Health) ──
+            - { Name: HEALTH_ARTICLES_TABLE, Value: !Sub 'HealthArticles-${Stage}' }
+            - { Name: SYMPTOM_LOGS_TABLE, Value: !Sub 'SymptomLogs-${Stage}' }
+
+            # ── DynamoDB: Req 10 (Community) ──
+            - { Name: VOICE_ROOMS_TABLE, Value: !Sub 'VoiceRooms-${Stage}' }
+            - { Name: VOICE_ROOM_PARTICIPANTS_TABLE, Value: !Sub 'VoiceRoomParticipants-${Stage}' }
+            - { Name: CHAT_MESSAGES_TABLE, Value: !Sub 'ChatMessages-${Stage}' }
+            - { Name: WEBSOCKET_CONNECTIONS_TABLE, Value: !Sub 'WebSocketConnections-${Stage}' }
+
+            # ── DynamoDB: Req 11 (Open Data) ──
+            - { Name: EXPORT_AUDIT_TABLE, Value: !Sub 'ExportAudit-${Stage}' }
+
+  # ═══════════════════════════════════════
+  #  ECS Service
+  # ═══════════════════════════════════════
+  Service:
     Type: AWS::ECS::Service
+    DependsOn: Listener
     Properties:
-      ServiceName: !Sub 'rural-platform-service-${Stage}'
-      Cluster: !Ref AppCluster
-      TaskDefinition: !Ref AppTaskDefinition
-      DesiredCount: 2
+      ServiceName: !Sub 'rural-svc-${Stage}'
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDef
+      DesiredCount: 1
       LaunchType: FARGATE
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
-          Subnets: !Ref PrivateSubnetIds
-          SecurityGroups:
-            - !Ref EcsSecurityGroup
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref TaskSg]
       LoadBalancers:
         - ContainerName: app
           ContainerPort: 3000
-          TargetGroupArn: !Ref AlbTargetGroup
-      DependentServices:
-        - !Ref AlbListener
+          TargetGroupArn: !Ref TargetGroup
+      HealthCheckGracePeriodSeconds: 60
+
+  # ═══════════════════════════════════════
+  #  Auto Scaling (1 → 3)
+  # ═══════════════════════════════════════
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 3
+      MinCapacity: 1
+      ResourceId: !Sub 'service/${Cluster}/${Service.Name}'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+
+  ScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: cpu-tracking
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 70
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
 
 Outputs:
-  ApiHostname:
-    Description: Production API Endpoint
-    Value: !GetAtt AppLoadBalancer.DNSName
+  AlbUrl:
+    Description: API base URL
+    Value: !Sub 'http://${Alb.DNSName}'
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !GetAtt Service.Name

@@ -108,7 +108,7 @@ async function getOrGenerateAudio(moduleId, text, language) {
                 OutputFormat: 'mp3',
                 VoiceId: voiceConfig.voiceId,
                 Engine: voiceConfig.engine,
-                LanguageCode: language === 'en' ? 'en-IN' : 'hi-IN',
+                LanguageCode: voiceConfig.langCode || (language === 'en' ? 'en-IN' : 'hi-IN'),
             }));
 
             const audioBuffer = await streamToBuffer(response.AudioStream);

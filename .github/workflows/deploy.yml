@@ -1,0 +1,156 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'infra/ecs.yaml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Target stage'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, staging, prod]
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPO: rural-platform-backend
+  STACK_NAME: rural-platform-ecs
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────
+  #  1. Run tests
+  # ─────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm test -- --ci --forceExit
+        env:
+          NODE_ENV: test
+          DIGILOCKER_USE_MOCK: 'true'
+
+  # ─────────────────────────────────────
+  #  2. Build & push Docker image to ECR
+  # ─────────────────────────────────────
+  build:
+    name: Build Image
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, push
+        id: meta
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          docker build -t "${IMAGE_URI}" -t "${REGISTRY}/${ECR_REPO}:latest" ./backend
+          docker push "${IMAGE_URI}"
+          docker push "${REGISTRY}/${ECR_REPO}:latest"
+          echo "image=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+  # ─────────────────────────────────────
+  #  3. Deploy CloudFormation + update ECS
+  # ─────────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set stage
+        id: stage
+        run: |
+          STAGE="${{ inputs.stage || 'dev' }}"
+          echo "stage=${STAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy CloudFormation stack
+        run: |
+          STAGE="${{ steps.stage.outputs.stage }}"
+          aws cloudformation deploy \
+            --template-file infra/ecs.yaml \
+            --stack-name "${STACK_NAME}-${STAGE}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Stage="${STAGE}" \
+              VpcId="${{ secrets.VPC_ID }}" \
+              SubnetIds="${{ secrets.SUBNET_IDS }}" \
+              ImageUri="${{ needs.build.outputs.image }}" \
+              CognitoUserPoolId="${{ secrets.COGNITO_USER_POOL_ID }}" \
+              CognitoAppClientId="${{ secrets.COGNITO_APP_CLIENT_ID }}" \
+              ContentBucket="${{ secrets.CONTENT_BUCKET }}" \
+              CommunityMediaBucket="${{ secrets.COMMUNITY_MEDIA_BUCKET }}" \
+              HealthImagingBucket="${{ secrets.HEALTH_IMAGING_BUCKET }}" \
+              PriceAlertSnsTopic="${{ secrets.PRICE_ALERT_SNS_TOPIC }}" \
+              FinancialNotificationsTopic="${{ secrets.FINANCIAL_NOTIFICATIONS_TOPIC }}" \
+              LearningNotificationsTopic="${{ secrets.LEARNING_NOTIFICATIONS_TOPIC }}" \
+              CommunityNotificationsTopic="${{ secrets.COMMUNITY_NOTIFICATIONS_TOPIC }}" \
+              DbHost="${{ secrets.DB_HOST }}" \
+              DbPassword="${{ secrets.DB_PASSWORD }}"
+
+      - name: Get outputs
+        id: cfn
+        run: |
+          STAGE="${{ steps.stage.outputs.stage }}"
+          ALB=$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}-${STAGE}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`AlbUrl`].OutputValue' \
+            --output text)
+          echo "alb_url=${ALB}" >> "$GITHUB_OUTPUT"
+          echo "## 🚀 Deployed to ${STAGE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**API URL:** ${ALB}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Health check
+        run: |
+          echo "Waiting 60s for service to stabilize..."
+          sleep 60
+          STATUS=$(curl -sf "${{ steps.cfn.outputs.alb_url }}/health" | jq -r '.status' || echo "failed")
+          if [ "$STATUS" != "ok" ]; then
+            echo "::warning::Health check returned: ${STATUS}"
+          else
+            echo "✅ Health check passed"
+          fi
