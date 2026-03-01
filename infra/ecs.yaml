@@ -39,6 +39,16 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: 'anthropic.claude-3-haiku-20240307-v1:0'
+  SarvamApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Sarvam AI API subscription key for STT/TTS/Translation
+  GeminiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Google Gemini API key (fallback LLM)
 
   # ── Cognito ──
   CognitoUserPoolId:
@@ -273,6 +283,8 @@ Resources:
 
             # ── AI ──
             - { Name: BEDROCK_MODEL_ID, Value: !Ref BedrockModelId }
+            - { Name: SARVAM_API_KEY, Value: !Ref SarvamApiKey }
+            - { Name: GEMINI_API_KEY, Value: !Ref GeminiApiKey }
             - { Name: DIGILOCKER_USE_MOCK, Value: 'true' }
 
             # ── Cognito ──
@@ -315,6 +327,10 @@ Resources:
 
             # ── DynamoDB: Req 11 (Open Data) ──
             - { Name: EXPORT_AUDIT_TABLE, Value: !Sub 'ExportAudit-${Stage}' }
+
+            # ── DynamoDB: Voice / AI Memory ──
+            - { Name: VOICE_CONVERSATIONS_TABLE, Value: !Sub 'VoiceConversations-${Stage}' }
+            - { Name: USER_MEMORY_FACTS_TABLE, Value: !Sub 'UserMemoryFacts-${Stage}' }
 
   # ═══════════════════════════════════════
   #  ECS Service

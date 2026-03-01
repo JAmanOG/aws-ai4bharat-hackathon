@@ -1,0 +1,55 @@
+{
+    "tables": [
+        {
+            "TableName": "VoiceConversations",
+            "KeySchema": [
+                { "AttributeName": "userId", "KeyType": "HASH" },
+                { "AttributeName": "turnId", "KeyType": "RANGE" }
+            ],
+            "AttributeDefinitions": [
+                { "AttributeName": "userId", "AttributeType": "S" },
+                { "AttributeName": "turnId", "AttributeType": "S" },
+                { "AttributeName": "sessionId", "AttributeType": "S" }
+            ],
+            "GlobalSecondaryIndexes": [
+                {
+                    "IndexName": "SessionIndex",
+                    "KeySchema": [
+                        { "AttributeName": "sessionId", "KeyType": "HASH" },
+                        { "AttributeName": "turnId", "KeyType": "RANGE" }
+                    ],
+                    "Projection": { "ProjectionType": "ALL" }
+                }
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+            "TimeToLiveSpecification": {
+                "AttributeName": "ttl",
+                "Enabled": true
+            },
+            "Tags": [
+                { "Key": "Project", "Value": "RuralPlatform" },
+                { "Key": "Module", "Value": "Voice" }
+            ]
+        },
+        {
+            "TableName": "UserMemoryFacts",
+            "KeySchema": [
+                { "AttributeName": "userId", "KeyType": "HASH" },
+                { "AttributeName": "factKey", "KeyType": "RANGE" }
+            ],
+            "AttributeDefinitions": [
+                { "AttributeName": "userId", "AttributeType": "S" },
+                { "AttributeName": "factKey", "AttributeType": "S" }
+            ],
+            "BillingMode": "PAY_PER_REQUEST",
+            "TimeToLiveSpecification": {
+                "AttributeName": "ttl",
+                "Enabled": true
+            },
+            "Tags": [
+                { "Key": "Project", "Value": "RuralPlatform" },
+                { "Key": "Module", "Value": "Voice" }
+            ]
+        }
+    ]
+}

@@ -10,6 +10,7 @@ const knowledgeRoutes = require('./routes/knowledge');
 const agricultureRoutes = require('./routes/agriculture');
 const precisionAgricultureRoutes = require('./routes/precision-agriculture');
 const economicServicesRoutes = require('./routes/economic-services');
+const voiceRoutes = require('./routes/voice');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -37,6 +38,14 @@ async function buildServer() {
 
     await app.register(require('@fastify/helmet'), {
         contentSecurityPolicy: false, // API server, no CSP needed
+    });
+
+    // ── Multipart (for audio file uploads) ──
+    await app.register(require('@fastify/multipart'), {
+        limits: {
+            fileSize: 10 * 1024 * 1024, // 10MB max audio file
+            files: 1,
+        },
     });
 
     // ── Rate Limiting ──
@@ -67,7 +76,7 @@ async function buildServer() {
         return {
             name: 'Rural Ecosystem Platform API',
             version: '2.0.0',
-            modules: ['knowledge', 'agriculture', 'precision-agriculture', 'economics'],
+            modules: ['knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice'],
             docs: '/health',
         };
     });
@@ -77,6 +86,7 @@ async function buildServer() {
     await app.register(agricultureRoutes);
     await app.register(precisionAgricultureRoutes);
     await app.register(economicServicesRoutes);
+    await app.register(voiceRoutes);
 
     return app;
 }

@@ -162,6 +162,33 @@ const ECONOMIC_SCHEME_TYPES = ['loan', 'insurance', 'subsidy'];
 const FINANCIAL_SEASONS = ['pre-sowing', 'sowing', 'mid-season', 'harvest', 'post-harvest'];
 const INSURANCE_CLAIM_STATUS = ['awaiting_consent', 'draft_ready', 'submitted', 'under_review', 'settled'];
 
+// ── Voice Interface Constants ──
+
+const VOICE_LANGUAGES = {
+    hi: { name: 'Hindi', bcp47: 'hi-IN', ttsVoice: 'Shubh' },
+    en: { name: 'English', bcp47: 'en-IN', ttsVoice: 'Amelia' },
+    bn: { name: 'Bengali', bcp47: 'bn-IN', ttsVoice: 'Priya' },
+    ta: { name: 'Tamil', bcp47: 'ta-IN', ttsVoice: 'Kavitha' },
+    te: { name: 'Telugu', bcp47: 'te-IN', ttsVoice: 'Shreya' },
+    mr: { name: 'Marathi', bcp47: 'mr-IN', ttsVoice: 'Ritu' },
+    gu: { name: 'Gujarati', bcp47: 'gu-IN', ttsVoice: 'Neha' },
+    kn: { name: 'Kannada', bcp47: 'kn-IN', ttsVoice: 'Kavya' },
+    ml: { name: 'Malayalam', bcp47: 'ml-IN', ttsVoice: 'Pooja' },
+    pa: { name: 'Punjabi', bcp47: 'pa-IN', ttsVoice: 'Simran' },
+    or: { name: 'Odia', bcp47: 'od-IN', ttsVoice: 'Roopa' },
+    as: { name: 'Assamese', bcp47: 'as-IN', ttsVoice: 'Ishita' },
+};
+
+const VOICE_INTENT_DOMAINS = [
+    'agriculture_advice',
+    'market_prices',
+    'weather',
+    'government_schemes',
+    'health',
+    'learning',
+    'general',
+];
+
 module.exports = {
     SUPPORTED_LANGUAGES,
     POLLY_VOICE_MAP,
@@ -188,4 +215,6 @@ module.exports = {
     ECONOMIC_SCHEME_TYPES,
     FINANCIAL_SEASONS,
     INSURANCE_CLAIM_STATUS,
+    VOICE_LANGUAGES,
+    VOICE_INTENT_DOMAINS,
 };

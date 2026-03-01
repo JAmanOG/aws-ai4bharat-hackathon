@@ -56,6 +56,9 @@ const TABLE_NAMES = {
     ECONOMIC_PROFILES: process.env.ECONOMIC_PROFILES_TABLE || 'EconomicProfiles',
     INSURANCE_CLAIMS: process.env.INSURANCE_CLAIMS_TABLE || 'InsuranceClaims',
     FINANCIAL_NUDGES: process.env.FINANCIAL_NUDGES_TABLE || 'FinancialNudges',
+    // Voice module
+    VOICE_CONVERSATIONS: process.env.VOICE_CONVERSATIONS_TABLE || 'VoiceConversations',
+    USER_MEMORY_FACTS: process.env.USER_MEMORY_FACTS_TABLE || 'UserMemoryFacts',
 };
 
 module.exports = { dynamoDB, query, TABLE_NAMES, getPostgresPool };

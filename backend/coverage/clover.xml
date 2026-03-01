@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1772376391496" clover="3.2.0">
-  <project timestamp="1772376391496" name="All files">
-    <metrics statements="1796" coveredstatements="457" conditionals="1722" coveredconditionals="339" methods="298" coveredmethods="85" elements="3816" coveredelements="881" complexity="0" loc="1796" ncloc="1796" packages="11" files="44" classes="44"/>
+<coverage generated="1772400161901" clover="3.2.0">
+  <project timestamp="1772400161902" name="All files">
+    <metrics statements="1908" coveredstatements="459" conditionals="1795" coveredconditionals="343" methods="312" coveredmethods="85" elements="4015" coveredelements="887" complexity="0" loc="1908" ncloc="1908" packages="11" files="45" classes="45"/>
     <package name="lambdas.economic-services">
       <metrics statements="160" coveredstatements="72" conditionals="256" coveredconditionals="72" methods="23" coveredmethods="14"/>
       <file name="eligibility.js" path="/home/aman-jaiswal/Desktop/aws-ai4bharat-hackathon/backend/lambdas/economic-services/eligibility.js">
@@ -1660,7 +1660,7 @@
       </file>
     </package>
     <package name="routes">
-      <metrics statements="229" coveredstatements="0" conditionals="61" coveredconditionals="0" methods="76" coveredmethods="0"/>
+      <metrics statements="339" coveredstatements="0" conditionals="130" coveredconditionals="0" methods="90" coveredmethods="0"/>
       <file name="agriculture.js" path="/home/aman-jaiswal/Desktop/aws-ai4bharat-hackathon/backend/routes/agriculture.js">
         <metrics statements="105" coveredstatements="0" conditionals="39" coveredconditionals="0" methods="33" coveredmethods="0"/>
         <line num="6" count="0" type="stmt"/>
@@ -1902,11 +1902,124 @@
         <line num="154" count="0" type="cond" truecount="0" falsecount="2"/>
         <line num="158" count="0" type="stmt"/>
       </file>
+      <file name="voice.js" path="/home/aman-jaiswal/Desktop/aws-ai4bharat-hackathon/backend/routes/voice.js">
+        <metrics statements="110" coveredstatements="0" conditionals="69" coveredconditionals="0" methods="14" coveredmethods="0"/>
+        <line num="15" count="0" type="stmt"/>
+        <line num="16" count="0" type="stmt"/>
+        <line num="17" count="0" type="stmt"/>
+        <line num="18" count="0" type="stmt"/>
+        <line num="25" count="0" type="stmt"/>
+        <line num="30" count="0" type="stmt"/>
+        <line num="32" count="0" type="cond" truecount="0" falsecount="4"/>
+        <line num="33" count="0" type="stmt"/>
+        <line num="34" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="35" count="0" type="stmt"/>
+        <line num="37" count="0" type="stmt"/>
+        <line num="39" count="0" type="stmt"/>
+        <line num="40" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="41" count="0" type="stmt"/>
+        <line num="45" count="0" type="stmt"/>
+        <line num="46" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="47" count="0" type="stmt"/>
+        <line num="48" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="49" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="50" count="0" type="stmt"/>
+        <line num="51" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="53" count="0" type="stmt"/>
+        <line num="57" count="0" type="cond" truecount="0" falsecount="4"/>
+        <line num="58" count="0" type="stmt"/>
+        <line num="61" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="63" count="0" type="stmt"/>
+        <line num="68" count="0" type="stmt"/>
+        <line num="79" count="0" type="stmt"/>
+        <line num="93" count="0" type="cond" truecount="0" falsecount="1"/>
+        <line num="95" count="0" type="stmt"/>
+        <line num="101" count="0" type="stmt"/>
+        <line num="110" count="0" type="stmt"/>
+        <line num="123" count="0" type="cond" truecount="0" falsecount="1"/>
+        <line num="125" count="0" type="stmt"/>
+        <line num="127" count="0" type="stmt"/>
+        <line num="137" count="0" type="stmt"/>
+        <line num="151" count="0" type="stmt"/>
+        <line num="152" count="0" type="stmt"/>
+        <line num="158" count="0" type="stmt"/>
+        <line num="161" count="0" type="stmt"/>
+        <line num="166" count="0" type="stmt"/>
+        <line num="169" count="0" type="stmt"/>
+        <line num="174" count="0" type="stmt"/>
+        <line num="175" count="0" type="stmt"/>
+        <line num="178" count="0" type="stmt"/>
+        <line num="184" count="0" type="stmt"/>
+        <line num="185" count="0" type="cond" truecount="0" falsecount="4"/>
+        <line num="186" count="0" type="stmt"/>
+        <line num="187" count="0" type="stmt"/>
+        <line num="190" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="192" count="0" type="stmt"/>
+        <line num="197" count="0" type="stmt"/>
+        <line num="198" count="0" type="stmt"/>
+        <line num="201" count="0" type="stmt"/>
+        <line num="215" count="0" type="stmt"/>
+        <line num="218" count="0" type="stmt"/>
+        <line num="219" count="0" type="stmt"/>
+        <line num="223" count="0" type="stmt"/>
+        <line num="224" count="0" type="stmt"/>
+        <line num="226" count="0" type="cond" truecount="0" falsecount="4"/>
+        <line num="227" count="0" type="stmt"/>
+        <line num="228" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="229" count="0" type="stmt"/>
+        <line num="231" count="0" type="stmt"/>
+        <line num="232" count="0" type="stmt"/>
+        <line num="233" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="234" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="235" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="236" count="0" type="stmt"/>
+        <line num="237" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="238" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="240" count="0" type="stmt"/>
+        <line num="244" count="0" type="stmt"/>
+        <line num="248" count="0" type="stmt"/>
+        <line num="249" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="251" count="0" type="cond" truecount="0" falsecount="4"/>
+        <line num="252" count="0" type="stmt"/>
+        <line num="263" count="0" type="stmt"/>
+        <line num="268" count="0" type="stmt"/>
+        <line num="269" count="0" type="stmt"/>
+        <line num="274" count="0" type="stmt"/>
+        <line num="275" count="0" type="stmt"/>
+        <line num="278" count="0" type="stmt"/>
+        <line num="284" count="0" type="stmt"/>
+        <line num="285" count="0" type="stmt"/>
+        <line num="286" count="0" type="stmt"/>
+        <line num="289" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="291" count="0" type="stmt"/>
+        <line num="295" count="0" type="stmt"/>
+        <line num="296" count="0" type="stmt"/>
+        <line num="299" count="0" type="stmt"/>
+        <line num="313" count="0" type="stmt"/>
+        <line num="316" count="0" type="stmt"/>
+        <line num="324" count="0" type="stmt"/>
+        <line num="335" count="0" type="stmt"/>
+        <line num="336" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="337" count="0" type="stmt"/>
+        <line num="338" count="0" type="stmt"/>
+        <line num="344" count="0" type="stmt"/>
+        <line num="345" count="0" type="stmt"/>
+        <line num="346" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="347" count="0" type="stmt"/>
+        <line num="348" count="0" type="stmt"/>
+        <line num="354" count="0" type="stmt"/>
+        <line num="355" count="0" type="stmt"/>
+        <line num="356" count="0" type="stmt"/>
+        <line num="362" count="0" type="stmt"/>
+        <line num="363" count="0" type="stmt"/>
+        <line num="364" count="0" type="stmt"/>
+        <line num="368" count="0" type="stmt"/>
+      </file>
     </package>
     <package name="utils">
-      <metrics statements="48" coveredstatements="42" conditionals="42" coveredconditionals="34" methods="7" coveredmethods="5"/>
+      <metrics statements="50" coveredstatements="44" conditionals="46" coveredconditionals="38" methods="7" coveredmethods="5"/>
       <file name="constants.js" path="/home/aman-jaiswal/Desktop/aws-ai4bharat-hackathon/backend/utils/constants.js">
-        <metrics statements="25" coveredstatements="25" conditionals="2" coveredconditionals="2" methods="0" coveredmethods="0"/>
+        <metrics statements="27" coveredstatements="27" conditionals="2" coveredconditionals="2" methods="0" coveredmethods="0"/>
         <line num="5" count="3" type="stmt"/>
         <line num="22" count="3" type="stmt"/>
         <line num="38" count="3" type="stmt"/>
@@ -1931,24 +2044,26 @@
         <line num="161" count="3" type="stmt"/>
         <line num="162" count="3" type="stmt"/>
         <line num="163" count="3" type="stmt"/>
-        <line num="165" count="3" type="stmt"/>
+        <line num="167" count="3" type="stmt"/>
+        <line num="182" count="3" type="stmt"/>
+        <line num="192" count="3" type="stmt"/>
       </file>
       <file name="db.js" path="/home/aman-jaiswal/Desktop/aws-ai4bharat-hackathon/backend/utils/db.js">
-        <metrics statements="14" coveredstatements="8" conditionals="32" coveredconditionals="24" methods="2" coveredmethods="0"/>
-        <line num="5" count="6" type="stmt"/>
-        <line num="6" count="6" type="stmt"/>
-        <line num="7" count="6" type="stmt"/>
-        <line num="10" count="6" type="stmt"/>
-        <line num="14" count="6" type="stmt"/>
-        <line num="19" count="6" type="stmt"/>
+        <metrics statements="14" coveredstatements="8" conditionals="36" coveredconditionals="28" methods="2" coveredmethods="0"/>
+        <line num="5" count="7" type="stmt"/>
+        <line num="6" count="7" type="stmt"/>
+        <line num="7" count="7" type="stmt"/>
+        <line num="10" count="7" type="stmt"/>
+        <line num="14" count="7" type="stmt"/>
+        <line num="19" count="7" type="stmt"/>
         <line num="22" count="0" type="cond" truecount="0" falsecount="2"/>
         <line num="23" count="0" type="stmt"/>
         <line num="35" count="0" type="stmt"/>
         <line num="39" count="0" type="stmt"/>
         <line num="40" count="0" type="stmt"/>
         <line num="41" count="0" type="stmt"/>
-        <line num="45" count="6" type="stmt"/>
-        <line num="61" count="6" type="stmt"/>
+        <line num="45" count="7" type="stmt"/>
+        <line num="64" count="7" type="stmt"/>
       </file>
       <file name="response.js" path="/home/aman-jaiswal/Desktop/aws-ai4bharat-hackathon/backend/utils/response.js">
         <metrics statements="9" coveredstatements="9" conditionals="8" coveredconditionals="8" methods="5" coveredmethods="5"/>
