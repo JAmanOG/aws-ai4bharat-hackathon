@@ -6,21 +6,14 @@ import ActionScreen from "../screens/ActionScreen";
 import MarketPricesScreen from "../screens/MarketPricesScreen";
 import SchemesListScreen from "../screens/SchemesListScreen";
 import SchemeDetailScreen from "../screens/SchemeDetailScreen";
-<<<<<<< HEAD
 import SymptomCheckerScreen from "../screens/SymptomCheckerScreen";
-=======
-
->>>>>>> 492a6d0b8c297864aefb0807859b20bdee4b0ca0
 export type HomeStackParamList = {
   HomeMain: undefined;
   Module: { title: string };
   MarketPrices: { moduleTitle?: string } | undefined;
   SchemesList: { moduleTitle?: string } | undefined;
   SchemeDetail: { schemeId: string };
-<<<<<<< HEAD
   SymptomChecker : undefined;
-=======
->>>>>>> 492a6d0b8c297864aefb0807859b20bdee4b0ca0
   Action: { moduleTitle: string; actionTitle: string };
 };
 
@@ -34,10 +27,7 @@ export default function HomeStack() {
       <Stack.Screen name="MarketPrices" component={MarketPricesScreen} />
       <Stack.Screen name="SchemesList" component={SchemesListScreen} />
       <Stack.Screen name="SchemeDetail" component={SchemeDetailScreen} />
-<<<<<<< HEAD
       <Stack.Screen name="SymptomChecker" component={SymptomCheckerScreen} />
-=======
->>>>>>> 492a6d0b8c297864aefb0807859b20bdee4b0ca0
       <Stack.Screen name="Action" component={ActionScreen} />
     </Stack.Navigator>
   );

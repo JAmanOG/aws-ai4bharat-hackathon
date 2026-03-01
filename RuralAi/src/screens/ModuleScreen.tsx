@@ -125,13 +125,10 @@ export default function ModuleScreen() {
                   nav.navigate("SchemesList", { moduleTitle: titleRaw });
                   return;
                 }
-<<<<<<< HEAD
                 if (a.title === "Symptom Checker") {
                   nav.navigate("SymptomChecker");
                   return;
                 }
-=======
->>>>>>> 492a6d0b8c297864aefb0807859b20bdee4b0ca0
                 nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title });
               }}
             >
