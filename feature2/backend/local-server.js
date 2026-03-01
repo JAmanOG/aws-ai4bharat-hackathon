@@ -52,6 +52,6 @@ app.use('/government', lambdaRoute(governmentHandler));
 app.use('/voice-rooms', lambdaRoute(voiceRoomHandler));
 
 app.listen(PORT, () => {
-  console.log(`✅ Feature 1 (Community) running at http://localhost:${PORT}`);
+  console.log(`✅ Feature 2 (Community) running at http://localhost:${PORT}`);
   console.log(`   Routes: /posts, /bookmarks, /government/*, /voice-rooms/*`);
 });

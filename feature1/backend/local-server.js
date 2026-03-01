@@ -44,6 +44,6 @@ function lambdaRoute(handler) {
 app.use('/api/v1/export', lambdaRoute(openDataHandler));
 
 app.listen(PORT, () => {
-  console.log(`✅ Feature 3 (Open Data) running at http://localhost:${PORT}`);
+  console.log(`✅ Feature 1 (Open Data) running at http://localhost:${PORT}`);
   console.log(`   Routes: /api/v1/export/*`);
 });

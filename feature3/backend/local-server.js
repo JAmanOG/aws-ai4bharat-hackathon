@@ -51,6 +51,6 @@ app.use('/health/eligibility', lambdaRoute(directoryHandler));
 app.use('/health/providers', lambdaRoute(directoryHandler));
 
 app.listen(PORT, () => {
-  console.log(`✅ Feature 4 (Health) running at http://localhost:${PORT}`);
+  console.log(`✅ Feature 3 (Health) running at http://localhost:${PORT}`);
   console.log(`   Routes: /health/*`);
 });
