@@ -125,6 +125,10 @@ export default function ModuleScreen() {
                   nav.navigate("SchemesList", { moduleTitle: titleRaw });
                   return;
                 }
+                if (a.title === "Symptom Checker") {
+                  nav.navigate("SymptomChecker");
+                  return;
+                }
                 nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title });
               }}
             >

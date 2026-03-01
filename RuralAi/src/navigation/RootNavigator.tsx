@@ -3,13 +3,13 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import SplashScreen from "../screens/SplashScreen";
-import HomeScreen from "../screens/HomeScreen";
 import AskScreen from "../screens/AskScreen";
-import CommunityScreen from "../screens/CommunityScreen";
-import SavedScreen from "../screens/SavedScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import CustomTabBar from "./CustomTabBar";
 import HomeStack from "./HomeStack";
+
+// Community still accessible from Ask top icon (stack screen)
+import CommunityScreen from "../screens/CommunityScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -17,14 +17,12 @@ const Stack = createNativeStackNavigator();
 function Tabs() {
   return (
     <Tab.Navigator
-      initialRouteName="Home"
+      initialRouteName="Ask"
       screenOptions={{ headerShown: false }}
       tabBar={(props) => <CustomTabBar {...props} />}
     >
-      <Tab.Screen name="Ask" component={AskScreen} />
-      <Tab.Screen name="Community" component={CommunityScreen} />
       <Tab.Screen name="Home" component={HomeStack} />
-      <Tab.Screen name="Saved" component={SavedScreen} />
+      <Tab.Screen name="Ask" component={AskScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -43,7 +41,10 @@ export default function RootNavigator() {
       {showSplash ? (
         <Stack.Screen name="Splash" component={SplashScreen} />
       ) : (
-        <Stack.Screen name="Main" component={Tabs} />
+        <>
+          <Stack.Screen name="Main" component={Tabs} />
+          <Stack.Screen name="Community" component={CommunityScreen} />
+        </>
       )}
     </Stack.Navigator>
   );

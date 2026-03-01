@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import { useNavigation } from "@react-navigation/native";
 
 type SavedItem = {
   id: string;
@@ -19,6 +20,8 @@ const DATA: SavedItem[] = [
 ];
 
 export default function SavedScreen() {
+  const nav = useNavigation<any>();
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
@@ -32,7 +35,7 @@ export default function SavedScreen() {
 
         {/* Offline downloads card */}
         <View style={styles.card}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
             <View style={styles.iconCircle}>
               <Ionicons name="cloud-download-outline" size={18} color={colors.primary} />
             </View>
@@ -41,6 +44,7 @@ export default function SavedScreen() {
               <Text style={styles.cardSub}>3 items available offline</Text>
             </View>
           </View>
+
           <Pressable style={styles.manageBtn}>
             <Text style={styles.manageText}>MANAGE</Text>
           </Pressable>
@@ -51,7 +55,12 @@ export default function SavedScreen() {
           data={DATA}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, gap: 10 }}
-          renderItem={({ item }) => <SavedRow item={item} />}
+          renderItem={({ item }) => (
+            <SavedRow
+              item={item}
+              onPress={() => nav.navigate("SavedDetail", { itemId: item.id })}
+            />
+          )}
           showsVerticalScrollIndicator={false}
         />
       </View>
@@ -59,18 +68,24 @@ export default function SavedScreen() {
   );
 }
 
-function SavedRow({ item }: { item: SavedItem }) {
+function SavedRow({ item, onPress }: { item: SavedItem; onPress: () => void }) {
   return (
-    <Pressable style={styles.row}>
+    <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
         <View style={styles.tagPill}>
           <Text style={styles.tagText}>{item.tag.toUpperCase()}</Text>
         </View>
+
         <View style={{ flex: 1 }}>
-          <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-          <Text style={styles.rowSub} numberOfLines={1}>{item.subtitle}</Text>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={styles.rowSub} numberOfLines={1}>
+            {item.subtitle}
+          </Text>
         </View>
       </View>
+
       <Ionicons name="chevron-forward" size={18} color={colors.muted} />
     </Pressable>
   );
@@ -97,15 +112,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   iconCircle: {
-    width: 38, height: 38, borderRadius: 19,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "rgba(19,236,91,0.12)",
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center",
+    justifyContent: "center",
   },
   cardTitle: { fontSize: 13, fontWeight: "900", color: colors.ink },
   cardSub: { marginTop: 2, fontSize: 11, fontWeight: "700", color: colors.muted },
 
   manageBtn: {
-    paddingHorizontal: 12, paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: "rgba(139,94,60,0.10)",
     borderWidth: 1,
@@ -122,8 +141,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 10,
   },
   rowLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+
   tagPill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -133,6 +154,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(139,94,60,0.22)",
   },
   tagText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.6, color: colors.earth },
+
   rowTitle: { fontSize: 13, fontWeight: "900", color: colors.ink },
   rowSub: { marginTop: 3, fontSize: 11, fontWeight: "700", color: colors.muted },
 });
