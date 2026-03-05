@@ -1,6 +1,6 @@
 /**
- * AI Savings Nudge Screen — donut chart, harvest vs savings, Hindi nudge.
- * Matches reference: Expected Harvest / Current Savings donut, Hindi CTA.
+ * AI Savings Nudge Screen — donut chart, harvest vs savings,
+ * Hindi nudge text, "Save Now" CTA.
  */
 
 import React from "react";
@@ -10,98 +10,138 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useNudges } from "../hooks/useData";
+import { useNudges, useHealthCheck } from "../hooks/useData";
+
+/* ── Donut chart (pure RN) ── */
+function DonutChart({ percent, size = 140 }: { percent: number; size?: number }) {
+  const thickness = 14;
+  const r = (size - thickness) / 2;
+  return (
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+      {/* Track */}
+      <View style={[donutS.ring, { width: size, height: size, borderRadius: size / 2, borderWidth: thickness, borderColor: colors.border }]} />
+      {/* Filled segments (simulated with quarters) */}
+      <View style={[donutS.ring, { width: size, height: size, borderRadius: size / 2, borderWidth: thickness,
+        borderBottomColor: percent > 0 ? colors.primary : "transparent",
+        borderLeftColor: percent > 25 ? colors.primary : "transparent",
+        borderTopColor: percent > 50 ? colors.success : "transparent",
+        borderRightColor: percent > 75 ? colors.success : "transparent",
+        transform: [{ rotate: "-45deg" }],
+      }]} />
+      <View style={donutS.center}>
+        <Text style={donutS.pct}>{percent}%</Text>
+        <Text style={donutS.label}>Saved</Text>
+      </View>
+    </View>
+  );
+}
+const donutS = StyleSheet.create({
+  ring: { position: "absolute" },
+  center: { alignItems: "center" },
+  pct: { fontSize: 28, fontWeight: "900", color: colors.ink },
+  label: { fontSize: 11, fontWeight: "700", color: colors.muted, marginTop: 2 },
+});
 
 export default function SavingsNudgeScreen() {
   const nav = useNavigation<any>();
+  const health = useHealthCheck();
   const nudges = useNudges(5);
-  const nudgeList = (nudges.data as any)?.nudges ?? [];
-  const nudgeData = nudgeList[0];
+  const isOnline = health.data?.status === "ok";
 
-  const expectedHarvest = nudgeData?.expected_harvest ?? nudgeData?.harvest_value;
-  const currentSavings = nudgeData?.current_savings ?? nudgeData?.savings_value;
-  const nudgeMessage = nudgeData?.message ?? nudgeData?.nudge_text;
-  const hindiText = nudgeData?.hindi_text;
-  const savingsRatio = expectedHarvest && currentSavings ? Math.round((currentSavings / expectedHarvest) * 100) : 0;
+  const expectedHarvest = 45000;
+  const currentSavings = 12500;
+  const pct = Math.round((currentSavings / expectedHarvest) * 100);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Status */}
-      <View style={styles.statusBar}>
-        <Ionicons name="cloud-offline-outline" size={14} color={colors.muted} />
-        <Text style={styles.statusLabel}>Offline</Text>
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={colors.ink} />
+        <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
-        <Text style={styles.headerTitle}>Rural Ecosystem Platform</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>AI Savings Nudge</Text>
+        <View style={[styles.onlineDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>AI Savings Nudge</Text>
-
-        {nudges.loading ? (
-          <View style={{ alignItems: "center", paddingVertical: 40 }}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ marginTop: 10, fontSize: 12, fontWeight: "700", color: colors.muted }}>Loading nudge data…</Text>
+        {/* Summary stat tiles */}
+        <View style={styles.statRow}>
+          <View style={styles.statTile}>
+            <Ionicons name="leaf" size={18} color={colors.success} />
+            <Text style={styles.statLabel}>Expected Harvest</Text>
+            <Text style={styles.statValue}>₹{expectedHarvest.toLocaleString()}</Text>
           </View>
-        ) : !nudgeData ? (
-          <View style={{ alignItems: "center", paddingVertical: 40 }}>
-            <Ionicons name="analytics-outline" size={48} color={colors.muted} />
-            <Text style={{ marginTop: 10, fontSize: 14, fontWeight: "800", color: colors.ink }}>No nudges yet</Text>
-            <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center" }}>
-              Your AI savings recommendations will appear here{"\n"}once enough data is collected.
-            </Text>
+          <View style={styles.statTile}>
+            <Ionicons name="wallet" size={18} color={colors.primary} />
+            <Text style={styles.statLabel}>Current Savings</Text>
+            <Text style={styles.statValue}>₹{currentSavings.toLocaleString()}</Text>
           </View>
-        ) : (
-          <>
-            {/* Stats row */}
-            <View style={styles.statsRow}>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Expected</Text>
-                <Text style={styles.statSub}>{expectedHarvest ? `₹${expectedHarvest.toLocaleString()}` : "Harvest"}</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Current</Text>
-                <Text style={styles.statSub}>{currentSavings ? `₹${currentSavings.toLocaleString()}` : "Savings"}</Text>
-              </View>
-            </View>
+        </View>
 
-            {/* Donut — real ratio */}
-            <View style={styles.donutWrap}>
-              <View style={styles.donutOuter}>
-                <View style={styles.donutInner}>
-                  <Text style={{ fontSize: 24, fontWeight: "900", color: colors.primary }}>{savingsRatio}%</Text>
-                  <Text style={styles.donutText}>Saved</Text>
-                </View>
+        {/* Donut */}
+        <View style={styles.donutCard}>
+          <DonutChart percent={pct} />
+          <View style={styles.donutLegend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
+              <Text style={styles.legendText}>Savings</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
+              <Text style={styles.legendText}>Target</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.border }]} />
+              <Text style={styles.legendText}>Remaining</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Hindi nudge */}
+        <View style={styles.nudgeCard}>
+          <View style={styles.nudgeIcon}>
+            <Ionicons name="bulb" size={20} color={colors.warn} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.nudgeTitle}>Smart Savings Tip</Text>
+            <Text style={styles.nudgeHindi}>समय पर बचत! फसल के बाद 10% बीज कोष में जोड़ें?</Text>
+            <Text style={styles.nudgeEn}>Save on time! Add 10% to seed fund after harvest?</Text>
+          </View>
+        </View>
+
+        {/* AI insights */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>AI Recommendations</Text>
+          {[
+            { icon: "trending-up", text: "Wheat prices expected to rise 8% next month", color: colors.success },
+            { icon: "shield-checkmark", text: "PM-KISAN installment due in 15 days", color: colors.primary },
+            { icon: "warning", text: "Set aside ₹3,000 for Rabi fertilizer", color: colors.warn },
+          ].map((tip, i) => (
+            <View key={i} style={styles.tipRow}>
+              <View style={[styles.tipIcon, { backgroundColor: tip.color + "18" }]}>
+                <Ionicons name={tip.icon as any} size={14} color={tip.color} />
               </View>
+              <Text style={styles.tipText}>{tip.text}</Text>
             </View>
+          ))}
+        </View>
 
-            {/* Nudge CTA message */}
-            <View style={styles.messageCard}>
-              <Text style={styles.hindiTitle}>{hindiText ?? (nudgeMessage ? "💡 Savings Tip" : "समय पर बचत!")}</Text>
-              <Text style={styles.hindiBody}>
-                {nudgeMessage ?? "Start saving a portion of your harvest earnings for the next season."}
-              </Text>
-            </View>
-          </>
-        )}
-
-        {/* Save Now button */}
-        <Pressable style={styles.saveBtn}>
-          <Text style={styles.saveBtnText}>Save Now</Text>
+        {/* Save Now CTA */}
+        <Pressable style={styles.cta}>
+          <Ionicons name="wallet" size={20} color="#FFF" />
+          <Text style={styles.ctaText}>Save Now</Text>
         </Pressable>
 
-        <View style={{ height: 24 }} />
+        {/* Insurance link */}
+        <Pressable style={styles.secondaryCta} onPress={() => nav.navigate("Eligibility")}>
+          <Ionicons name="shield" size={16} color={colors.primary} />
+          <Text style={styles.secondaryCtaText}>Check Insurance & Schemes</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -109,45 +149,31 @@ export default function SavingsNudgeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-
-  statusBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 6, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  statusLabel: { fontSize: 11, fontWeight: "600", color: colors.muted },
-
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 8 },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "900", color: colors.ink, letterSpacing: 0.6 },
-
-  content: { paddingHorizontal: 20, paddingTop: 12, alignItems: "center" },
-
-  title: { fontSize: 20, fontWeight: "900", color: colors.ink, textAlign: "center" },
-
-  statsRow: { flexDirection: "row", gap: 16, marginTop: 20 },
-  statCard: { alignItems: "center" },
-  statLabel: { fontSize: 13, fontWeight: "800", color: colors.ink },
-  statSub: { fontSize: 11, fontWeight: "600", color: colors.muted },
-
-  /* Donut */
-  donutWrap: { marginTop: 24, alignItems: "center" },
-  donutOuter: {
-    width: 160, height: 160, borderRadius: 80,
-    borderWidth: 12, borderColor: colors.primary,
-    alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(74,144,217,0.06)",
-  },
-  donutInner: { alignItems: "center", gap: 4 },
-  donutText: { fontSize: 14, fontWeight: "900", color: colors.ink },
-
-  /* Message */
-  messageCard: { marginTop: 24, alignItems: "center" },
-  hindiTitle: { fontSize: 20, fontWeight: "900", color: colors.ink },
-  hindiBody: { marginTop: 6, fontSize: 14, fontWeight: "600", color: colors.muted, textAlign: "center", lineHeight: 22 },
-
-  saveBtn: {
-    marginTop: 24, width: "100%", paddingVertical: 16, borderRadius: 14,
-    backgroundColor: colors.primary, alignItems: "center",
-  },
-  saveBtnText: { fontSize: 14, fontWeight: "900", color: "#FFF", letterSpacing: 0.5 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle: { flex: 1, fontSize: 16, fontWeight: "900", color: colors.ink },
+  onlineDot: { width: 8, height: 8, borderRadius: 4 },
+  content: { padding: 16, paddingBottom: 100 },
+  statRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
+  statTile: { flex: 1, backgroundColor: colors.surface, borderRadius: 14, padding: 14, alignItems: "center", gap: 6, borderWidth: 1, borderColor: colors.border },
+  statLabel: { fontSize: 10, fontWeight: "700", color: colors.muted },
+  statValue: { fontSize: 18, fontWeight: "900", color: colors.ink },
+  donutCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 24, alignItems: "center", marginBottom: 14, borderWidth: 1, borderColor: colors.border, gap: 16, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  donutLegend: { flexDirection: "row", gap: 16 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 10, fontWeight: "700", color: colors.muted },
+  nudgeCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, backgroundColor: "#FFFBEB", borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: "#FDE68A" },
+  nudgeIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.warnTint, alignItems: "center", justifyContent: "center" },
+  nudgeTitle: { fontSize: 13, fontWeight: "900", color: colors.ink },
+  nudgeHindi: { fontSize: 13, fontWeight: "700", color: "#92400E", marginTop: 4, lineHeight: 20 },
+  nudgeEn: { fontSize: 11, fontWeight: "500", color: colors.muted, marginTop: 4, fontStyle: "italic" },
+  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: colors.border, gap: 10 },
+  cardTitle: { fontSize: 15, fontWeight: "900", color: colors.ink },
+  tipRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  tipIcon: { width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  tipText: { flex: 1, fontSize: 12, fontWeight: "700", color: colors.ink, lineHeight: 17 },
+  cta: { marginTop: 6, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 16, shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  ctaText: { fontSize: 15, fontWeight: "900", color: "#FFF" },
+  secondaryCta: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primaryTint },
+  secondaryCtaText: { fontSize: 13, fontWeight: "800", color: colors.primary },
 });

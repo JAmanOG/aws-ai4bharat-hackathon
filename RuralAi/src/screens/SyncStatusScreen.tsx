@@ -1,9 +1,9 @@
 /**
- * Sync Status Screen — offline & low bandwidth status, per-module sync stats.
- * Matches reference: module list with cached/compressed sizes, Sync Now button.
+ * Sync Status Screen — offline/bandwidth status, category filters,
+ * per-domain sync items, cached KB size, sync badges.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -17,78 +17,94 @@ import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { useHealthCheck } from "../hooks/useData";
 
-const SYNC_MODULES = [
-  { name: "Agriculture", icon: "leaf-outline", cached: "14KB", compressed: "2G", color: colors.primary },
-  { name: "Health", icon: "medkit-outline", cached: "14KB", compressed: "2G", color: colors.success },
-  { name: "Learning", icon: "book-outline", cached: "14KB", compressed: "2G", color: colors.warn },
-  { name: "Infrastructure", icon: "business-outline", cached: "14KB", compressed: "2G", color: colors.muted },
-];
+const CATEGORIES = ["All", "Agriculture", "Economics", "Health", "Knowledge"];
 
-type Filter = "Agriculture" | "Economics" | "Health";
-const FILTERS: Filter[] = ["Agriculture", "Economics", "Health"];
+const SYNC_ITEMS = [
+  { id: "agri", domain: "Agriculture", icon: "leaf", items: "Market prices, crop data", kb: 14, synced: true, ago: "2 min" },
+  { id: "econ", domain: "Economics", icon: "business", items: "Savings, schemes", kb: 8, synced: true, ago: "5 min" },
+  { id: "health", domain: "Health", icon: "heart-circle", items: "Symptom data, providers", kb: 22, synced: false, ago: "Pending" },
+  { id: "knowledge", domain: "Knowledge", icon: "bulb", items: "Courses, credentials", kb: 18, synced: true, ago: "10 min" },
+  { id: "weather", domain: "Weather", icon: "cloud", items: "7-day forecast, alerts", kb: 6, synced: true, ago: "1 min" },
+];
 
 export default function SyncStatusScreen() {
   const nav = useNavigation<any>();
   const health = useHealthCheck();
-  const [activeFilter, setActiveFilter] = React.useState<Filter>("Agriculture");
+  const isOnline = health.data?.status === "ok";
+  const [filter, setFilter] = useState("All");
+
+  const filtered = filter === "All" ? SYNC_ITEMS : SYNC_ITEMS.filter((s) => s.domain === filter);
+  const totalKb = SYNC_ITEMS.reduce((s, i) => s + i.kb, 0);
+  const syncedCount = SYNC_ITEMS.filter((s) => s.synced).length;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Status */}
-      <View style={styles.statusBar}>
-        <Ionicons name="cloud-offline-outline" size={14} color={colors.muted} />
-        <Text style={styles.statusLabel}>Property 5</Text>
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={colors.ink} />
+        <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
-        <Text style={styles.headerTitle}>Rural Ecosystem Platform</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>Offline & Sync</Text>
+        <View style={[styles.onlineDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Offline and low bandwidth{"\n"}status screen</Text>
-
-        <Text style={styles.sectionTitle}>Sync statistics</Text>
-
-        {/* Filter pills */}
-        <View style={styles.filterRow}>
-          {FILTERS.map((f) => (
-            <Pressable
-              key={f}
-              style={[styles.filterPill, activeFilter === f && styles.filterActive]}
-              onPress={() => setActiveFilter(f)}
-            >
-              <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
-            </Pressable>
-          ))}
+        {/* Network status card */}
+        <View style={[styles.netCard, { backgroundColor: isOnline ? "#ECFDF5" : "#FEF2F2", borderColor: isOnline ? "#BBF7D0" : "#FECACA" }]}>
+          <Ionicons name={isOnline ? "wifi" : "cloud-offline"} size={22} color={isOnline ? colors.success : colors.danger} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.netTitle, { color: isOnline ? "#166534" : "#991B1B" }]}>
+              {isOnline ? "Connected — syncing data" : "Offline mode — using cached data"}
+            </Text>
+            <Text style={styles.netSub}>{totalKb}kB cached • {syncedCount}/{SYNC_ITEMS.length} synced • 2G compressed</Text>
+          </View>
         </View>
 
-        {/* Module list */}
-        {SYNC_MODULES.map((m) => (
-          <View key={m.name} style={styles.moduleRow}>
-            <View style={[styles.moduleIcon, { backgroundColor: `${m.color}15` }]}>
-              <Ionicons name={m.icon as any} size={18} color={m.color} />
+        {/* Category filter pills */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll} contentContainerStyle={styles.pillRow}>
+          {CATEGORIES.map((c) => (
+            <Pressable key={c} style={[styles.pill, filter === c && styles.pillActive]} onPress={() => setFilter(c)}>
+              <Text style={[styles.pillText, filter === c && styles.pillTextActive]}>{c}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Sync items */}
+        {filtered.map((item) => (
+          <View key={item.id} style={styles.syncCard}>
+            <View style={styles.syncRow}>
+              <View style={[styles.syncIcon, { backgroundColor: item.synced ? colors.successTint : colors.warnTint }]}>
+                <Ionicons name={item.icon as any} size={18} color={item.synced ? colors.success : colors.warn} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.syncDomain}>{item.domain}</Text>
+                <Text style={styles.syncItems}>{item.items}</Text>
+              </View>
+              <View style={[styles.syncBadge, { backgroundColor: item.synced ? colors.successTint : colors.warnTint }]}>
+                <Ionicons name={item.synced ? "checkmark-circle" : "time"} size={11} color={item.synced ? colors.success : colors.warn} />
+                <Text style={[styles.syncBadgeText, { color: item.synced ? colors.success : colors.warn }]}>
+                  {item.synced ? "Synced" : "Pending"}
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.moduleName}>{m.name}</Text>
-              <Text style={styles.moduleDetail}>{m.cached} cached, {m.compressed} compressed</Text>
-            </View>
-            <View style={styles.syncedBadge}>
-              <Text style={styles.syncedText}>Synced</Text>
+            <View style={styles.syncMeta}>
+              <Text style={styles.syncKb}>{item.kb}kB cached</Text>
+              <Text style={styles.syncAgo}>{item.ago} ago</Text>
             </View>
           </View>
         ))}
 
-        {/* Sync Now */}
-        <Pressable style={styles.syncBtn}>
-          <Ionicons name="sync" size={18} color="#FFF" />
-          <Text style={styles.syncBtnText}>Sync Now</Text>
+        {/* Sync Now CTA */}
+        <Pressable style={[styles.cta, !isOnline && { opacity: 0.5 }]} disabled={!isOnline}>
+          <Ionicons name="sync" size={20} color="#FFF" />
+          <Text style={styles.ctaText}>Sync Now</Text>
         </Pressable>
 
-        <View style={{ height: 24 }} />
+        {/* Storage info */}
+        <View style={styles.storageRow}>
+          <Ionicons name="server" size={14} color={colors.muted} />
+          <Text style={styles.storageText}>Total cache: {totalKb}kB • Last full sync: 25 min ago</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -96,47 +112,31 @@ export default function SyncStatusScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-
-  statusBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 6, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  statusLabel: { fontSize: 11, fontWeight: "600", color: colors.muted },
-
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 8 },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "900", color: colors.ink, letterSpacing: 0.6 },
-
-  content: { paddingHorizontal: 20, paddingTop: 12 },
-
-  title: { fontSize: 17, fontWeight: "900", color: colors.ink, textAlign: "center", lineHeight: 24 },
-  sectionTitle: { marginTop: 20, fontSize: 14, fontWeight: "800", color: colors.ink, textAlign: "center" },
-
-  filterRow: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 14 },
-  filterPill: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-  },
-  filterActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterText: { fontSize: 11, fontWeight: "800", color: colors.ink },
-  filterTextActive: { color: "#FFF" },
-
-  moduleRow: {
-    flexDirection: "row", alignItems: "center", marginTop: 12,
-    backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1,
-    borderColor: colors.border, padding: 12,
-  },
-  moduleIcon: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  moduleName: { fontSize: 13, fontWeight: "800", color: colors.ink },
-  moduleDetail: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 2 },
-  syncedBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: colors.successTint,
-  },
-  syncedText: { fontSize: 10, fontWeight: "900", color: colors.success },
-
-  syncBtn: {
-    marginTop: 24, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 16, borderRadius: 14, backgroundColor: colors.primary,
-  },
-  syncBtnText: { fontSize: 14, fontWeight: "900", color: "#FFF", letterSpacing: 0.5 },
+  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle: { flex: 1, fontSize: 16, fontWeight: "900", color: colors.ink },
+  onlineDot: { width: 8, height: 8, borderRadius: 4 },
+  content: { padding: 16, paddingBottom: 100 },
+  netCard: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, padding: 14, borderWidth: 1, marginBottom: 14 },
+  netTitle: { fontSize: 13, fontWeight: "800" },
+  netSub: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 3 },
+  pillScroll: { marginBottom: 14, flexGrow: 0 },
+  pillRow: { gap: 8 },
+  pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { fontSize: 11, fontWeight: "800", color: colors.muted },
+  pillTextActive: { color: "#FFF" },
+  syncCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border, gap: 8 },
+  syncRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  syncIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  syncDomain: { fontSize: 13, fontWeight: "900", color: colors.ink },
+  syncItems: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 2 },
+  syncBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  syncBadgeText: { fontSize: 10, fontWeight: "800" },
+  syncMeta: { flexDirection: "row", justifyContent: "space-between", paddingLeft: 48 },
+  syncKb: { fontSize: 10, fontWeight: "700", color: colors.muted },
+  syncAgo: { fontSize: 10, fontWeight: "700", color: colors.muted },
+  cta: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 16, shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  ctaText: { fontSize: 15, fontWeight: "900", color: "#FFF" },
+  storageRow: { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  storageText: { fontSize: 10, fontWeight: "600", color: colors.muted },
 });

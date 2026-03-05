@@ -79,11 +79,7 @@ async function handle(ctx, deps) {
         maxTokens: complexity === 'complex' ? 1024 : 512,
     };
 
-    // Simple → Sarvam-M (free), Complex → Bedrock (deeper reasoning)
-    if (complexity === 'complex') {
-        opts.preferredProvider = 'bedrock-claude';
-    }
-
+    // Agent uses Sarvam-M (fast, free) — complex queries are routed to Claude by MCP
     const result = await llm.generateResponse(agriMessages, opts);
 
     return {

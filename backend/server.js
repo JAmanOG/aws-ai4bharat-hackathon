@@ -3,6 +3,7 @@
  * Fastify-based application server replacing Lambda handlers.
  */
 
+require('dotenv').config();
 const Fastify = require('fastify');
 const { authMiddleware } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/error-handler');
@@ -11,6 +12,7 @@ const agricultureRoutes = require('./routes/agriculture');
 const precisionAgricultureRoutes = require('./routes/precision-agriculture');
 const economicServicesRoutes = require('./routes/economic-services');
 const voiceRoutes = require('./routes/voice');
+const authRoutes = require('./routes/auth');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -76,12 +78,13 @@ async function buildServer() {
         return {
             name: 'Rural Ecosystem Platform API',
             version: '2.0.0',
-            modules: ['knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice'],
+            modules: ['auth', 'knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice'],
             docs: '/health',
         };
     });
 
     // ── Route Modules ──
+    await app.register(authRoutes);
     await app.register(knowledgeRoutes);
     await app.register(agricultureRoutes);
     await app.register(precisionAgricultureRoutes);

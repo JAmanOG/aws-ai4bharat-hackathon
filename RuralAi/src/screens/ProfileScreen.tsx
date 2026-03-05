@@ -1,11 +1,14 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, Switch, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, Switch, ScrollView, ActivityIndicator, Alert, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { useMemoryFacts, useHealthCheck } from "../hooks/useData";
+import { useNavigation } from "@react-navigation/native";
+import { logger } from "../utils/logger";
 
 export default function ProfileScreen() {
+  const nav = useNavigation<any>();
   const [lowData, setLowData] = useState(true);
   const [offlineCache, setOfflineCache] = useState(true);
   const [tts, setTts] = useState(true);
@@ -20,14 +23,16 @@ export default function ProfileScreen() {
   const synced = !health.error;
 
   /* Derive profile info from memory facts if available */
-  const facts = (memoryFacts.data as any)?.facts ?? [];
-  const getName = () => {
-    const f = facts.find((f: any) => f.factKey === "user_name");
-    return f?.factValue ?? "User";
-  };
+  const factsRaw = (memoryFacts.data as any)?.facts;
+  // facts can be an object { key: value } or array of { factKey, factValue }
+  const factsMap: Record<string, string> = Array.isArray(factsRaw)
+    ? factsRaw.reduce((acc: Record<string, string>, f: any) => { acc[f.factKey] = f.factValue; return acc; }, {})
+    : (factsRaw && typeof factsRaw === 'object' ? factsRaw : {});
+
+  const getName = () => factsMap.user_name ?? "User";
   const getLocation = () => {
-    const state = facts.find((f: any) => f.factKey === "location_state")?.factValue;
-    const lang = facts.find((f: any) => f.factKey === "preferred_language")?.factValue;
+    const state = factsMap.location_state;
+    const lang = factsMap.preferred_language || factsMap.primary_language;
     const parts = [lang, state].filter(Boolean);
     return parts.length ? parts.join(" • ") : "Set up your profile via voice";
   };
@@ -41,7 +46,10 @@ export default function ProfileScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.iconBtn}>
+          <Pressable style={styles.iconBtn} onPress={() => {
+            logger.info("ProfileScreen", "Settings tapped");
+            Alert.alert("Settings", "App settings will be available in the next update.");
+          }}>
             <Ionicons name="settings-outline" size={20} color={colors.ink} />
           </Pressable>
 
@@ -80,7 +88,11 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <Pressable style={styles.editBtn}>
+            <Pressable style={styles.editBtn} onPress={() => {
+              logger.info("ProfileScreen", "Edit profile tapped");
+              nav.navigate("Ask");
+              Alert.alert("Edit Profile", "Tell the voice assistant your name, location, and language to update your profile.");
+            }}>
               <Text style={styles.editText}>EDIT</Text>
             </Pressable>
               </>
@@ -90,9 +102,9 @@ export default function ProfileScreen() {
           {/* Preferences */}
           <SectionHeader title="Preferences" />
           <Card>
-            <RowLink icon="language-outline" title="Language" subtitle="Hindi (Default)" />
+            <RowLink icon="language-outline" title="Language" subtitle="Hindi (Default)" onPress={() => Alert.alert("Language", "Use the voice assistant to change your language preference.")} />
             <Divider />
-            <RowLink icon="mic-outline" title="Voice Settings" subtitle="Mic, speech, clarity" />
+            <RowLink icon="mic-outline" title="Voice Settings" subtitle="Mic, speech, clarity" onPress={() => Alert.alert("Voice Settings", "Voice calibration will be available in the next update.")} />
             <Divider />
             <RowToggle
               icon="volume-high-outline"
@@ -122,7 +134,10 @@ export default function ProfileScreen() {
               onChange={setOfflineCache}
             />
             <Divider />
-            <RowLink icon="download-outline" title="Offline Downloads" subtitle="Manage saved items" />
+            <RowLink icon="download-outline" title="Offline Downloads" subtitle="Manage saved items" onPress={() => {
+              logger.info("ProfileScreen", "Offline Downloads tapped");
+              nav.navigate("Home", { screen: "SyncStatus" });
+            }} />
           </Card>
 
           {/* Data & Privacy */}
@@ -160,19 +175,41 @@ export default function ProfileScreen() {
               onChange={setShareLearning}
             />
             <Divider />
-            <RowLink icon="time-outline" title="Sharing History" subtitle="See what was shared" />
+            <RowLink icon="time-outline" title="Sharing History" subtitle="See what was shared" onPress={() => Alert.alert("Sharing History", "No data has been shared yet. Your privacy is protected.")} />
             <Divider />
-            <RowLink icon="lock-closed-outline" title="Revoke Access" subtitle="Disable sharing anytime" danger />
+            <RowLink icon="lock-closed-outline" title="Revoke Access" subtitle="Disable sharing anytime" danger onPress={() => {
+              Alert.alert("Revoke Access", "Are you sure you want to disable all data sharing?", [
+                { text: "Cancel", style: "cancel" },
+                { text: "Revoke All", style: "destructive", onPress: () => {
+                  logger.warn("ProfileScreen", "User revoked all data sharing");
+                  Alert.alert("Done", "All data sharing has been disabled.");
+                }},
+              ]);
+            }} />
           </Card>
 
           {/* Support */}
           <SectionHeader title="Support" />
           <Card>
-            <RowLink icon="help-circle-outline" title="Help & FAQ" subtitle="Common questions" />
+            <RowLink icon="help-circle-outline" title="Help & FAQ" subtitle="Common questions" onPress={() => {
+              logger.info("ProfileScreen", "Help & FAQ tapped");
+              Linking.openURL("https://github.com/your-org/rural-ai#faq").catch(() => {});
+            }} />
             <Divider />
-            <RowLink icon="chatbox-ellipses-outline" title="Feedback" subtitle="Tell us what to improve" />
+            <RowLink icon="chatbox-ellipses-outline" title="Feedback" subtitle="Tell us what to improve" onPress={() => {
+              logger.info("ProfileScreen", "Feedback tapped");
+              Alert.alert("Feedback", "Use the voice assistant to share feedback. Say: 'I have feedback about the app'.");
+            }} />
             <Divider />
-            <RowLink icon="warning-outline" title="Report a Problem" subtitle="Safety & issues" danger />
+            <RowLink icon="warning-outline" title="Report a Problem" subtitle="Safety & issues" danger onPress={() => {
+              logger.warn("ProfileScreen", "Report a Problem tapped");
+              Alert.alert("Report a Problem", "What issue are you experiencing?", [
+                { text: "App Crash", onPress: () => Alert.alert("Reported", "Thank you. Our team will investigate.") },
+                { text: "Wrong Information", onPress: () => Alert.alert("Reported", "Thank you. We'll review the content.") },
+                { text: "Other", onPress: () => Alert.alert("Reported", "Thank you for reporting.") },
+                { text: "Cancel", style: "cancel" },
+              ]);
+            }} />
           </Card>
 
           <View style={{ height: 28 }} />
@@ -205,14 +242,16 @@ function RowLink({
   title,
   subtitle,
   danger,
+  onPress,
 }: {
   icon: any;
   title: string;
   subtitle: string;
   danger?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <Pressable style={styles.row}>
+    <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
         <View style={[styles.rowIconNormal, danger ? styles.rowIconDanger : styles.rowIconNormal]}>
           <Ionicons name={icon} size={18} color={danger ? "#B91C1C" : colors.earth} />

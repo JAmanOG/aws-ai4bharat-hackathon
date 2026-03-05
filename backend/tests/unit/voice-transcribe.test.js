@@ -106,19 +106,32 @@ describe('Amazon Transcribe Service', () => {
     });
   });
 
-  describe('transcribe (hybrid)', () => {
-    test('falls back to Sarvam when Amazon Transcribe fails', async () => {
-      // Amazon Transcribe fails (S3 upload fails)
-      mockS3Client.send.mockRejectedValueOnce(new Error('S3 upload failed'));
-
+  describe('transcribe (hybrid — Sarvam primary)', () => {
+    test('returns Sarvam result when Sarvam STT succeeds (primary)', async () => {
       const buf = Buffer.from('fake-audio');
       const result = await transcribeService.transcribe(buf, { languageCode: 'hi-IN' });
 
+      // Sarvam is primary now — should succeed without touching Amazon
       expect(result.transcript).toBe('Sarvam fallback transcript');
       expect(result.provider).toBe('sarvam-stt');
     });
 
-    test('returns Amazon result when Transcribe succeeds', async () => {
+    test('falls back to Amazon Transcribe when Sarvam STT fails', async () => {
+      // Make Sarvam STT mock fail for this test
+      const sarvamMock = require('../../services/sarvam');
+      sarvamMock.transcribe.mockRejectedValueOnce(new Error('Sarvam STT service unavailable'));
+
+      // Amazon Transcribe: fetch transcript result succeeds
+      mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            results: {
+              transcripts: [{ transcript: 'Meri fasal ki kya haalat hai' }],
+              language_code: 'hi-IN',
+            },
+          }),
+        });
+
       // S3 upload succeeds
       mockS3Client.send.mockResolvedValueOnce({});
 
@@ -134,17 +147,6 @@ describe('Amazon Transcribe Service', () => {
             TranscriptFileUri: 'https://s3.amazonaws.com/test/result.json',
           },
         },
-      });
-
-      // Fetch transcript result
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          results: {
-            transcripts: [{ transcript: 'Meri fasal ki kya haalat hai' }],
-            language_code: 'hi-IN',
-          },
-        }),
       });
 
       // Cleanup S3 + Transcribe job

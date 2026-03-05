@@ -43,6 +43,9 @@ async function query(text, params) {
 
 // ── Table Names (from environment) ──
 const TABLE_NAMES = {
+    // Auth / User module
+    USERS: process.env.USERS_TABLE || 'Users',
+    PERSONALIZED_RECOMMENDATIONS: process.env.RECOMMENDATIONS_TABLE || 'PersonalizedRecommendations',
     // Knowledge module
     USER_LEARNING_PROFILE: process.env.USER_LEARNING_PROFILE_TABLE || 'UserLearningProfile',
     PEER_GROUPS: process.env.PEER_GROUPS_TABLE || 'PeerGroups',

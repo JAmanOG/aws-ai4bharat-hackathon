@@ -1,12 +1,16 @@
+/**
+ * Custom bottom tab bar — floating design with elevated center mic button.
+ */
+
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 
-const ICONS: Record<string, any> = {
-  Home: "home-outline",
-  Profile: "person-outline",
+const ICONS: Record<string, [string, string]> = {
+  Home: ["home-outline", "home"],
+  Profile: ["person-outline", "person"],
 };
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -24,23 +28,25 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           const isFocused = state.index === index;
           const label = descriptors[route.key]?.options?.tabBarLabel?.toString() ?? route.name;
 
-          // Center ASK button (big mic)
+          /* Center ASK button — elevated mic */
           if (route.name === "Ask") {
             return (
               <View key={route.key} style={styles.centerSlot}>
                 <Pressable
                   onPress={() => handlePress(route.name, route.key, isFocused)}
-                  style={({ pressed }) => [styles.centerBtn, pressed && { opacity: 0.9 }]}
+                  style={({ pressed }) => [styles.centerBtn, pressed && { transform: [{ scale: 0.95 }] }]}
                 >
-                  <Ionicons name="mic" size={26} color={colors.ink} />
+                  <View style={styles.centerRing} />
+                  <Ionicons name="mic" size={28} color="#FFF" />
                 </Pressable>
-                <Text style={[styles.label, { marginTop: 10, color: isFocused ? colors.primary : colors.muted }]}>
-                  {label}
+                <Text style={[styles.label, styles.centerLabel, { color: isFocused ? colors.primary : colors.muted }]}>
+                  Ask
                 </Text>
               </View>
             );
           }
 
+          const [outlineIcon, filledIcon] = ICONS[route.name] ?? ["ellipse-outline", "ellipse"];
           return (
             <Pressable
               key={route.key}
@@ -48,14 +54,14 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
               style={({ pressed }) => [styles.item, pressed && { opacity: 0.75 }]}
             >
               <Ionicons
-                name={ICONS[route.name] ?? "ellipse-outline"}
+                name={(isFocused ? filledIcon : outlineIcon) as any}
                 size={22}
                 color={isFocused ? colors.primary : colors.muted}
               />
               <Text style={[styles.label, { color: isFocused ? colors.primary : colors.muted }]}>
                 {label}
               </Text>
-              <View style={[styles.activeDot, { backgroundColor: isFocused ? colors.primary : "transparent" }]} />
+              {isFocused && <View style={styles.activeDot} />}
             </Pressable>
           );
         })}
@@ -64,42 +70,51 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
   );
 }
 
+const MIC = 64;
 const styles = StyleSheet.create({
-  wrap: { backgroundColor: "transparent", paddingHorizontal: 14, paddingBottom: 10 },
+  wrap: { backgroundColor: "transparent", paddingHorizontal: 16, paddingBottom: 12 },
   bar: {
     backgroundColor: colors.surface,
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 12, // bigger bar
+    paddingBottom: 14,
     flexDirection: "row",
     alignItems: "flex-end",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 8,
   },
-  item: { width: 92, alignItems: "center", justifyContent: "flex-end", gap: 8 },
-  label: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
-  activeDot: { marginTop: 6, width: 28, height: 3, borderRadius: 99 },
-
-  centerSlot: { width: 110, alignItems: "center", justifyContent: "flex-end" },
+  item: { alignItems: "center", justifyContent: "flex-end", gap: 4, minWidth: 64 },
+  label: { fontSize: 10, fontWeight: "800", letterSpacing: 0.3 },
+  activeDot: { marginTop: 4, width: 20, height: 3, borderRadius: 2, backgroundColor: colors.primary },
+  centerSlot: { alignItems: "center", justifyContent: "flex-end" },
   centerBtn: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: MIC,
+    height: MIC,
+    borderRadius: MIC / 2,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: -36,
+    marginTop: -34,
     shadowColor: colors.primary,
-    shadowOpacity: 0.25,
-    shadowRadius: 18,
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 7,
+    elevation: 10,
   },
+  centerRing: {
+    position: "absolute",
+    width: MIC + 10,
+    height: MIC + 10,
+    borderRadius: (MIC + 10) / 2,
+    borderWidth: 3,
+    borderColor: "rgba(74,144,217,0.15)",
+  },
+  centerLabel: { marginTop: 8 },
 });

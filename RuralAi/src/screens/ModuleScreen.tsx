@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { logger } from "../utils/logger";
 
 type Action = { title: string; hint: string; icon: any; wide?: boolean };
 type ModuleConfig = { subtitle: string; topCardTitle: string; topCardLines: string[]; actions: Action[] };
@@ -117,16 +118,33 @@ export default function ModuleScreen() {
               key={a.title}
               style={[styles.tile, a.wide ? styles.tileWide : styles.tileHalf]}
               onPress={() => {
+                logger.info("ModuleScreen", `Action tapped: ${a.title}`, { module: titleRaw });
                 if (a.title === "Market Prices") {
                   nav.navigate("MarketPrices", { moduleTitle: titleRaw });
                   return;
                 }
-                if (a.title === "Government Schemes") {
+                if (a.title === "Government Schemes" || a.title === "Govt Benefits") {
                   nav.navigate("SchemesList", { moduleTitle: titleRaw });
                   return;
                 }
                 if (a.title === "Symptom Checker") {
                   nav.navigate("SymptomChecker");
+                  return;
+                }
+                if (a.title === "Micro-credit & Loans" || a.title === "Insurance") {
+                  nav.navigate("Eligibility");
+                  return;
+                }
+                if (a.title === "Financial Literacy") {
+                  nav.navigate("SavingsNudge");
+                  return;
+                }
+                if (a.title === "Skill Development" || a.title === "K-12 Support" || a.title === "Digital Literacy") {
+                  nav.navigate("KnowledgeDashboard");
+                  return;
+                }
+                if (a.title === "Emergency Services") {
+                  nav.navigate("Alerts");
                   return;
                 }
                 nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title });

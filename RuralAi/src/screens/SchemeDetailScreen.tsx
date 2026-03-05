@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Linking, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { useSchemeDetail } from "../hooks/useData";
 import { LoadingView, ErrorView } from "../components/ui";
+import { logger } from "../utils/logger";
 
 export default function SchemeDetailScreen() {
   const nav = useNavigation<any>();
@@ -84,12 +85,20 @@ export default function SchemeDetailScreen() {
           )}
 
           {/* CTA */}
-          <Pressable style={styles.primaryBtn}>
+          <Pressable style={styles.primaryBtn} onPress={() => {
+            logger.info("SchemeDetail", "Open Apply Portal", { schemeId });
+            const url = (detail as any).apply_url || "https://services.india.gov.in";
+            Linking.openURL(url).catch(() => Alert.alert("Cannot Open", "Could not open the portal. Try again later."));
+          }}>
             <Ionicons name="open-outline" size={18} color={colors.ink} />
             <Text style={styles.primaryText}>Open Apply Portal</Text>
           </Pressable>
 
-          <Pressable style={styles.secondaryBtn}>
+          <Pressable style={styles.secondaryBtn} onPress={() => {
+            logger.info("SchemeDetail", "Call Helpline");
+            const phone = (detail as any).helpline || "14444";
+            Linking.openURL(`tel:${phone}`).catch(() => Alert.alert("Call", `Helpline: ${phone}`));
+          }}>
             <Ionicons name="call-outline" size={18} color={colors.earth} />
             <Text style={styles.secondaryText}>Call Helpline</Text>
           </Pressable>

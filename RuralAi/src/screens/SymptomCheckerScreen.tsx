@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Linking, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { requestMicPermission, startRecording, stopRecording, chatWithText } from "../services/voice";
+import { logger } from "../utils/logger";
 
 type Sym = { key: string; label: string; icon: any };
 
@@ -202,11 +203,17 @@ export default function SymptomCheckerScreen() {
 
           {/* CTAs */}
           <View style={styles.ctaRow}>
-            <Pressable style={styles.primaryBtn}>
+            <Pressable style={styles.primaryBtn} onPress={() => {
+              logger.info("SymptomChecker", "Call helpline tapped");
+              Linking.openURL("tel:104").catch(() => Alert.alert("Helpline", "Health helpline: 104"));
+            }}>
               <Ionicons name="call-outline" size={18} color={colors.ink} />
               <Text style={styles.primaryText}>Call helpline</Text>
             </Pressable>
-            <Pressable style={styles.secondaryBtn}>
+            <Pressable style={styles.secondaryBtn} onPress={() => {
+              logger.info("SymptomChecker", "Find clinic tapped");
+              Linking.openURL("https://www.google.com/maps/search/clinic+near+me").catch(() => Alert.alert("Find Clinic", "Search for clinics near you on Google Maps."));
+            }}>
               <Ionicons name="navigate-outline" size={18} color={colors.earth} />
               <Text style={styles.secondaryText}>Find clinic</Text>
             </Pressable>

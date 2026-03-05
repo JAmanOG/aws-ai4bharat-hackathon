@@ -56,15 +56,11 @@ async function handle(ctx, deps) {
         return m;
     });
 
-    // Schemes often need accurate, grounded info → prefer Bedrock for moderate+ complexity
+    // Agent uses Sarvam-M (fast, free) — complex/moderate schemes are routed to Claude by MCP
     const opts = {
         temperature: 0.1, // Low temp for factual accuracy
         maxTokens: complexity === 'complex' ? 1024 : 512,
     };
-
-    if (complexity !== 'simple') {
-        opts.preferredProvider = 'bedrock-claude';
-    }
 
     const result = await llm.generateResponse(schemeMessages, opts);
 

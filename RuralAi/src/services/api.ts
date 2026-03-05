@@ -1,9 +1,25 @@
 /**
  * Lightweight API client for the Rural Ecosystem Platform backend.
  * Uses native fetch (available in React Native) — no extra deps needed.
+ *
+ * Auth: Sends Bearer token when authenticated, falls back to X-User-Id for demo mode.
  */
 
 import { ENV } from '../config/env';
+import { logger } from '../utils/logger';
+
+/* ────────────────────────────────────────────── */
+/*  Auth token management                          */
+/* ────────────────────────────────────────────── */
+
+let _authToken: string | null = null;
+let _userId: string = ENV.DEMO_USER_ID;
+
+/** Call from AuthContext when user logs in / out. */
+export function setAuthCredentials(token: string | null, userId?: string) {
+  _authToken = token;
+  _userId = userId || ENV.DEMO_USER_ID;
+}
 
 /* ────────────────────────────────────────────── */
 /*  Types                                          */
@@ -21,6 +37,8 @@ interface RequestOptions {
   params?: Record<string, string | number | boolean | undefined>;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /** Override the default request timeout (ms) */
+  timeout?: number;
 }
 
 /* ────────────────────────────────────────────── */
@@ -38,16 +56,20 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
 }
 
 async function request<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, params, headers = {}, signal } = opts;
+  const { method = 'GET', body, params, headers = {}, signal, timeout } = opts;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ENV.REQUEST_TIMEOUT);
+  const timeoutMs = timeout ?? ENV.REQUEST_TIMEOUT;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const fetchOpts: RequestInit = {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': ENV.DEMO_USER_ID,
+      // Auth: prefer Bearer token, fall back to X-User-Id for demo mode
+      ...(_authToken
+        ? { 'Authorization': `Bearer ${_authToken}` }
+        : { 'X-User-Id': _userId }),
       ...headers,
     },
     signal: signal ?? controller.signal,
@@ -60,11 +82,17 @@ async function request<T = unknown>(path: string, opts: RequestOptions = {}): Pr
   const url = buildUrl(path, params);
 
   if (ENV.DEBUG_API) {
-    console.log(`[API] ${method} ${url}`, body ?? '');
+    const isVoice = path.startsWith('/voice/');
+    logger.info('API', `${method} ${path}`, {
+      ...(body ? { bodyKeys: Object.keys(body as any) } : {}),
+      ...(isVoice ? { timeout: timeoutMs } : {}),
+    });
   }
 
   try {
+    const start = Date.now();
     const res = await fetch(url, fetchOpts);
+    const elapsed = Date.now() - start;
 
     let json: any;
     const text = await res.text();
@@ -80,20 +108,27 @@ async function request<T = unknown>(path: string, opts: RequestOptions = {}): Pr
         message: json?.error ?? json?.message ?? res.statusText,
         details: json?.details,
       };
+      logger.error('API', `${method} ${path} → ${res.status} in ${elapsed}ms: ${err.message}`);
       throw err;
+    }
+
+    if (ENV.DEBUG_API) {
+      logger.debug('API', `${method} ${path} → ${res.status} in ${elapsed}ms`);
     }
 
     return json as T;
   } catch (err: any) {
     if (err.name === 'AbortError') {
+      logger.error('API', `${method} ${path} → TIMEOUT after ${timeoutMs}ms`);
       throw { status: 408, message: 'Request timed out' } as ApiError;
     }
     // Re-throw ApiError as-is
     if (err.status) throw err;
     // Network error
+    logger.error('API', `${method} ${path} → NETWORK ERROR: ${err.message}`);
     throw { status: 0, message: err.message ?? 'Network error' } as ApiError;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
 }
 
@@ -107,6 +142,10 @@ const api = {
 
   post: <T = unknown>(path: string, body?: unknown, signal?: AbortSignal) =>
     request<T>(path, { method: 'POST', body, signal }),
+
+  /** POST with extended timeout (for voice pipeline calls) */
+  postVoice: <T = unknown>(path: string, body?: unknown, signal?: AbortSignal) =>
+    request<T>(path, { method: 'POST', body, signal, timeout: ENV.VOICE_REQUEST_TIMEOUT }),
 
   put: <T = unknown>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body }),
@@ -339,4 +378,59 @@ export const voiceApi = {
 
   getMemoryFacts: () =>
     api.get<{ facts: Record<string, string> }>('/voice/memory/facts'),
+};
+
+// ═══════════ Auth (Req 13) ═══════════
+
+export const authApi = {
+  /** Get user profile */
+  getProfile: () =>
+    api.get<{ success: boolean; profile: Record<string, unknown> }>('/auth/profile'),
+
+  /** Get unified profile (user + memory facts + domain data) */
+  getUnifiedProfile: () =>
+    api.get<{ success: boolean; profile: Record<string, unknown> }>('/auth/profile/unified'),
+
+  /** Update profile */
+  updateProfile: (body: Record<string, unknown>) =>
+    api.put('/auth/profile', body),
+
+  /** Get DigiLocker authorization URL */
+  getDigilockerUrl: () =>
+    api.get<{ authorizationUrl: string }>('/auth/digilocker/authorize'),
+
+  /** Verify Aadhaar via DigiLocker */
+  verifyAadhaar: (aadhaarNumber: string) =>
+    api.post<{ success: boolean; verified: boolean; maskedAadhaar: string; name: string }>(
+      '/auth/digilocker/verify',
+      { aadhaarNumber },
+    ),
+
+  /** Get personalized recommendations */
+  getRecommendations: () =>
+    api.get<{ success: boolean; recommendations: Array<Record<string, unknown>> }>('/auth/recommendations'),
+
+  /** Submit feedback on a recommendation */
+  submitFeedback: (body: { interactionId?: string; domain?: string; rating: number; action?: string }) =>
+    api.post('/auth/recommendations/feedback', body),
+
+  /** Get engagement analytics */
+  getEngagement: () =>
+    api.get('/auth/engagement'),
+
+  /** Find matching peers */
+  findPeers: () =>
+    api.get('/auth/peers'),
+
+  /** Get user's peer groups */
+  getGroups: () =>
+    api.get<{ success: boolean; groups: Array<Record<string, unknown>> }>('/auth/groups'),
+
+  /** Join a peer group */
+  joinGroup: (groupId: string) =>
+    api.post(`/auth/groups/${groupId}/join`),
+
+  /** Leave a peer group */
+  leaveGroup: (groupId: string) =>
+    api.post(`/auth/groups/${groupId}/leave`),
 };

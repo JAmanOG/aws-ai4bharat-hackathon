@@ -59,11 +59,10 @@ async function handle(ctx, deps) {
         return m;
     });
 
-    // Health needs accurate, responsible responses → prefer Bedrock
+    // Agent uses Sarvam-M (fast, free) — health queries are routed to Claude by MCP
     const opts = {
         temperature: 0.1,
         maxTokens: 512,
-        preferredProvider: 'bedrock-claude',
     };
 
     const result = await llm.generateResponse(healthMessages, opts);

@@ -43,20 +43,20 @@ const SARVAM_LANGUAGES = {
     brx: { code: 'brx-IN', name: 'Bodo' },
 };
 
-/* ─── Default TTS speakers per language (Bulbul v3) ─── */
+/* ─── Default TTS speakers per language (Bulbul v3) — lowercase required ─── */
 const DEFAULT_SPEAKERS = {
-    'hi-IN': 'Shubh',
-    'en-IN': 'Amelia',
-    'bn-IN': 'Priya',
-    'ta-IN': 'Kavitha',
-    'te-IN': 'Shreya',
-    'mr-IN': 'Ritu',
-    'gu-IN': 'Neha',
-    'kn-IN': 'Kavya',
-    'ml-IN': 'Pooja',
-    'pa-IN': 'Simran',
-    'od-IN': 'Roopa',
-    'as-IN': 'Ishita',
+    'hi-IN': 'shubh',
+    'en-IN': 'amelia',
+    'bn-IN': 'priya',
+    'ta-IN': 'kavitha',
+    'te-IN': 'shreya',
+    'mr-IN': 'ritu',
+    'gu-IN': 'neha',
+    'kn-IN': 'kavya',
+    'ml-IN': 'pooja',
+    'pa-IN': 'simran',
+    'od-IN': 'roopa',
+    'as-IN': 'ishita',
 };
 
 /**
@@ -168,7 +168,7 @@ async function synthesize(text, opts = {}) {
     } = opts;
 
     const langCode = toBcp47(targetLanguageCode);
-    const chosenSpeaker = speaker || DEFAULT_SPEAKERS[langCode] || 'Shubh';
+    const chosenSpeaker = speaker || DEFAULT_SPEAKERS[langCode] || 'shubh';
 
     const payload = {
         text,

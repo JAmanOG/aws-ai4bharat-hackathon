@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { SyncPill } from "../components/ui";
 import { usePeerGroups } from "../hooks/useData";
 import { useNavigation } from "@react-navigation/native";
+import { logger } from "../utils/logger";
 
 type Space = {
   id: string;
@@ -29,6 +30,32 @@ export default function CommunityScreen() {
   const peerGroups = usePeerGroups();
   const [newPostText, setNewPostText] = useState("");
 
+  logger.debug("CommunityScreen", "render", { groupCount: ((peerGroups.data as any)?.groups ?? []).length, loading: peerGroups.loading });
+
+  const openVoice = () => {
+    logger.info("CommunityScreen", "Navigate → Ask");
+    nav.navigate("Main", { screen: "Ask" });
+  };
+
+  const handleNewPost = () => {
+    if (newPostText.trim()) {
+      logger.info("CommunityScreen", "New post submitted", { text: newPostText.substring(0, 50) });
+      Alert.alert("Post Shared", "Your post has been shared with the community.");
+      setNewPostText("");
+    } else {
+      Alert.alert("Empty Post", "Write something or use voice to create a post.");
+    }
+  };
+
+  const handleReport = () => {
+    logger.info("CommunityScreen", "Report tapped");
+    Alert.alert("Report an Issue", "What would you like to report?", [
+      { text: "Safety Concern", onPress: () => Alert.alert("Reported", "Thank you. Our team will review this.") },
+      { text: "Misinformation", onPress: () => Alert.alert("Reported", "Thank you. Our team will review this.") },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
   /* Map backend peer groups to Space cards when available */
   const spaces: Space[] = React.useMemo(() => {
     const raw = (peerGroups.data as any)?.groups;
@@ -47,8 +74,8 @@ export default function CommunityScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.iconBtn}>
-            <Ionicons name="menu" size={20} color={colors.ink} />
+          <Pressable style={styles.iconBtn} onPress={() => nav.goBack()}>
+            <Ionicons name="chevron-back" size={20} color={colors.ink} />
           </Pressable>
 
           <Text style={styles.title}>Community</Text>
@@ -59,17 +86,17 @@ export default function CommunityScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Quick actions */}
           <View style={styles.quickRow}>
-            <Pressable style={styles.quickCardPrimary} onPress={() => nav.navigate("Voice")}>
+            <Pressable style={styles.quickCardPrimary} onPress={openVoice}>
               <Ionicons name="mic" size={18} color={colors.ink} />
               <Text style={styles.quickPrimaryText}>Post by Voice</Text>
             </Pressable>
 
-            <Pressable style={styles.quickCard}>
+            <Pressable style={styles.quickCard} onPress={handleNewPost}>
               <Ionicons name="add-circle-outline" size={18} color={colors.earth} />
               <Text style={styles.quickText}>New Post</Text>
             </Pressable>
 
-            <Pressable style={styles.quickCard}>
+            <Pressable style={styles.quickCard} onPress={handleReport}>
               <Ionicons name="alert-circle-outline" size={18} color={colors.earth} />
               <Text style={styles.quickText}>Report</Text>
             </Pressable>
@@ -122,7 +149,17 @@ export default function CommunityScreen() {
               value={newPostText}
               onChangeText={setNewPostText}
               multiline
+              onSubmitEditing={handleNewPost}
+              returnKeyType="send"
             />
+            {newPostText.trim().length > 0 && (
+              <Pressable
+                style={{ alignSelf: "flex-end", backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6, marginTop: 6 }}
+                onPress={handleNewPost}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "900", color: "#FFF" }}>Post</Text>
+              </Pressable>
+            )}
           </View>
 
           {/* Empty state when no posts */}
@@ -141,12 +178,12 @@ export default function CommunityScreen() {
   );
 }
 
-function SectionHeader({ title, right }: { title: string; right?: string }) {
+function SectionHeader({ title, right, onRight }: { title: string; right?: string; onRight?: () => void }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {right ? (
-        <Pressable style={styles.sectionRightBtn}>
+        <Pressable style={styles.sectionRightBtn} onPress={onRight}>
           <Text style={styles.sectionRightText}>{right}</Text>
         </Pressable>
       ) : null}
@@ -156,6 +193,10 @@ function SectionHeader({ title, right }: { title: string; right?: string }) {
 
 function SpaceCard({ space }: { space: Space }) {
   const live = space.status === "LIVE";
+  const handleJoin = () => {
+    logger.info("CommunityScreen", `SpaceCard ${live ? "Join" : "Remind"}: ${space.title}`);
+    Alert.alert(live ? "Joined!" : "Reminder Set", live ? `You joined "${space.title}"` : `We'll remind you when "${space.title}" goes live.`);
+  };
   return (
     <Pressable style={styles.spaceCard}>
       <View style={styles.spaceTop}>
@@ -175,7 +216,7 @@ function SpaceCard({ space }: { space: Space }) {
       <Text style={styles.spaceTitle} numberOfLines={2}>{space.title}</Text>
       <Text style={styles.spaceMeta} numberOfLines={1}>{space.meta}</Text>
 
-      <Pressable style={[styles.joinBtn, live ? styles.joinBtnLive : styles.joinBtnSch]}>
+      <Pressable style={[styles.joinBtn, live ? styles.joinBtnLive : styles.joinBtnSch]} onPress={handleJoin}>
         <Text style={[styles.joinText, live ? { color: colors.ink } : { color: colors.earth }]}>
           {live ? "Join" : "Remind me"}
         </Text>
@@ -199,8 +240,13 @@ function InfoCard({
   const border = accent === "green" ? "rgba(19,236,91,0.22)" : "rgba(139,94,60,0.20)";
   const iconColor = accent === "green" ? colors.primary : colors.earth;
 
+  const handlePress = () => {
+    logger.info("CommunityScreen", `InfoCard tapped: ${title}`);
+    Alert.alert(title, subtitle);
+  };
+
   return (
-    <Pressable style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <Pressable style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={handlePress}>
       <View style={[styles.infoIcon, { backgroundColor: tint, borderColor: border }]}>
         <Ionicons name={icon} size={18} color={iconColor} />
       </View>

@@ -1,7 +1,14 @@
 /**
- * Voice Chat Screen — real voice-first conversational interface.
- * Uses Sarvam AI for STT/TTS, LLM chain for responses, DynamoDB for memory.
- * Supports 22 Indian languages with auto-detection.
+ * Voice Chat Screen — Voice-first conversational interface.
+ *
+ * Design principles (user vision):
+ *   - Everything visual: responses rendered as rich cards, not plain text bubbles.
+ *   - Voice-first: mic is always prominent, text input hidden until user taps "Type instead".
+ *   - Domain/intent badges show what pipeline understood.
+ *   - Audio auto-plays and can be replayed.
+ *   - Proper logging at every stage for debugging.
+ *
+ * Uses the single /voice/chat/audio pipeline endpoint (STT → Nova → Agent → TTS).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -23,7 +30,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import * as voiceService from "../services/voice";
+import { useVoiceService, type ChatResult } from "../services/voice";
+import { logger } from "../utils/logger";
 
 /* ────────────── Types ────────────── */
 
@@ -34,6 +42,12 @@ type ChatMessage = {
   timestamp: string;
   audioBase64?: string;
   isLoading?: boolean;
+  /** Orchestrator metadata (assistant messages only) */
+  domain?: string;
+  intent?: string;
+  entities?: Record<string, string>;
+  complexity?: string;
+  route?: string;
 };
 
 /* ────────────── Waveform ────────────── */
@@ -65,14 +79,81 @@ const QUICK_LANGS = [
   { code: "mr", label: "मराठी" },
 ];
 
+/* ────────────── Domain helpers ────────────── */
+
+const DOMAIN_META: Record<string, { icon: string; color: string; label: string }> = {
+  agriculture: { icon: "leaf", color: "#2E7D32", label: "Agriculture" },
+  market: { icon: "trending-up", color: "#1565C0", label: "Market" },
+  schemes: { icon: "document-text", color: "#6A1B9A", label: "Schemes" },
+  weather: { icon: "cloud", color: "#00838F", label: "Weather" },
+  health: { icon: "medkit", color: "#C62828", label: "Health" },
+  finance: { icon: "wallet", color: "#EF6C00", label: "Finance" },
+  general: { icon: "chatbubble-ellipses", color: colors.primary, label: "General" },
+};
+
+function getDomainMeta(domain?: string) {
+  return DOMAIN_META[domain ?? "general"] ?? DOMAIN_META.general;
+}
+
+/* ────────────── Visual Response Card ────────────── */
+
+function ResponseCard({ msg, onReplay }: { msg: ChatMessage; onReplay: () => void }) {
+  const dm = getDomainMeta(msg.domain);
+
+  return (
+    <View style={styles.responseCard}>
+      {/* Domain + Intent header */}
+      {msg.domain && (
+        <View style={styles.cardHeader}>
+          <View style={[styles.domainBadge, { backgroundColor: dm.color + "18" }]}>
+            <Ionicons name={dm.icon as any} size={13} color={dm.color} />
+            <Text style={[styles.domainLabel, { color: dm.color }]}>{dm.label}</Text>
+          </View>
+          {msg.intent && (
+            <Text style={styles.intentLabel}>{msg.intent.replace(/_/g, " ")}</Text>
+          )}
+        </View>
+      )}
+
+      {/* Entities (key-value tags) */}
+      {msg.entities && Object.keys(msg.entities).length > 0 && (
+        <View style={styles.entityRow}>
+          {Object.entries(msg.entities).map(([k, v]) => (
+            <View key={k} style={styles.entityTag}>
+              <Text style={styles.entityKey}>{k}:</Text>
+              <Text style={styles.entityVal}>{v}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Response text */}
+      <Text style={styles.cardText}>{msg.text}</Text>
+
+      {/* Footer: time + replay */}
+      <View style={styles.cardFooter}>
+        <Text style={styles.cardTime}>{msg.timestamp}</Text>
+        {msg.audioBase64 ? (
+          <Pressable onPress={onReplay} style={styles.replayBtn} hitSlop={8}>
+            <Ionicons name="volume-medium" size={16} color={colors.primary} />
+            <Text style={styles.replayLabel}>Replay</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 /* ────────────── Component ────────────── */
 
 export default function VoiceScreen() {
   const nav = useNavigation<any>();
+  const voice = useVoiceService();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [inputText, setInputText] = useState("");
+  const [showTextInput, setShowTextInput] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [language, setLanguage] = useState("hi");
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
@@ -94,7 +175,11 @@ export default function VoiceScreen() {
 
   /* Request mic on mount */
   useEffect(() => {
-    voiceService.requestMicPermission().then(setHasMicPermission);
+    logger.info("VoiceScreen", "Mounted, requesting mic permission");
+    voice.requestMicPermission().then((granted) => {
+      logger.info("VoiceScreen", `Mic permission: ${granted ? "granted" : "denied"}`);
+      setHasMicPermission(granted);
+    });
   }, []);
 
   /* Scroll to bottom on new message */
@@ -104,9 +189,24 @@ export default function VoiceScreen() {
     }
   }, [messages.length]);
 
+  /* ── Helper: build assistant ChatMessage from ChatResult ── */
+  const buildAssistantMsg = useCallback((result: ChatResult): ChatMessage => ({
+    id: (Date.now() + Math.random()).toString(),
+    role: "assistant",
+    text: result.response_text,
+    timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    audioBase64: result.audio_base64,
+    domain: result.domain,
+    intent: result.intent,
+    entities: result.entities,
+    complexity: result.complexity,
+    route: result.route,
+  }), []);
+
   /* ── Send text message ── */
   const sendTextMessage = useCallback(async (text: string) => {
     if (!text.trim() || processing) return;
+    logger.info("VoiceScreen", `Sending text: "${text.trim().substring(0, 50)}..."`);
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
@@ -128,29 +228,28 @@ export default function VoiceScreen() {
     setProcessing(true);
 
     try {
-      const result = await voiceService.chatWithText(text.trim(), {
+      const start = Date.now();
+      const result = await voice.chatWithText(text.trim(), {
         language_code: language,
         session_id: sessionId,
         generate_audio: true,
       });
+      logger.info("VoiceScreen", `Text chat response in ${Date.now() - start}ms — domain=${result.domain}, intent=${result.intent}`);
 
       if (!sessionId) setSessionId(result.session_id);
 
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 2).toString(),
-        role: "assistant",
-        text: result.response_text,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        audioBase64: result.audio_base64,
-      };
-
+      const aiMsg = buildAssistantMsg(result);
       setMessages((prev) => prev.filter((m) => !m.isLoading).concat(aiMsg));
 
       // Auto-play audio
       if (result.audio_base64) {
-        voiceService.playBase64Audio(result.audio_base64).catch(() => {});
+        logger.debug("VoiceScreen", "Playing TTS audio");
+        voice.playBase64Audio(result.audio_base64).catch((e) => {
+          logger.warn("VoiceScreen", `TTS playback error: ${e.message}`);
+        });
       }
     } catch (err: any) {
+      logger.error("VoiceScreen", `Text chat error: ${err.message}`, err);
       setMessages((prev) =>
         prev.filter((m) => !m.isLoading).concat({
           id: (Date.now() + 2).toString(),
@@ -162,27 +261,31 @@ export default function VoiceScreen() {
     } finally {
       setProcessing(false);
     }
-  }, [language, sessionId, processing]);
+  }, [language, sessionId, processing, buildAssistantMsg]);
 
   /* ── Mic press ── */
   const handleMicPress = useCallback(async () => {
     if (processing) return;
 
     if (recording) {
-      // Stop recording → send
+      // Stop recording → single /voice/chat/audio pipeline call
       setRecording(false);
       setProcessing(true);
+      logger.info("VoiceScreen", "Stopped recording, starting audio pipeline");
 
       try {
-        const uri = await voiceService.stopRecording();
+        const uri = await voice.stopRecording();
         if (!uri) {
+          logger.warn("VoiceScreen", "No recording URI returned");
           setProcessing(false);
           return;
         }
+        logger.debug("VoiceScreen", `Recording URI: ${uri}`);
 
         // Read file as base64
         const response = await fetch(uri);
         const blob = await response.blob();
+        logger.debug("VoiceScreen", `Audio blob size: ${blob.size} bytes`);
         const base64 = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -193,11 +296,13 @@ export default function VoiceScreen() {
         });
 
         if (!base64) {
+          logger.warn("VoiceScreen", "Empty base64 after conversion");
           setProcessing(false);
           return;
         }
+        logger.info("VoiceScreen", `Audio base64 length: ${base64.length} chars (~${Math.round(base64.length * 0.75 / 1024)}KB)`);
 
-        // Add "processing" indicator
+        // Add processing indicator
         const loadingMsg: ChatMessage = {
           id: Date.now().toString(),
           role: "assistant",
@@ -207,73 +312,49 @@ export default function VoiceScreen() {
         };
         setMessages((prev) => [...prev, loadingMsg]);
 
-        // Call backend audio chat endpoint via text – transcribe + chat
-        // Use the transcribe API first, then chat with text
-        const transcribeRes = await fetch(
-          `${require("../config/env").ENV.API_BASE_URL}/voice/transcribe`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-User-Id": require("../config/env").ENV.DEMO_USER_ID,
-            },
-            body: JSON.stringify({
-              audio_base64: base64,
-              language_code: language,
-            }),
-          },
-        );
-        const transcribeData = await transcribeRes.json();
-        const transcript = transcribeData.transcript || "";
-
-        if (!transcript.trim()) {
-          setMessages((prev) =>
-            prev.filter((m) => !m.isLoading).concat({
-              id: (Date.now() + 1).toString(),
-              role: "assistant",
-              text: "Could not understand audio. Please try again.",
-              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            }),
-          );
-          setProcessing(false);
-          return;
-        }
-
-        // Show user message with transcript
-        const userMsg: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: "user",
-          text: transcript,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        };
-        setMessages((prev) => {
-          const withoutLoading = prev.filter((m) => !m.isLoading);
-          return [...withoutLoading, userMsg, { ...loadingMsg, id: (Date.now() + 2).toString() }];
-        });
-
-        // Chat with transcribed text
-        const chatResult = await voiceService.chatWithText(transcript, {
-          language_code: transcribeData.language_code || language,
+        // Single API call — full audio pipeline (Transcribe → Nova → Agent → Sarvam TTS)
+        const start = Date.now();
+        logger.info("VoiceScreen", `Calling /voice/chat/audio (lang=${language}, session=${sessionId ?? "new"})`);
+        const chatResult = await voice.chatWithAudio(base64, {
+          language_code: language,
           session_id: sessionId,
-          generate_audio: true,
         });
+        logger.info("VoiceScreen", `Audio pipeline response in ${Date.now() - start}ms — domain=${chatResult.domain}, intent=${chatResult.intent}, route=${chatResult.route}`);
 
         if (!sessionId) setSessionId(chatResult.session_id);
 
-        const aiMsg: ChatMessage = {
-          id: (Date.now() + 3).toString(),
-          role: "assistant",
-          text: chatResult.response_text,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          audioBase64: chatResult.audio_base64,
-        };
+        // Show user's transcribed speech
+        const transcript = chatResult.transcript;
+        if (transcript && transcript.trim()) {
+          logger.info("VoiceScreen", `Transcript: "${transcript.substring(0, 80)}..."`);
+          const userMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            role: "user",
+            text: transcript,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          };
+          setMessages((prev) => {
+            const withoutLoading = prev.filter((m) => !m.isLoading);
+            return [...withoutLoading, userMsg];
+          });
+        } else {
+          logger.debug("VoiceScreen", "No transcript in response (text-only or direct answer)");
+          setMessages((prev) => prev.filter((m) => !m.isLoading));
+        }
 
+        // Show assistant response as visual card
+        const aiMsg = buildAssistantMsg(chatResult);
         setMessages((prev) => prev.filter((m) => !m.isLoading).concat(aiMsg));
 
+        // Auto-play
         if (chatResult.audio_base64) {
-          voiceService.playBase64Audio(chatResult.audio_base64).catch(() => {});
+          logger.debug("VoiceScreen", "Playing TTS audio response");
+          voice.playBase64Audio(chatResult.audio_base64).catch((e) => {
+            logger.warn("VoiceScreen", `TTS playback error: ${e.message}`);
+          });
         }
       } catch (err: any) {
+        logger.error("VoiceScreen", `Audio pipeline error: ${err.message}`, err);
         setMessages((prev) =>
           prev.filter((m) => !m.isLoading).concat({
             id: (Date.now() + 4).toString(),
@@ -292,35 +373,44 @@ export default function VoiceScreen() {
         return;
       }
       try {
-        await voiceService.startRecording();
+        logger.info("VoiceScreen", "Starting recording");
+        await voice.startRecording();
         setRecording(true);
       } catch (err: any) {
+        logger.error("VoiceScreen", `Recording start error: ${err.message}`, err);
         Alert.alert("Recording Error", err.message || "Could not start recording");
       }
     }
-  }, [recording, processing, language, sessionId, hasMicPermission]);
+  }, [recording, processing, language, sessionId, hasMicPermission, buildAssistantMsg]);
 
   /* ── Replay audio ── */
   const handleReplay = useCallback((audioBase64?: string) => {
     if (audioBase64) {
-      voiceService.playBase64Audio(audioBase64).catch(() => {});
+      logger.debug("VoiceScreen", "Replaying audio");
+      voice.playBase64Audio(audioBase64).catch(() => {});
     }
   }, []);
 
   /* ── New session ── */
   const handleNewSession = useCallback(() => {
+    logger.info("VoiceScreen", "Starting new session");
     setMessages([]);
     setSessionId(undefined);
-    voiceService.stopPlayback().catch(() => {});
+    setShowTextInput(false);
+    voice.stopPlayback().catch(() => {});
   }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={colors.ink} />
-        </Pressable>
+        {nav.canGoBack() ? (
+          <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
+            <Ionicons name="chevron-back" size={22} color={colors.ink} />
+          </Pressable>
+        ) : (
+          <View style={styles.backBtn} />
+        )}
         <Text style={styles.headerTitle}>Voice Assistant</Text>
         <Pressable style={styles.backBtn} onPress={handleNewSession}>
           <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
@@ -357,40 +447,56 @@ export default function VoiceScreen() {
               </View>
               <Text style={styles.emptyTitle}>Voice Assistant</Text>
               <Text style={styles.emptyHint}>
-                Tap the mic to speak, or type your question below.{"\n"}
-                Supports Hindi, English, Tamil, Telugu & more.
+                Tap the mic to speak. I'll show you visual responses{"\n"}
+                for farming, market prices, weather, schemes & more.
               </Text>
+              <View style={styles.featureGrid}>
+                {[
+                  { icon: "leaf", label: "Crop Advice" },
+                  { icon: "trending-up", label: "Market Prices" },
+                  { icon: "cloud", label: "Weather" },
+                  { icon: "document-text", label: "Govt Schemes" },
+                ].map((f) => (
+                  <View key={f.label} style={styles.featureItem}>
+                    <Ionicons name={f.icon as any} size={20} color={colors.primary} />
+                    <Text style={styles.featureLabel}>{f.label}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           )}
 
-          {messages.map((msg) => (
-            <View
-              key={msg.id}
-              style={[styles.bubble, msg.role === "user" ? styles.userBubble : styles.aiBubble]}
-            >
-              {msg.isLoading ? (
-                <View style={styles.loadingRow}>
+          {messages.map((msg) => {
+            if (msg.isLoading) {
+              return (
+                <View key={msg.id} style={styles.loadingCard}>
                   <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={styles.loadingText}>Thinking...</Text>
+                  <Text style={styles.loadingText}>Processing your voice...</Text>
                 </View>
-              ) : (
-                <>
-                  <Text style={styles.bubbleText}>{msg.text}</Text>
-                  <View style={styles.bubbleMeta}>
-                    <Text style={styles.bubbleTime}>{msg.timestamp}</Text>
-                    {msg.role === "assistant" && msg.audioBase64 ? (
-                      <Pressable onPress={() => handleReplay(msg.audioBase64)} style={styles.replayBtn}>
-                        <Ionicons name="volume-medium" size={14} color={colors.primary} />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </>
-              )}
-            </View>
-          ))}
+              );
+            }
+
+            if (msg.role === "user") {
+              return (
+                <View key={msg.id} style={styles.userBubble}>
+                  <Ionicons name="person-circle" size={18} color="rgba(255,255,255,0.7)" />
+                  <Text style={styles.userBubbleText}>{msg.text}</Text>
+                </View>
+              );
+            }
+
+            // Assistant — rich visual card
+            return (
+              <ResponseCard
+                key={msg.id}
+                msg={msg}
+                onReplay={() => handleReplay(msg.audioBase64)}
+              />
+            );
+          })}
         </ScrollView>
 
-        {/* ── Voice section + input ── */}
+        {/* ── Bottom voice + optional text ── */}
         <View style={styles.inputArea}>
           {/* Mic row */}
           <View style={styles.micRow}>
@@ -430,26 +536,39 @@ export default function VoiceScreen() {
 
           {recording && <Text style={styles.listeningText}>Listening... tap to stop</Text>}
 
-          {/* Text input fallback */}
-          <View style={styles.textInputRow}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Type your question..."
-              placeholderTextColor={colors.muted}
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={() => sendTextMessage(inputText)}
-              editable={!processing && !recording}
-              returnKeyType="send"
-            />
-            <Pressable
-              style={[styles.sendBtn, (!inputText.trim() || processing) && styles.sendBtnDisabled]}
-              onPress={() => sendTextMessage(inputText)}
-              disabled={!inputText.trim() || processing}
-            >
-              <Ionicons name="send" size={18} color="#FFF" />
+          {/* "Type instead" toggle — text input only shows when user explicitly asks */}
+          {!showTextInput && !recording && !processing && (
+            <Pressable style={styles.typeToggle} onPress={() => setShowTextInput(true)}>
+              <Ionicons name="keypad-outline" size={14} color={colors.muted} />
+              <Text style={styles.typeToggleText}>Type instead</Text>
             </Pressable>
-          </View>
+          )}
+
+          {showTextInput && (
+            <View style={styles.textInputRow}>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Type your question..."
+                placeholderTextColor={colors.muted}
+                value={inputText}
+                onChangeText={setInputText}
+                onSubmitEditing={() => sendTextMessage(inputText)}
+                editable={!processing && !recording}
+                returnKeyType="send"
+                autoFocus
+              />
+              <Pressable
+                style={[styles.sendBtn, (!inputText.trim() || processing) && styles.sendBtnDisabled]}
+                onPress={() => sendTextMessage(inputText)}
+                disabled={!inputText.trim() || processing}
+              >
+                <Ionicons name="send" size={18} color="#FFF" />
+              </Pressable>
+              <Pressable style={styles.closeTextBtn} onPress={() => { setShowTextInput(false); setInputText(""); }}>
+                <Ionicons name="close-circle" size={22} color={colors.muted} />
+              </Pressable>
+            </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -505,7 +624,7 @@ const styles = StyleSheet.create({
   chatContent: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 },
 
   /* Empty state */
-  emptyState: { alignItems: "center", justifyContent: "center", paddingTop: 80 },
+  emptyState: { alignItems: "center", justifyContent: "center", paddingTop: 50 },
   emptyIcon: {
     width: 80,
     height: 80,
@@ -517,43 +636,124 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 20, fontWeight: "900", color: colors.ink, marginBottom: 8 },
   emptyHint: { fontSize: 13, fontWeight: "600", color: colors.muted, textAlign: "center", lineHeight: 20, paddingHorizontal: 20 },
-
-  /* Bubbles */
-  bubble: {
-    maxWidth: "85%",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
-    marginBottom: 8,
+  featureGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 24,
+    paddingHorizontal: 20,
   },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: colors.primary,
-    borderBottomRightRadius: 4,
-  },
-  aiBubble: {
-    alignSelf: "flex-start",
+  featureItem: {
+    width: 100,
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 12,
     backgroundColor: colors.surface,
-    borderBottomLeftRadius: 4,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  bubbleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.ink,
-    lineHeight: 20,
-  },
-  bubbleMeta: {
+  featureLabel: { fontSize: 11, fontWeight: "700", color: colors.ink },
+
+  /* User bubble — compact */
+  userBubble: {
+    alignSelf: "flex-end",
+    maxWidth: "82%",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
     gap: 6,
-    marginTop: 4,
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
-  bubbleTime: { fontSize: 10, fontWeight: "600", color: colors.muted },
-  replayBtn: { padding: 2 },
-  loadingRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  userBubbleText: { fontSize: 14, fontWeight: "600", color: "#FFF", lineHeight: 20, flexShrink: 1 },
+
+  /* Response card — visual */
+  responseCard: {
+    alignSelf: "flex-start",
+    maxWidth: "92%",
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 12,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  domainBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  domainLabel: { fontSize: 11, fontWeight: "800" },
+  intentLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.muted,
+    textTransform: "capitalize",
+  },
+  entityRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 8,
+  },
+  entityTag: {
+    flexDirection: "row",
+    gap: 3,
+    backgroundColor: colors.bg,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  entityKey: { fontSize: 10, fontWeight: "800", color: colors.muted },
+  entityVal: { fontSize: 10, fontWeight: "700", color: colors.ink },
+  cardText: { fontSize: 14, fontWeight: "600", color: colors.ink, lineHeight: 21 },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  cardTime: { fontSize: 10, fontWeight: "600", color: colors.muted },
+  replayBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    backgroundColor: colors.primaryTint,
+  },
+  replayLabel: { fontSize: 11, fontWeight: "700", color: colors.primary },
+
+  /* Loading card */
+  loadingCard: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 10,
+  },
   loadingText: { fontSize: 13, fontWeight: "600", color: colors.muted },
 
   /* Input area */
@@ -570,7 +770,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 4,
     gap: 8,
   },
   waveRow: { flexDirection: "row", gap: 3, height: 22, alignItems: "center" },
@@ -597,10 +797,20 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
   },
   micBtnDisabled: { opacity: 0.6 },
-  listeningText: { textAlign: "center", fontSize: 12, fontWeight: "700", color: colors.primary, marginBottom: 6 },
+  listeningText: { textAlign: "center", fontSize: 12, fontWeight: "700", color: colors.primary, marginBottom: 4 },
 
-  /* Text input */
-  textInputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  /* Type instead toggle */
+  typeToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 6,
+  },
+  typeToggleText: { fontSize: 12, fontWeight: "600", color: colors.muted },
+
+  /* Text input (hidden by default) */
+  textInputRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
   textInput: {
     flex: 1,
     height: 42,
@@ -622,4 +832,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendBtnDisabled: { opacity: 0.4 },
+  closeTextBtn: { padding: 4 },
 });

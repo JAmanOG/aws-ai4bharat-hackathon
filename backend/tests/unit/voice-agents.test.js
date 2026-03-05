@@ -142,10 +142,10 @@ describe('AI Agent Registry', () => {
       const result = await agent.handle(healthCtx, { llm: mockLlm });
       expect(result.response).toBeDefined();
 
-      // Health should prefer Bedrock (more responsible)
+      // Health agent delegates to LLM (MCP routes health to Claude directly)
       const callArgs = mockLlm.generateResponse.mock.calls[0];
       const opts = callArgs[1];
-      expect(opts.preferredProvider).toBe('bedrock-claude');
+      expect(opts.temperature).toBe(0.1);
     });
 
     test('general agent handles greetings', async () => {

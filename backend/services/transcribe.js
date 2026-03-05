@@ -200,23 +200,43 @@ async function transcribeWithSarvam(audioBuffer, opts = {}) {
 }
 
 /* ═══════════════════════════════════════════════════════ */
-/*  Hybrid STT (Amazon primary, Sarvam fallback)           */
+/*  Hybrid STT (Sarvam primary — fast, Amazon fallback)    */
 /* ═══════════════════════════════════════════════════════ */
 
 /**
- * Main transcription entry point — tries Amazon Transcribe first,
- * falls back to Sarvam STT on failure.
+ * Main transcription entry point.
+ *
+ * Priority: Sarvam STT first (single HTTP call, ~1-3s, 22 Indian languages)
+ * Fallback: Amazon Transcribe (batch S3 job, 5-30s, 6 languages)
  *
  * @param {Buffer} audioBuffer
  * @param {object} opts
  * @returns {Promise<{transcript: string, language_code: string, provider: string, confidence: number|null}>}
  */
 async function transcribe(audioBuffer, opts = {}) {
+    const start = Date.now();
+    let sarvamError = null;
+
+    // Try Sarvam STT first (faster, covers more Indian languages)
     try {
-        return await transcribeWithAmazon(audioBuffer, opts);
-    } catch (err) {
-        console.warn(`[Transcribe] Amazon Transcribe failed: ${err.message}. Falling back to Sarvam STT...`);
-        return transcribeWithSarvam(audioBuffer, opts);
+        console.log(`[Transcribe] → Trying Sarvam STT (${audioBuffer.length} bytes)...`);
+        const result = await transcribeWithSarvam(audioBuffer, opts);
+        console.log(`[Transcribe] ✓ Sarvam STT succeeded in ${Date.now() - start}ms: "${(result.transcript || '').substring(0, 80)}" [${result.language_code}]`);
+        return result;
+    } catch (sarvamErr) {
+        sarvamError = sarvamErr;
+        console.warn(`[Transcribe] ⚠ Sarvam STT failed (${Date.now() - start}ms): ${sarvamErr.message}`);
+    }
+
+    // Fallback to Amazon Transcribe (slower but reliable)
+    try {
+        console.log(`[Transcribe] → Falling back to Amazon Transcribe...`);
+        const result = await transcribeWithAmazon(audioBuffer, opts);
+        console.log(`[Transcribe] ✓ Amazon Transcribe succeeded in ${Date.now() - start}ms: "${(result.transcript || '').substring(0, 80)}" [${result.language_code}]`);
+        return result;
+    } catch (amazonErr) {
+        console.error(`[Transcribe] ✗ Both STT providers failed after ${Date.now() - start}ms. Sarvam: ${sarvamError?.message || 'N/A'}, Amazon: ${amazonErr.message}`);
+        throw new Error(`All STT providers failed. Last error: ${amazonErr.message}`);
     }
 }
 

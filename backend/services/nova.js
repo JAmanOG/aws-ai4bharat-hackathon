@@ -5,6 +5,8 @@
  *   1. Language identification + translation to English
  *   2. Context understanding + entity extraction
  *   3. Intent classification + domain routing logic
+ *   4. Direct answer attempt — if the query is simple enough,
+ *      Nova answers directly (skipping the full Agent/MCP pipeline)
  *
  * Model: Amazon Nova Micro (text-only, fastest, cheapest)
  *   - $0.035 / 1M input tokens, $0.14 / 1M output tokens
@@ -24,7 +26,7 @@ const FALLBACK_MODEL = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku
 const novaClient = new BedrockRuntimeClient({ region: NOVA_REGION });
 const fallbackClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
 
-/* ─── Analysis prompt — single LLM call for translate + understand + route ─── */
+/* ─── Analysis prompt — single LLM call for translate + understand + route + direct answer ─── */
 const ANALYSIS_PROMPT = `You are an AI router for a rural Indian agriculture platform voice assistant.
 
 Given a user's spoken input (possibly in Hindi, Tamil, Telugu, etc.), perform these tasks:
@@ -34,6 +36,7 @@ Given a user's spoken input (possibly in Hindi, Tamil, Telugu, etc.), perform th
 3. CLASSIFY INTENT: Determine the domain and sub-intent
 4. EXTRACT ENTITIES: Pull out key entities (crop, location, amount, etc.)
 5. ASSESS COMPLEXITY: Is this simple, moderate, or complex?
+6. DIRECT ANSWER: If the query is simple enough that you can confidently answer it yourself (greetings, basic general knowledge, simple app guidance, basic farming tips, or casual conversation), set can_answer_directly=true and provide the answer in direct_response. Keep it brief (1-3 sentences) since this will be spoken aloud via TTS. If the user speaks Hindi or another Indian language, respond in the same language. If the query requires real-time data (live prices, weather), tool access, specific scheme details, or complex domain expertise, set can_answer_directly=false.
 
 Available domains:
 - agriculture: crop advice, soil, weather, irrigation, pest/disease, farming techniques
@@ -54,7 +57,9 @@ Respond ONLY with valid JSON (no markdown, no explanation):
     "amount": "5000"
   },
   "complexity": "simple|moderate|complex",
-  "summary": "one-line summary of what user wants"
+  "summary": "one-line summary of what user wants",
+  "can_answer_directly": true,
+  "direct_response": "Your direct answer here (only if can_answer_directly is true, otherwise omit or set to null)"
 }
 
 Only include entity keys that are actually present. Use null for missing values.`;
@@ -65,10 +70,11 @@ Only include entity keys that are actually present. Use null for missing values.
 
 /**
  * Analyze user input using AWS Nova for translation + intent routing.
+ * Nova also attempts a direct answer for simple queries.
  *
  * @param {string} text             – Raw user text (any language)
  * @param {string} [detectedLang]   – Language hint from STT
- * @returns {Promise<{english_text: string, original_language: string, domain: string, intent: string, entities: object, complexity: string, summary: string, provider: string}>}
+ * @returns {Promise<{english_text: string, original_language: string, domain: string, intent: string, entities: object, complexity: string, summary: string, can_answer_directly: boolean, direct_response: string|null, provider: string}>}
  */
 async function analyzeAndRoute(text, detectedLang = 'unknown') {
     const userMessage = `User input: "${text}"\nDetected language from STT: ${detectedLang}`;
@@ -102,7 +108,7 @@ async function invokeNova(userMessage) {
         ],
         system: [{ text: ANALYSIS_PROMPT }],
         inferenceConfig: {
-            maxTokens: 512,
+            maxTokens: 768,
             temperature: 0.1,
         },
     };
@@ -126,7 +132,7 @@ async function invokeNova(userMessage) {
 async function invokeFallback(userMessage) {
     const payload = {
         anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: 512,
+        max_tokens: 768,
         temperature: 0.1,
         system: ANALYSIS_PROMPT,
         messages: [
@@ -169,6 +175,8 @@ function parseAnalysisResponse(text) {
             entities: parsed.entities || {},
             complexity: validComplexity(parsed.complexity),
             summary: parsed.summary || '',
+            can_answer_directly: !!parsed.can_answer_directly,
+            direct_response: parsed.can_answer_directly ? (parsed.direct_response || null) : null,
         };
     } catch {
         console.warn('[Nova] Failed to parse analysis JSON, using basic routing');
@@ -180,6 +188,8 @@ function parseAnalysisResponse(text) {
             entities: {},
             complexity: 'simple',
             summary: '',
+            can_answer_directly: false,
+            direct_response: null,
         };
     }
 }
@@ -224,6 +234,8 @@ function basicRoute(text, detectedLang) {
         entities: {},
         complexity: 'simple',
         summary: '',
+        can_answer_directly: false,
+        direct_response: null,
     };
 }
 

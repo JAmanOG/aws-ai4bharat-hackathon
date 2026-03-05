@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiError } from '../services/api';
+import { logger } from '../utils/logger';
 
 interface UseApiState<T> {
   data: T | null;
@@ -40,12 +41,14 @@ export function useApi<T>(
     fetcher(controller.signal)
       .then((result) => {
         if (mountedRef.current && id === triggerRef.current) {
+          logger.debug('useApi', 'Data loaded', { id });
           setData(result);
           setLoading(false);
         }
       })
       .catch((err) => {
         if (mountedRef.current && id === triggerRef.current) {
+          logger.warn('useApi', 'Fetch error', { id, message: err?.message });
           setError(err);
           setLoading(false);
         }

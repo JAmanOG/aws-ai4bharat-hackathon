@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { chatWithText } from "../services/voice";
+import { logger } from "../utils/logger";
 
 type ChatMsg = { role: "user" | "assistant"; text: string };
 
@@ -20,6 +21,7 @@ export default function ActionScreen() {
 
   const fetchInfo = useCallback(async () => {
     if (loading) return;
+    logger.info("ActionScreen", `Fetching AI info for ${actionTitle} in ${moduleTitle}`);
     setLoading(true);
     setAsked(true);
     const prompt = `Give me a brief overview and key actions available for the "${actionTitle}" section under "${moduleTitle}" module in the Rural Ecosystem Platform. Answer in 3-5 bullet points.`;
@@ -81,7 +83,7 @@ export default function ActionScreen() {
 
       {/* Voice CTA */}
       <View style={styles.bottomBar}>
-        <Pressable style={styles.voiceBtn} onPress={() => nav.navigate("Voice")}>
+        <Pressable style={styles.voiceBtn} onPress={() => nav.navigate("Ask")}>
           <Ionicons name="mic" size={20} color="#FFF" />
           <Text style={styles.voiceBtnText}>Ask by Voice</Text>
         </Pressable>

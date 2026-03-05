@@ -155,6 +155,7 @@ async function voiceRoutes(fastify) {
         },
     }, async (req) => {
         const userId = req.userId;
+        const reqStart = Date.now();
         const {
             text,
             language_code = 'hi',
@@ -162,15 +163,39 @@ async function voiceRoutes(fastify) {
             generate_audio = true,
         } = req.body;
 
-        const result = await orchestrator.processText({
-            text,
+        req.log.info({
+            route: '/voice/chat',
             userId,
-            sessionId: session_id,
-            languageCode: language_code,
-            generateAudio: generate_audio,
-        });
+            textLength: text.length,
+            textPreview: text.substring(0, 80),
+            language: language_code,
+        }, '▶ Voice text request received');
 
-        return result;
+        try {
+            const result = await orchestrator.processText({
+                text,
+                userId,
+                sessionId: session_id,
+                languageCode: language_code,
+                generateAudio: generate_audio,
+            });
+
+            req.log.info({
+                route: '/voice/chat',
+                totalMs: Date.now() - reqStart,
+                provider: result.provider,
+                domain: result.domain,
+            }, '■ Voice text response sent');
+
+            return result;
+        } catch (err) {
+            req.log.error({
+                route: '/voice/chat',
+                totalMs: Date.now() - reqStart,
+                error: err.message,
+            }, '✗ Voice text pipeline failed');
+            throw err;
+        }
     });
 
     /* ═══════════════════════════════════════════════════════ */
@@ -181,6 +206,7 @@ async function voiceRoutes(fastify) {
         config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     }, async (req, reply) => {
         const userId = req.userId;
+        const reqStart = Date.now();
 
         // Parse audio from request
         let audioBuffer;
@@ -204,15 +230,41 @@ async function voiceRoutes(fastify) {
             return reply.status(400).send({ error: 'No audio data provided' });
         }
 
-        const result = await orchestrator.processAudio({
-            audioBuffer,
+        req.log.info({
+            route: '/voice/chat/audio',
             userId,
-            sessionId,
+            audioBytes: audioBuffer.length,
             languageCode,
-            generateAudio: true,
-        });
+            sessionId: sessionId.slice(0, 8),
+        }, '▶ Voice audio request received');
 
-        return result;
+        try {
+            const result = await orchestrator.processAudio({
+                audioBuffer,
+                userId,
+                sessionId,
+                languageCode,
+                generateAudio: true,
+            });
+
+            req.log.info({
+                route: '/voice/chat/audio',
+                totalMs: Date.now() - reqStart,
+                provider: result.provider,
+                domain: result.domain,
+                hasAudio: !!result.audio_base64,
+                hasError: !!result.error,
+            }, '■ Voice audio response sent');
+
+            return result;
+        } catch (err) {
+            req.log.error({
+                route: '/voice/chat/audio',
+                totalMs: Date.now() - reqStart,
+                error: err.message,
+            }, '✗ Voice audio pipeline failed');
+            throw err;
+        }
     });
 
     /* ═══════════════════════════════════════════════════════ */

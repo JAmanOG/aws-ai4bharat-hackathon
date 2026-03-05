@@ -5,7 +5,7 @@
  *
  *   User Audio
  *       ↓
- *   Amazon Transcribe (STT + Language ID)
+ *   STT (Sarvam primary → Amazon Transcribe fallback)
  *       ↓
  *   AWS Nova (Translate + Understand + Route)
  *       ↓
@@ -14,6 +14,8 @@
  *   Sarvam AI (Localize + TTS)
  *       ↓
  *   User Output (text + audio)
+ *
+ * Every stage is logged with timing + provider + outcome.
  *
  * This module exposes two main entry points:
  *   - processAudio()  – Full audio pipeline (STT → response)
@@ -27,9 +29,19 @@ const mcp = require('./mcp');
 const memory = require('./memory');
 const sarvam = require('./sarvam');
 
+/* ─── Structured logger ─── */
+function log(level, stage, msg, data = {}) {
+    const ts = new Date().toISOString();
+    const prefix = `[${ts}] [${level.toUpperCase()}] [Orchestrator/${stage}]`;
+    const extras = Object.keys(data).length ? ' ' + JSON.stringify(data) : '';
+    if (level === 'error') console.error(`${prefix} ${msg}${extras}`);
+    else if (level === 'warn') console.warn(`${prefix} ${msg}${extras}`);
+    else console.log(`${prefix} ${msg}${extras}`);
+}
+
 /* ═══════════════════════════════════════════════════════ */
 /*  Full Audio Pipeline                                    */
-/*  Audio → Transcribe → Nova → MCP/Agent → Sarvam → Out  */
+/*  Audio → STT → Nova → MCP/Agent → Sarvam → Out         */
 /* ═══════════════════════════════════════════════════════ */
 
 /**
@@ -55,21 +67,63 @@ async function processAudio(params) {
 
     const pipeline = { stages: {} };
 
+    log('info', 'Pipeline', '▶ STARTING audio pipeline', {
+        userId,
+        sessionId: sessionId.slice(0, 8),
+        audioBytes: audioBuffer?.length || 0,
+        languageHint: languageCode,
+        generateAudio,
+    });
+
     // ──────────────────────────────────────────────
-    // Stage 1: Amazon Transcribe (STT + Language ID)
+    // Stage 1: STT (Sarvam primary → Transcribe fallback)
     // ──────────────────────────────────────────────
+    let sttResult;
     const sttStart = Date.now();
-    const sttResult = await transcribeService.transcribe(audioBuffer, { languageCode });
-    pipeline.stages.stt = {
-        provider: sttResult.provider,
-        language: sttResult.language_code,
-        ms: Date.now() - sttStart,
-    };
+
+    try {
+        log('info', 'STT', '→ Starting speech-to-text', { audioBytes: audioBuffer.length });
+        sttResult = await transcribeService.transcribe(audioBuffer, { languageCode });
+        const sttMs = Date.now() - sttStart;
+        log('info', 'STT', `✓ Transcription complete in ${sttMs}ms`, {
+            provider: sttResult.provider,
+            language: sttResult.language_code,
+            transcript: (sttResult.transcript || '').substring(0, 100),
+            confidence: sttResult.confidence,
+        });
+        pipeline.stages.stt = {
+            provider: sttResult.provider,
+            language: sttResult.language_code,
+            transcript_preview: (sttResult.transcript || '').substring(0, 60),
+            ms: sttMs,
+        };
+    } catch (sttErr) {
+        const sttMs = Date.now() - sttStart;
+        log('error', 'STT', `✗ All STT providers failed after ${sttMs}ms`, {
+            error: sttErr.message,
+        });
+        pipeline.stages.stt = { provider: 'none', error: sttErr.message, ms: sttMs };
+        return {
+            transcript: '',
+            response_text: 'Sorry, I could not understand what you said. Please try again.',
+            response_text_english: 'Sorry, I could not understand what you said. Please try again.',
+            audio_base64: '',
+            session_id: sessionId,
+            language_code: languageCode,
+            domain: 'unknown',
+            intent: 'unknown',
+            provider: 'none',
+            pipeline,
+            response_time_ms: Date.now() - startTime,
+            error: `STT failed: ${sttErr.message}`,
+        };
+    }
 
     const userText = sttResult.transcript;
     const detectedLang = sttResult.language_code || languageCode;
 
     if (!userText || !userText.trim()) {
+        log('warn', 'STT', '⚠ Empty transcript — no speech detected');
         return {
             transcript: '',
             response_text: '',
@@ -86,7 +140,7 @@ async function processAudio(params) {
         };
     }
 
-    // Continue with the text pipeline (stages 2-5)
+    // Continue with the text pipeline (stages 2-6)
     const result = await _processFromText({
         text: userText,
         userId,
@@ -95,6 +149,13 @@ async function processAudio(params) {
         generateAudio,
         startTime,
         pipeline,
+    });
+
+    const totalMs = Date.now() - startTime;
+    log('info', 'Pipeline', `■ AUDIO PIPELINE COMPLETE in ${totalMs}ms`, {
+        stages: Object.fromEntries(
+            Object.entries(pipeline.stages).map(([k, v]) => [k, `${v.ms}ms (${v.provider || ''})`])
+        ),
     });
 
     return {
@@ -131,7 +192,15 @@ async function processText(params) {
 
     const pipeline = { stages: {} };
 
-    return _processFromText({
+    log('info', 'Pipeline', '▶ STARTING text pipeline', {
+        userId,
+        sessionId: sessionId.slice(0, 8),
+        textPreview: text.substring(0, 80),
+        language: languageCode,
+        generateAudio,
+    });
+
+    const result = await _processFromText({
         text,
         userId,
         sessionId,
@@ -140,6 +209,15 @@ async function processText(params) {
         startTime,
         pipeline,
     });
+
+    const totalMs = Date.now() - startTime;
+    log('info', 'Pipeline', `■ TEXT PIPELINE COMPLETE in ${totalMs}ms`, {
+        stages: Object.fromEntries(
+            Object.entries(pipeline.stages).map(([k, v]) => [k, `${v.ms}ms (${v.provider || ''})`])
+        ),
+    });
+
+    return result;
 }
 
 /* ═══════════════════════════════════════════════════════ */
@@ -149,56 +227,143 @@ async function processText(params) {
 async function _processFromText({ text, userId, sessionId, detectedLang, generateAudio, startTime, pipeline }) {
 
     // ──────────────────────────────────────────────
-    // Stage 2: AWS Nova (Translate + Understand + Route)
+    // Stage 2: AWS Nova (Translate + Understand + Route + Direct Answer)
     // ──────────────────────────────────────────────
+    let analysis;
     const novaStart = Date.now();
-    const analysis = await nova.analyzeAndRoute(text, detectedLang);
-    pipeline.stages.nova = {
-        provider: analysis.provider,
-        domain: analysis.domain,
-        intent: analysis.intent,
-        complexity: analysis.complexity,
-        ms: Date.now() - novaStart,
-    };
+    try {
+        log('info', 'Nova', '→ Analyzing intent + routing', { textPreview: text.substring(0, 80), lang: detectedLang });
+        analysis = await nova.analyzeAndRoute(text, detectedLang);
+        const novaMs = Date.now() - novaStart;
+        log('info', 'Nova', `✓ Analysis complete in ${novaMs}ms`, {
+            provider: analysis.provider,
+            domain: analysis.domain,
+            intent: analysis.intent,
+            complexity: analysis.complexity,
+            canAnswerDirectly: analysis.can_answer_directly,
+            english: (analysis.english_text || '').substring(0, 80),
+            directResponse: analysis.can_answer_directly
+                ? (analysis.direct_response || '').substring(0, 80)
+                : undefined,
+        });
+        pipeline.stages.nova = {
+            provider: analysis.provider,
+            domain: analysis.domain,
+            intent: analysis.intent,
+            complexity: analysis.complexity,
+            can_answer_directly: analysis.can_answer_directly,
+            ms: novaMs,
+        };
+    } catch (novaErr) {
+        const novaMs = Date.now() - novaStart;
+        log('error', 'Nova', `✗ Analysis failed after ${novaMs}ms`, { error: novaErr.message });
+        // Use basic fallback
+        analysis = {
+            english_text: text,
+            original_language: detectedLang,
+            domain: 'general',
+            intent: 'general_question',
+            entities: {},
+            complexity: 'simple',
+            summary: '',
+            can_answer_directly: false,
+            direct_response: null,
+            provider: 'fallback-basic',
+        };
+        pipeline.stages.nova = { provider: 'fallback-basic', error: novaErr.message, ms: novaMs };
+    }
 
     // ──────────────────────────────────────────────
-    // Stage 3: Store user turn in conversation memory
+    // Stage 3: Build context + Route through MCP → Agent
+    //   OR use Nova's direct answer (shortcut for simple queries)
     // ──────────────────────────────────────────────
-    await memory.storeTurn(userId, sessionId, 'user', text, {
-        language: detectedLang,
-        intentDomain: analysis.domain,
-    });
+    let agentResult;
 
-    // ──────────────────────────────────────────────
-    // Stage 4: Build context + Route through MCP → Agent
-    // ──────────────────────────────────────────────
-    const contextMessages = await memory.buildContextMessages(
-        userId,
-        sessionId,
-        analysis.english_text, // Use English text for LLM
-    );
+    if (analysis.can_answer_directly && analysis.direct_response) {
+        // ⚡ Nova can answer directly — skip the full Agent/MCP pipeline
+        log('info', 'Agent', `⚡ Nova direct answer (skipping agent pipeline)`, {
+            domain: analysis.domain,
+            intent: analysis.intent,
+            responsePreview: analysis.direct_response.substring(0, 100),
+        });
+        agentResult = {
+            response: analysis.direct_response,
+            provider: 'nova-direct',
+            route: 'direct',
+            agent: 'nova',
+        };
+        pipeline.stages.agent = {
+            provider: 'nova-direct',
+            route: 'direct',
+            agent: 'nova',
+            ms: 0,
+            skipped: true,
+        };
+    } else {
+        // Full pipeline: build context → MCP tool selection → execute tool
+        const mcpStart = Date.now();
+        try {
+            // Step 1: Build conversation context (memory facts + history + current query)
+            const contextMessages = await memory.buildContextMessages(
+                userId,
+                sessionId,
+                analysis.english_text, // Use English text for LLM
+            );
+            const historyTurns = Math.max(0, contextMessages.length - 2); // minus system + current
+            log('info', 'Context', `✓ Built context: ${contextMessages.length} messages`, {
+                systemPrompt: true,
+                historyTurns,
+                currentQuery: analysis.english_text.substring(0, 60),
+            });
 
-    const mcpStart = Date.now();
-    const agentResult = await mcp.routeToAgent({
-        domain: analysis.domain,
-        intent: analysis.intent,
-        entities: analysis.entities,
-        complexity: analysis.complexity,
-        messages: contextMessages,
-        userId,
-    });
-    pipeline.stages.agent = {
-        provider: agentResult.provider,
-        route: agentResult.route,
-        agent: agentResult.agent,
-        ms: Date.now() - mcpStart,
-    };
+            // Step 2: Route through MCP → Tool Selection → Agent / Claude / Gemini
+            log('info', 'MCP', `→ Routing "${analysis.domain}" (${analysis.complexity}) through MCP`, {
+                domain: analysis.domain,
+                intent: analysis.intent,
+                complexity: analysis.complexity,
+            });
+
+            agentResult = await mcp.routeToAgent({
+                domain: analysis.domain,
+                intent: analysis.intent,
+                entities: analysis.entities,
+                complexity: analysis.complexity,
+                messages: contextMessages,
+                userId,
+            });
+            const mcpMs = Date.now() - mcpStart;
+            log('info', 'MCP', `✓ MCP response in ${mcpMs}ms`, {
+                tool: agentResult.tool,
+                provider: agentResult.provider,
+                route: agentResult.route,
+                agent: agentResult.agent,
+                responsePreview: (agentResult.response || '').substring(0, 100),
+            });
+            pipeline.stages.agent = {
+                tool: agentResult.tool,
+                provider: agentResult.provider,
+                route: agentResult.route,
+                agent: agentResult.agent,
+                ms: mcpMs,
+            };
+        } catch (agentErr) {
+            const mcpMs = Date.now() - mcpStart;
+            log('error', 'MCP', `✗ All MCP tools failed after ${mcpMs}ms`, { error: agentErr.message });
+            agentResult = {
+                response: 'I am having trouble processing your request right now. Please try again.',
+                provider: 'fallback-static',
+                route: 'error',
+                agent: 'none',
+                tool: 'none',
+            };
+            pipeline.stages.agent = { provider: 'fallback-static', error: agentErr.message, ms: mcpMs };
+        }
+    } // end else (full MCP pipeline)
 
     const responseEnglish = agentResult.response;
-    const responseTimeMs = Date.now() - startTime;
 
     // ──────────────────────────────────────────────
-    // Stage 5: Sarvam AI — Localize + TTS
+    // Stage 4: Sarvam AI — Localize + TTS
     // ──────────────────────────────────────────────
     let responseText = responseEnglish;
     let audioBase64 = '';
@@ -211,24 +376,43 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
 
     if (!isEnglish && responseEnglish) {
         try {
+            log('info', 'Sarvam/Translate', `→ Translating en → ${detectedLang}`, {
+                textLength: responseEnglish.length,
+            });
             const translated = await sarvam.translate(responseEnglish, 'en', detectedLang);
             responseText = translated.translated_text || responseEnglish;
+            log('info', 'Sarvam/Translate', `✓ Translation done`, {
+                outputLength: responseText.length,
+                preview: responseText.substring(0, 80),
+            });
         } catch (translateErr) {
-            console.warn(`[Orchestrator] Translation failed: ${translateErr.message}. Using English response.`);
+            log('warn', 'Sarvam/Translate', `⚠ Translation failed: ${translateErr.message}, using English`);
             responseText = responseEnglish;
         }
+    } else {
+        log('debug', 'Sarvam/Translate', 'Skipping translation (English detected)');
     }
 
     // 5b. Generate TTS audio
     if (generateAudio && responseText) {
         try {
+            const ttsLang = isEnglish ? 'en-IN' : detectedLang;
+            log('info', 'Sarvam/TTS', `→ Generating speech in ${ttsLang}`, {
+                textLength: responseText.length,
+            });
             const ttsResult = await sarvam.synthesize(responseText, {
-                targetLanguageCode: isEnglish ? 'en-IN' : detectedLang,
+                targetLanguageCode: ttsLang,
             });
             audioBase64 = ttsResult.audios?.[0] || '';
+            log('info', 'Sarvam/TTS', `✓ TTS generated`, {
+                audioLength: audioBase64.length,
+                hasAudio: !!audioBase64,
+            });
         } catch (ttsErr) {
-            console.warn(`[Orchestrator] TTS failed: ${ttsErr.message}. Returning text only.`);
+            log('warn', 'Sarvam/TTS', `⚠ TTS failed: ${ttsErr.message}, returning text only`);
         }
+    } else {
+        log('debug', 'Sarvam/TTS', 'Skipping TTS', { generateAudio, hasText: !!responseText });
     }
 
     pipeline.stages.sarvam = {
@@ -238,17 +422,29 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
     };
 
     // ──────────────────────────────────────────────
-    // Stage 6: Store assistant turn + background fact extraction
+    // Stage 5: Store turns + extract facts (fire-and-forget, don't block response)
     // ──────────────────────────────────────────────
-    await memory.storeTurn(userId, sessionId, 'assistant', responseText, {
-        language: detectedLang,
-        intentDomain: analysis.domain,
-        responseTimeMs,
-    });
+    const memStartTime = Date.now();
+    (async () => {
+        try {
+            await memory.storeTurn(userId, sessionId, 'user', text, {
+                language: detectedLang,
+                intentDomain: analysis.domain,
+            });
+            await memory.storeTurn(userId, sessionId, 'assistant', responseText, {
+                language: detectedLang,
+                intentDomain: analysis.domain,
+                responseTimeMs: Date.now() - startTime,
+            });
+            log('debug', 'Memory', `✓ Both turns stored in ${Date.now() - memStartTime}ms`);
+        } catch (memErr) {
+            log('warn', 'Memory', `⚠ Failed to store turns: ${memErr.message}`);
+        }
+    })();
 
     // Background fact extraction — don't block response
     memory.extractAndStoreFacts(userId, text, responseText).catch(err => {
-        console.warn(`[Orchestrator] Background fact extraction failed: ${err.message}`);
+        log('warn', 'Memory', `⚠ Background fact extraction failed: ${err.message}`);
     });
 
     return {

@@ -8,12 +8,13 @@ import SchemesListScreen from "../screens/SchemesListScreen";
 import SchemeDetailScreen from "../screens/SchemeDetailScreen";
 import SymptomCheckerScreen from "../screens/SymptomCheckerScreen";
 import AlertsScreen from "../screens/AlertsScreen";
-import VoiceScreen from "../screens/VoiceScreen";
 import AgriMarketScreen from "../screens/AgriMarketScreen";
 import KnowledgeDashboardScreen from "../screens/KnowledgeDashboardScreen";
 import SavingsNudgeScreen from "../screens/SavingsNudgeScreen";
 import EligibilityScreen from "../screens/EligibilityScreen";
 import SyncStatusScreen from "../screens/SyncStatusScreen";
+import SavedScreen from "../screens/SavedScreen";
+import SavedDetailScreen from "../screens/SavedDetailScreen";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
@@ -23,13 +24,14 @@ export type HomeStackParamList = {
   SchemeDetail: { schemeId: string };
   SymptomChecker: undefined;
   Alerts: undefined;
-  Voice: undefined;
   Action: { moduleTitle: string; actionTitle: string };
   AgriMarket: undefined;
   KnowledgeDashboard: undefined;
   SavingsNudge: undefined;
   Eligibility: undefined;
   SyncStatus: undefined;
+  Saved: undefined;
+  SavedDetail: { itemId: string };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -44,13 +46,14 @@ export default function HomeStack() {
       <Stack.Screen name="SchemeDetail" component={SchemeDetailScreen} />
       <Stack.Screen name="SymptomChecker" component={SymptomCheckerScreen} />
       <Stack.Screen name="Alerts" component={AlertsScreen} />
-      <Stack.Screen name="Voice" component={VoiceScreen} />
       <Stack.Screen name="Action" component={ActionScreen} />
       <Stack.Screen name="AgriMarket" component={AgriMarketScreen} />
       <Stack.Screen name="KnowledgeDashboard" component={KnowledgeDashboardScreen} />
       <Stack.Screen name="SavingsNudge" component={SavingsNudgeScreen} />
       <Stack.Screen name="Eligibility" component={EligibilityScreen} />
       <Stack.Screen name="SyncStatus" component={SyncStatusScreen} />
+      <Stack.Screen name="Saved" component={SavedScreen} />
+      <Stack.Screen name="SavedDetail" component={SavedDetailScreen} />
     </Stack.Navigator>
   );
 }

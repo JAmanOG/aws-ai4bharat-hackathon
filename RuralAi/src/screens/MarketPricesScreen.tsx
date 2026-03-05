@@ -6,6 +6,7 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +20,7 @@ export default function MarketPricesScreen() {
 
   const [searchText, setSearchText] = useState("Wheat");
   const [crop, setCrop] = useState("Wheat");
+  const [mandi, setMandi] = useState("All mandis");
 
   // Debounced search — user types, hits Enter / blurs to search
   const handleSearch = useCallback(() => {
@@ -67,9 +69,15 @@ export default function MarketPricesScreen() {
                 />
               </View>
 
-              <Pressable style={styles.locBtn}>
+              <Pressable style={styles.locBtn} onPress={() => {
+                Alert.alert("Select Mandi", "Choose a location", [
+                  { text: "All mandis", onPress: () => setMandi("All mandis") },
+                  { text: "Nearest mandi", onPress: () => setMandi("Nearest") },
+                  { text: "Cancel", style: "cancel" },
+                ]);
+              }}>
                 <Ionicons name="location-outline" size={18} color={colors.earth} />
-                <Text style={styles.locText} numberOfLines={1}>All mandis</Text>
+                <Text style={styles.locText} numberOfLines={1}>{mandi}</Text>
               </Pressable>
             </View>
 

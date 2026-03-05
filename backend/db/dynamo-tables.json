@@ -215,6 +215,60 @@
         "message": "Localized nudge text",
         "related_crop_types": "Crops referenced by the nudge"
       }
+    },
+    {
+      "tableName": "Users",
+      "description": "Registered user accounts with phone-based auth and DigiLocker verification",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" }
+      },
+      "attributes": {
+        "userId": "UUID – primary user identifier",
+        "phone": "Mobile phone number (unique)",
+        "hashedPin": "bcrypt-hashed 4-6 digit PIN",
+        "name": "User display name",
+        "preferredLanguage": "Language code (hi, en, ta, etc.)",
+        "state": "Indian state",
+        "district": "District name",
+        "registeredVia": "app | voice | web",
+        "isVerified": "Boolean – DigiLocker verified",
+        "digilockerData": "{ aadhaarName, documentTypes, verifiedAt, provider }",
+        "profileComplete": "Boolean – all required fields filled",
+        "onboardingDone": "Boolean – onboarding flow completed",
+        "totalSessions": "Number of app sessions",
+        "totalVoiceInteractions": "Number of voice interactions",
+        "lastActiveAt": "ISO timestamp of last activity",
+        "createdAt": "ISO timestamp",
+        "updatedAt": "ISO timestamp"
+      },
+      "gsi": [
+        {
+          "indexName": "ByPhone",
+          "partitionKey": "phone",
+          "purpose": "Look up user by phone number for login"
+        }
+      ]
+    },
+    {
+      "tableName": "PersonalizedRecommendations",
+      "description": "User feedback and cached personalized recommendations for continuous learning",
+      "keySchema": {
+        "partitionKey": { "name": "userId", "type": "S" },
+        "sortKey": { "name": "feedbackId", "type": "S" }
+      },
+      "attributes": {
+        "userId": "User ID",
+        "feedbackId": "Composite: recs#timestamp for cached recs, or userId#timestamp#uuid for feedback",
+        "interactionId": "Session or recommendation ID being rated",
+        "domain": "Domain category (market, crop, scheme, health, etc.)",
+        "rating": "1-5 rating",
+        "feedbackText": "Optional text feedback",
+        "action": "followed | ignored | dismissed",
+        "recommendations": "Array of recommendation objects (for cached recs)",
+        "generatedAt": "ISO timestamp when recommendations were generated",
+        "createdAt": "ISO timestamp",
+        "ttl": "Time-to-live epoch seconds"
+      }
     }
   ]
 }
