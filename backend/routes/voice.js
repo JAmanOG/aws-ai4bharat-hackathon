@@ -1,31 +1,44 @@
 /**
  * Voice API routes – Requirement 2: Voice-Based Interface System
  *
+ * Architecture:
+ *   Audio → Amazon Transcribe (STT + Lang ID)
+ *       → AWS Nova (Translate + Understand + Route)
+ *       → AI Orchestrator → MCP → [Agents | Bedrock | Gemini]
+ *       → Sarvam AI (Localize + TTS)
+ *       → User Output
+ *
  * Endpoints:
- *   POST /voice/transcribe     – Audio → Text (Sarvam STT)
+ *   POST /voice/transcribe     – Audio → Text (Amazon Transcribe + Sarvam fallback)
  *   POST /voice/synthesize     – Text → Audio (Sarvam TTS)
- *   POST /voice/chat           – Full pipeline: text → LLM → response + audio
- *   POST /voice/chat/audio     – Full pipeline: audio → STT → LLM → response + audio
+ *   POST /voice/chat           – Full text pipeline (Nova → Agent → Sarvam TTS)
+ *   POST /voice/chat/audio     – Full audio pipeline (Transcribe → Nova → Agent → Sarvam TTS)
  *   POST /voice/translate      – Text translation between Indian languages
  *   GET  /voice/languages      – Supported languages + voices
  *   GET  /voice/sessions       – User's conversation sessions
  *   GET  /voice/sessions/:id   – Session history
+ *   GET  /voice/memory/facts   – User's extracted memory facts
+ *   DELETE /voice/memory/facts/:key – Delete a fact
+ *   GET  /voice/agents         – List available AI agents
+ *   GET  /voice/pipeline/health – Pipeline component health check
  */
 
 const { v4: uuid } = require('uuid');
 const sarvam = require('../services/sarvam');
-const { generateResponse } = require('../services/llm');
+const transcribeService = require('../services/transcribe');
+const orchestrator = require('../services/orchestrator');
 const memory = require('../services/memory');
+const agentRegistry = require('../services/agents');
 
 async function voiceRoutes(fastify) {
 
     /* ═══════════════════════════════════════════════════════ */
     /*  POST /voice/transcribe – Audio → Text                  */
+    /*  Uses Amazon Transcribe (primary) + Sarvam STT (fallback) */
     /* ═══════════════════════════════════════════════════════ */
     fastify.post('/voice/transcribe', {
         config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     }, async (req, reply) => {
-        // Accept multipart file upload or raw body
         let audioBuffer;
         let languageCode = 'unknown';
 
@@ -35,13 +48,11 @@ async function voiceRoutes(fastify) {
                 return reply.status(400).send({ error: 'No audio file provided' });
             }
             audioBuffer = await data.toBuffer();
-            // Check for language_code in fields
             const fields = data.fields;
             if (fields?.language_code?.value) {
                 languageCode = fields.language_code.value;
             }
         } else {
-            // Raw body (base64 JSON or binary)
             const body = req.body;
             if (body?.audio_base64) {
                 audioBuffer = Buffer.from(body.audio_base64, 'base64');
@@ -58,23 +69,19 @@ async function voiceRoutes(fastify) {
             return reply.status(400).send({ error: 'Empty audio data' });
         }
 
-        const langBcp47 = languageCode === 'unknown' ? 'unknown' : sarvam.toBcp47(languageCode);
-
-        const result = await sarvam.transcribe(audioBuffer, {
-            languageCode: langBcp47,
-            mode: req.body?.mode || 'transcribe',
-        });
+        // Use hybrid transcription (Amazon Transcribe → Sarvam fallback)
+        const result = await transcribeService.transcribe(audioBuffer, { languageCode });
 
         return {
             transcript: result.transcript,
             language_code: result.language_code,
-            language_probability: result.language_probability,
-            request_id: result.request_id,
+            confidence: result.confidence,
+            provider: result.provider,
         };
     });
 
     /* ═══════════════════════════════════════════════════════ */
-    /*  POST /voice/synthesize – Text → Audio                  */
+    /*  POST /voice/synthesize – Text → Audio (Sarvam TTS)     */
     /* ═══════════════════════════════════════════════════════ */
     fastify.post('/voice/synthesize', {
         schema: {
@@ -121,9 +128,7 @@ async function voiceRoutes(fastify) {
         },
     }, async (req) => {
         const { text, source_language = 'auto', target_language } = req.body;
-
         const result = await sarvam.translate(text, source_language, target_language);
-
         return {
             translated_text: result.translated_text,
             source_language_code: result.source_language_code,
@@ -132,7 +137,8 @@ async function voiceRoutes(fastify) {
     });
 
     /* ═══════════════════════════════════════════════════════ */
-    /*  POST /voice/chat – Text chat with memory + TTS         */
+    /*  POST /voice/chat – Text → Orchestrator pipeline        */
+    /*  Text → Nova → MCP/Agent → Sarvam (Localize + TTS)     */
     /* ═══════════════════════════════════════════════════════ */
     fastify.post('/voice/chat', {
         schema: {
@@ -148,7 +154,6 @@ async function voiceRoutes(fastify) {
             },
         },
     }, async (req) => {
-        const startTime = Date.now();
         const userId = req.userId;
         const {
             text,
@@ -157,65 +162,24 @@ async function voiceRoutes(fastify) {
             generate_audio = true,
         } = req.body;
 
-        // 1. Store user turn
-        await memory.storeTurn(userId, session_id, 'user', text, {
-            language: language_code,
+        const result = await orchestrator.processText({
+            text,
+            userId,
+            sessionId: session_id,
+            languageCode: language_code,
+            generateAudio: generate_audio,
         });
 
-        // 2. Build context messages with memory
-        const messages = await memory.buildContextMessages(userId, session_id, text);
-
-        // 3. Generate response via LLM chain
-        const llmResult = await generateResponse(messages, {
-            temperature: 0.3,
-            maxTokens: 512, // Shorter for voice
-        });
-
-        const responseText = llmResult.content;
-        const responseTimeMs = Date.now() - startTime;
-
-        // 4. Store assistant turn
-        await memory.storeTurn(userId, session_id, 'assistant', responseText, {
-            language: language_code,
-            responseTimeMs,
-        });
-
-        // 5. Generate audio if requested
-        let audioBase64 = '';
-        if (generate_audio && responseText) {
-            try {
-                const ttsResult = await sarvam.synthesize(responseText, {
-                    targetLanguageCode: language_code,
-                });
-                audioBase64 = ttsResult.audios?.[0] || '';
-            } catch (err) {
-                req.log.warn({ err }, 'TTS generation failed, returning text only');
-            }
-        }
-
-        // 6. Extract facts in background (don't block response)
-        memory.extractAndStoreFacts(userId, text, responseText).catch(err => {
-            req.log.warn({ err }, 'Background fact extraction failed');
-        });
-
-        return {
-            response_text: responseText,
-            audio_base64: audioBase64,
-            session_id,
-            language_code,
-            provider: llmResult.provider,
-            response_time_ms: responseTimeMs,
-        };
+        return result;
     });
 
     /* ═══════════════════════════════════════════════════════ */
     /*  POST /voice/chat/audio – Full audio pipeline           */
-    /*  Audio → STT → LLM → TTS → Audio                       */
+    /*  Audio → Transcribe → Nova → Agent → Sarvam → Output   */
     /* ═══════════════════════════════════════════════════════ */
     fastify.post('/voice/chat/audio', {
         config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     }, async (req, reply) => {
-        const startTime = Date.now();
         const userId = req.userId;
 
         // Parse audio from request
@@ -240,71 +204,15 @@ async function voiceRoutes(fastify) {
             return reply.status(400).send({ error: 'No audio data provided' });
         }
 
-        // 1. Transcribe audio → text
-        const sttResult = await sarvam.transcribe(audioBuffer, {
-            languageCode: languageCode === 'unknown' ? 'unknown' : sarvam.toBcp47(languageCode),
+        const result = await orchestrator.processAudio({
+            audioBuffer,
+            userId,
+            sessionId,
+            languageCode,
+            generateAudio: true,
         });
 
-        const userText = sttResult.transcript;
-        const detectedLang = sttResult.language_code || languageCode;
-
-        if (!userText || !userText.trim()) {
-            return {
-                response_text: '',
-                transcript: '',
-                audio_base64: '',
-                session_id: sessionId,
-                language_code: detectedLang,
-                error: 'Could not transcribe audio',
-            };
-        }
-
-        // 2. Store user turn
-        await memory.storeTurn(userId, sessionId, 'user', userText, {
-            language: detectedLang,
-        });
-
-        // 3. Build context + LLM
-        const messages = await memory.buildContextMessages(userId, sessionId, userText);
-        const llmResult = await generateResponse(messages, {
-            temperature: 0.3,
-            maxTokens: 512,
-        });
-
-        const responseText = llmResult.content;
-        const responseTimeMs = Date.now() - startTime;
-
-        // 4. Store assistant turn
-        await memory.storeTurn(userId, sessionId, 'assistant', responseText, {
-            language: detectedLang,
-            responseTimeMs,
-        });
-
-        // 5. Generate TTS for response
-        let audioBase64 = '';
-        try {
-            const ttsResult = await sarvam.synthesize(responseText, {
-                targetLanguageCode: detectedLang,
-            });
-            audioBase64 = ttsResult.audios?.[0] || '';
-        } catch (err) {
-            req.log.warn({ err }, 'TTS generation failed');
-        }
-
-        // 6. Background fact extraction
-        memory.extractAndStoreFacts(userId, userText, responseText).catch(err => {
-            req.log.warn({ err }, 'Background fact extraction failed');
-        });
-
-        return {
-            transcript: userText,
-            response_text: responseText,
-            audio_base64: audioBase64,
-            session_id: sessionId,
-            language_code: detectedLang,
-            provider: llmResult.provider,
-            response_time_ms: Date.now() - startTime,
-        };
+        return result;
     });
 
     /* ═══════════════════════════════════════════════════════ */
@@ -319,14 +227,26 @@ async function voiceRoutes(fastify) {
             name: info.name,
             tts_speaker: sarvam.DEFAULT_SPEAKERS[info.code] || null,
             tts_available: !!sarvam.DEFAULT_SPEAKERS[info.code],
+            transcribe_supported: transcribeService.TRANSCRIBE_LANGUAGES.includes(info.code),
         }));
 
         return {
             languages,
             total: languages.length,
-            stt_model: 'saaras:v3',
-            tts_model: 'bulbul:v3',
+            stt_primary: 'amazon-transcribe',
+            stt_fallback: 'sarvam-saaras-v3',
+            tts_model: 'sarvam-bulbul-v3',
+            routing_model: 'aws-nova-micro',
         };
+    });
+
+    /* ═══════════════════════════════════════════════════════ */
+    /*  GET /voice/agents – List available AI agents            */
+    /* ═══════════════════════════════════════════════════════ */
+    fastify.get('/voice/agents', {
+        config: { rateLimit: false },
+    }, async () => {
+        return { agents: agentRegistry.listAgents() };
     });
 
     /* ═══════════════════════════════════════════════════════ */
@@ -339,7 +259,7 @@ async function voiceRoutes(fastify) {
     });
 
     /* ═══════════════════════════════════════════════════════ */
-    /*  GET /voice/sessions/:id – Session conversation history */
+    /*  GET /voice/sessions/:id – Session history              */
     /* ═══════════════════════════════════════════════════════ */
     fastify.get('/voice/sessions/:id', async (req) => {
         const sessionId = req.params.id;
@@ -362,6 +282,33 @@ async function voiceRoutes(fastify) {
     fastify.delete('/voice/memory/facts/:key', async (req) => {
         await memory.deleteFact(req.userId, req.params.key);
         return { deleted: true, key: req.params.key };
+    });
+
+    /* ═══════════════════════════════════════════════════════ */
+    /*  GET /voice/pipeline/health – Pipeline health check     */
+    /* ═══════════════════════════════════════════════════════ */
+    fastify.get('/voice/pipeline/health', {
+        config: { rateLimit: false },
+    }, async () => {
+        const components = {
+            stt_amazon_transcribe: { status: 'available', region: process.env.AWS_REGION || 'ap-south-1' },
+            stt_sarvam_fallback: { status: process.env.SARVAM_API_KEY ? 'available' : 'missing_key' },
+            nova_router: { status: 'available', model: process.env.NOVA_MODEL_ID || 'amazon.nova-micro-v1:0' },
+            bedrock_llm: { status: 'available', model: process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0' },
+            gemini_fallback: { status: process.env.GEMINI_API_KEY ? 'available' : 'missing_key' },
+            sarvam_tts: { status: process.env.SARVAM_API_KEY ? 'available' : 'missing_key' },
+            sarvam_translate: { status: process.env.SARVAM_API_KEY ? 'available' : 'missing_key' },
+            memory_dynamodb: { status: 'available' },
+        };
+
+        const agents = agentRegistry.listAgents().map(a => a.name);
+
+        return {
+            pipeline: 'Audio → Transcribe → Nova → MCP/Agent → Sarvam → Output',
+            components,
+            agents,
+            healthy: Object.values(components).every(c => c.status === 'available'),
+        };
     });
 }
 

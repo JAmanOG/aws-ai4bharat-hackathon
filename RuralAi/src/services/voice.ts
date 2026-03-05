@@ -13,17 +13,33 @@ import api from './api';
 export interface TranscribeResult {
   transcript: string;
   language_code: string;
-  language_probability?: number;
+  confidence?: number;
+  provider?: string; // 'amazon-transcribe' | 'sarvam-stt'
+}
+
+export interface PipelineStage {
+  stage: string;
+  duration_ms: number;
+  provider?: string;
 }
 
 export interface ChatResult {
   response_text: string;
+  response_text_english?: string;
   audio_base64: string;
   session_id: string;
   language_code: string;
   provider: string;
   response_time_ms: number;
   transcript?: string; // present when audio input used
+
+  // New orchestrator fields
+  domain?: string;        // 'agriculture' | 'market' | 'schemes' | 'health' | 'general'
+  intent?: string;        // e.g. 'crop_advice', 'get_prices'
+  entities?: Record<string, string>;
+  complexity?: string;    // 'simple' | 'moderate' | 'complex'
+  route?: string;         // which agent/model handled the response
+  pipeline?: PipelineStage[];
 }
 
 export interface VoiceLanguage {
@@ -32,6 +48,13 @@ export interface VoiceLanguage {
   name: string;
   tts_speaker: string | null;
   tts_available: boolean;
+  transcribe_supported?: boolean; // Amazon Transcribe coverage
+}
+
+export interface AIAgent {
+  name: string;
+  description: string;
+  supportedIntents: string[];
 }
 
 export interface SessionSummary {
@@ -179,8 +202,17 @@ export async function chatWithText(
 export async function getLanguages(): Promise<{
   languages: VoiceLanguage[];
   total: number;
+  stt_primary: string;
+  stt_fallback: string;
+  tts_model: string;
+  routing_model: string;
 }> {
   return api.get('/voice/languages');
+}
+
+/** Get available AI agents */
+export async function getAgents(): Promise<{ agents: AIAgent[] }> {
+  return api.get('/voice/agents');
 }
 
 /** Get user's conversation sessions */

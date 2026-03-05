@@ -1,8 +1,9 @@
 /**
- * Unified LLM service with triple-fallback chain:
- *   1. Sarvam-M  (FREE, best Indic)
- *   2. Bedrock Claude 3 Haiku  (AWS-sponsored)
- *   3. Google Gemini  (generous credits)
+ * Unified LLM service with quad-fallback chain:
+ *   1. Sarvam-M         (FREE, best Indic — primary for simple queries)
+ *   2. AWS Nova Micro    (cheapest Bedrock model — fast classification/generation)
+ *   3. Bedrock Claude 3 Haiku  (AWS-sponsored — deep reasoning)
+ *   4. Google Gemini     (generous credits — final fallback)
  *
  * Each provider conforms to a common interface:
  *   { content: string, provider: string, usage: object }
@@ -12,8 +13,10 @@ const sarvam = require('./sarvam');
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+const novaBedrock = new BedrockRuntimeClient({ region: process.env.NOVA_REGION || process.env.AWS_REGION || 'us-east-1' });
 
 const BEDROCK_MODEL = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0';
+const NOVA_MODEL = process.env.NOVA_MODEL_ID || 'amazon.nova-micro-v1:0';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_API_KEY = () => process.env.GEMINI_API_KEY || '';
 
@@ -28,7 +31,52 @@ async function callSarvam(messages, opts = {}) {
     });
 }
 
-/* ─── Provider 2: Bedrock Claude Haiku ─── */
+/* ─── Provider 2: AWS Nova Micro (via Bedrock) ─── */
+
+async function callNova(messages, opts = {}) {
+    // Convert messages to Nova format
+    const systemMsgs = messages.filter(m => m.role === 'system');
+    const nonSystemMsgs = messages.filter(m => m.role !== 'system');
+
+    const payload = {
+        messages: nonSystemMsgs.map(m => ({
+            role: m.role === 'assistant' ? 'assistant' : 'user',
+            content: [{ text: m.content }],
+        })),
+        inferenceConfig: {
+            maxTokens: opts.maxTokens || 1024,
+            temperature: opts.temperature ?? 0.2,
+        },
+    };
+
+    if (systemMsgs.length > 0) {
+        payload.system = systemMsgs.map(m => ({ text: m.content }));
+    }
+
+    const command = new InvokeModelCommand({
+        modelId: NOVA_MODEL,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify(payload),
+    });
+
+    const response = await novaBedrock.send(command);
+    const data = JSON.parse(Buffer.from(response.body).toString('utf-8'));
+
+    const text = data.output?.message?.content?.[0]?.text || '';
+
+    return {
+        content: text,
+        provider: 'nova-micro',
+        usage: {
+            prompt_tokens: data.usage?.inputTokens || 0,
+            completion_tokens: data.usage?.outputTokens || 0,
+            total_tokens: (data.usage?.inputTokens || 0) + (data.usage?.outputTokens || 0),
+        },
+    };
+}
+
+/* ─── Provider 3: Bedrock Claude Haiku ─── */
 
 async function callBedrock(messages, opts = {}) {
     // Convert standard messages to Anthropic Messages API format
@@ -70,7 +118,7 @@ async function callBedrock(messages, opts = {}) {
     };
 }
 
-/* ─── Provider 3: Google Gemini ─── */
+/* ─── Provider 4: Google Gemini ─── */
 
 async function callGemini(messages, opts = {}) {
     const apiKey = GEMINI_API_KEY();
@@ -132,11 +180,12 @@ async function callGemini(messages, opts = {}) {
 }
 
 /* ════════════════════════════════════════════════════════ */
-/*  Main entry point — triple-fallback chain               */
+/*  Main entry point — quad-fallback chain                 */
 /* ════════════════════════════════════════════════════════ */
 
 /**
- * Generate a response using the LLM chain: Sarvam-M → Bedrock → Gemini.
+ * Generate a response using the LLM chain:
+ *   Sarvam-M → Nova Micro → Bedrock Claude → Gemini
  *
  * @param {Array<{role: string, content: string}>} messages
  * @param {object} [opts]
@@ -149,6 +198,7 @@ async function callGemini(messages, opts = {}) {
 async function generateResponse(messages, opts = {}) {
     const providers = [
         { name: 'sarvam-m', fn: callSarvam },
+        { name: 'nova-micro', fn: callNova },
         { name: 'bedrock-claude', fn: callBedrock },
         { name: 'gemini', fn: callGemini },
     ];
@@ -183,6 +233,7 @@ async function generateResponse(messages, opts = {}) {
 module.exports = {
     generateResponse,
     callSarvam,
+    callNova,
     callBedrock,
     callGemini,
 };

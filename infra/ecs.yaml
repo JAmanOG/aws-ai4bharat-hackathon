@@ -49,6 +49,14 @@ Parameters:
     NoEcho: true
     Default: ''
     Description: Google Gemini API key (fallback LLM)
+  NovaRegion:
+    Type: String
+    Default: 'us-east-1'
+    Description: AWS region for Nova model (may differ from app region)
+  NovaModelId:
+    Type: String
+    Default: 'amazon.nova-micro-v1:0'
+    Description: AWS Nova model for language analysis + routing
 
   # ── Cognito ──
   CognitoUserPoolId:
@@ -218,7 +226,18 @@ Resources:
                   - !Ref CommunityNotificationsTopic
               - Sid: AI
                 Effect: Allow
-                Action: [polly:SynthesizeSpeech, translate:TranslateText, bedrock:InvokeModel]
+                Action:
+                  - polly:SynthesizeSpeech
+                  - translate:TranslateText
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
+              - Sid: Transcribe
+                Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                  - transcribe:DeleteTranscriptionJob
                 Resource: '*'
               - Sid: Cognito
                 Effect: Allow
@@ -285,6 +304,8 @@ Resources:
             - { Name: BEDROCK_MODEL_ID, Value: !Ref BedrockModelId }
             - { Name: SARVAM_API_KEY, Value: !Ref SarvamApiKey }
             - { Name: GEMINI_API_KEY, Value: !Ref GeminiApiKey }
+            - { Name: NOVA_REGION, Value: !Ref NovaRegion }
+            - { Name: NOVA_MODEL_ID, Value: !Ref NovaModelId }
             - { Name: DIGILOCKER_USE_MOCK, Value: 'true' }
 
             # ── Cognito ──
