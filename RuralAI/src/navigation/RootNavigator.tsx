@@ -10,6 +10,11 @@ import SavedScreen from "../screens/SavedScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import CustomTabBar from "./CustomTabBar";
 import HomeStack from "./HomeStack";
+import SchemesListScreen from "../screens/SchemesListScreen";
+import SchemeDetailScreen from "../screens/SchemeDetailScreen";
+import ActionScreen from "../screens/ActionScreen";
+import VoiceRoomScreen from "../screens/VoiceRoomScreen";
+import ModuleScreen from "../screens/ModuleScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -43,7 +48,14 @@ export default function RootNavigator() {
       {showSplash ? (
         <Stack.Screen name="Splash" component={SplashScreen} />
       ) : (
-        <Stack.Screen name="Main" component={Tabs} />
+        <>
+          <Stack.Screen name="Main" component={Tabs} />
+          <Stack.Screen name="Module" component={ModuleScreen} />
+          <Stack.Screen name="SchemesList" component={SchemesListScreen} />
+          <Stack.Screen name="SchemeDetail" component={SchemeDetailScreen} />
+          <Stack.Screen name="Action" component={ActionScreen} />
+          <Stack.Screen name="VoiceRoom" component={VoiceRoomScreen} />
+        </>
       )}
     </Stack.Navigator>
   );

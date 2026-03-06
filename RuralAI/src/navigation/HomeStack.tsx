@@ -5,13 +5,10 @@ import ModuleScreen from "../screens/ModuleScreen";
 import ActionScreen from "../screens/ActionScreen";
 import SchemesListScreen from "../screens/SchemesListScreen";
 import SchemeDetailScreen from "../screens/SchemeDetailScreen";
+import VoiceRoomScreen from "../screens/VoiceRoomScreen";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
-  Module: { title: string };
-  SchemesList: { moduleTitle?: string } | undefined;
-  SchemeDetail: { schemeId: string };
-  Action: { moduleTitle: string; actionTitle: string };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -20,10 +17,6 @@ export default function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeMain" component={HomeScreen} />
-      <Stack.Screen name="Module" component={ModuleScreen} />
-      <Stack.Screen name="SchemesList" component={SchemesListScreen} />
-      <Stack.Screen name="SchemeDetail" component={SchemeDetailScreen} />
-      <Stack.Screen name="Action" component={ActionScreen} />
     </Stack.Navigator>
   );
 }

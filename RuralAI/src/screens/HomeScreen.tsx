@@ -5,13 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { useNavigation } from "@react-navigation/native";
 
-const MODULES = [
-  { title: "AGRICULTURE", icon: "leaf-outline", wide: false },
-  { title: "EDUCATION", icon: "school-outline", wide: false },
-  { title: "FINANCE", icon: "cash-outline", wide: false },
-  { title: "HEALTH", icon: "medkit-outline", wide: false },
-  { title: "INFRASTRUCTURE", icon: "home-outline", wide: true },
-];
+
 
 export default function HomeScreen() {
   const nav = useNavigation<any>();
@@ -40,7 +34,7 @@ export default function HomeScreen() {
 
         {/* Mic CTA */}
         <View style={styles.micBlock}>
-          <Pressable style={styles.micCircle} onPress={() => nav.navigate("Ask")} android_ripple={{ color: "rgba(0,0,0,0.06)", borderless: true }}>
+          <Pressable style={styles.micCircle} onPress={() => { console.log("[NAV] Navigating to AskScreen from HomeScreen"); nav.navigate("Ask"); }} android_ripple={{ color: "rgba(0,0,0,0.06)", borderless: true }}>
             <Ionicons name="mic" size={28} color={colors.ink} />
           </Pressable>
           <Text style={styles.tapText}>Tap to speak</Text>
@@ -56,14 +50,27 @@ export default function HomeScreen() {
 
         {/* Module tiles */}
         <View style={styles.grid}>
-          {MODULES.map((m) => (
+          {[
+            { id: "HEALTH", title: "HEALTH", icon: "heart-outline", color: colors.primary },
+            { id: "FINANCE", title: "FINANCE", icon: "cash-outline", color: "#8B5E3C" },
+            { id: "INFRASTRUCTURE", title: "INFRASTRUCTURE", icon: "build-outline", color: "#8B5E3C" }
+          ].map((item) => (
             <Pressable
-              key={m.title}
-              style={[styles.tile, m.wide ? styles.tileWide : styles.tileHalf]}
-              onPress={() => nav.navigate("Module", { title: m.title })}
+              key={item.id}
+              style={[styles.tile, styles.tileWide]}
+              onPress={() => {
+                console.log(`[NAV] Navigating to Module: ${item.id}`);
+                nav.navigate("Module", { title: item.id });
+              }}
             >
-              <Ionicons name={m.icon as any} size={18} color={colors.earth} />
-              <Text style={styles.tileText}>{m.title}</Text>
+              <View style={[styles.tileIcon, { backgroundColor: item.color + "1A" }]}>
+                <Ionicons name={item.icon as any} size={20} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tileText}>{item.title}</Text>
+                <Text style={styles.tileHint}>Explore {item.title.toLowerCase()} services</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
             </Pressable>
           ))}
         </View>
@@ -177,7 +184,15 @@ const styles = StyleSheet.create({
   },
   tileHalf: { width: "48%" },
   tileWide: { width: "100%" },
-  tileText: { color: colors.earth, fontWeight: "900", letterSpacing: 1 },
+  tileText: { color: colors.ink, fontSize: 13, fontWeight: "900", letterSpacing: 0.6 },
+  tileHint: { color: colors.muted, fontSize: 11, fontWeight: "700", marginTop: 2 },
+  tileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   savedRow: {
     marginTop: 16,

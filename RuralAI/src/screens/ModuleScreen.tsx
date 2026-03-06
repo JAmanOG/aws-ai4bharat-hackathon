@@ -48,7 +48,7 @@ const MODULES: Record<string, ModuleConfig> = {
     topCardLines: ["Symptom check (voice)", "Nearby clinics (later)", "Emergency guidance"],
     actions: [
       { title: "Symptom Checker", hint: "Voice-first", icon: "pulse-outline" },
-      { title: "Telemedicine", hint: "Consult", icon: "videocam-outline" },
+      { title: "Medical Scans", hint: "Upload X-Ray / MRI", icon: "scan-outline" },
       { title: "Health Records", hint: "Secure access", icon: "folder-open-outline" },
       { title: "Wellness & Nutrition", hint: "Tips + alerts", icon: "nutrition-outline", wide: true },
     ],
@@ -75,7 +75,7 @@ export default function ModuleScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
+        <Pressable style={styles.backBtn} onPress={() => { console.log(`[NAV] Navigating back from ModuleScreen (${titleRaw})`); nav.goBack(); }}>
           <Ionicons name="chevron-back" size={22} color={colors.ink} />
         </Pressable>
 
@@ -117,14 +117,18 @@ export default function ModuleScreen() {
               key={a.title}
               style={[styles.tile, a.wide ? styles.tileWide : styles.tileHalf]}
               onPress={() => {
+                console.log(`[ACTION] Tapped quick action: ${a.title} in module ${titleRaw}`);
                 if (a.title === "Market Prices") {
+                  console.log(`[NAV] Navigating to MarketPrices for ${titleRaw}`);
                   nav.navigate("MarketPrices", { moduleTitle: titleRaw });
                   return;
                 }
                 if (a.title === "Government Schemes") {
+                  console.log(`[NAV] Navigating to SchemesList for ${titleRaw}`);
                   nav.navigate("SchemesList", { moduleTitle: titleRaw });
                   return;
                 }
+                console.log(`[NAV] Navigating to ActionScreen for ${a.title}`);
                 nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title });
               }}
             >
@@ -141,7 +145,7 @@ export default function ModuleScreen() {
         </View>
 
         {/* Voice CTA */}
-        <Pressable style={styles.voiceCta} onPress={() => nav.navigate("Ask")}>
+        <Pressable style={styles.voiceCta} onPress={() => { console.log(`[NAV] Navigating to AskScreen from ModuleScreen (${titleRaw})`); nav.navigate("Ask"); }}>
           <Ionicons name="mic" size={18} color={colors.ink} />
           <Text style={styles.voiceText}>VOICE SEARCH</Text>
         </Pressable>

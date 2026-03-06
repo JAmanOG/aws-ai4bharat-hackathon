@@ -1,10 +1,15 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, Pressable, Switch, ScrollView } from "react-native";
+import { useAlert } from "../components/ui/AlertProvider";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import { opendataApi } from "../api/opendata";
+import { governmentApi } from "../api/community";
+import { getMockUser, switchMockUser, MOCK_USERS } from "../api/config";
 
 export default function ProfileScreen() {
+  const { showAlert } = useAlert();
   const [lowData, setLowData] = useState(true);
   const [offlineCache, setOfflineCache] = useState(true);
   const [tts, setTts] = useState(true);
@@ -13,6 +18,18 @@ export default function ProfileScreen() {
   const [shareFarming, setShareFarming] = useState(true);
   const [shareHealth, setShareHealth] = useState(false);
   const [shareLearning, setShareLearning] = useState(true);
+  const [activeUser, setActiveUser] = useState(getMockUser());
+
+  const handleSwitchUser = () => {
+    const currentIndex = MOCK_USERS.findIndex(u => u.id === activeUser.id);
+    const nextIndex = (currentIndex + 1) % MOCK_USERS.length;
+    switchMockUser(nextIndex);
+    setActiveUser(MOCK_USERS[nextIndex]);
+    showAlert({
+      title: "User Switched",
+      message: `You are now logged in as ${MOCK_USERS[nextIndex].name}.`
+    });
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -39,8 +56,8 @@ export default function ProfileScreen() {
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>Rural User</Text>
-              <Text style={styles.sub}>Hindi • Maharashtra</Text>
+              <Text style={styles.name}>{activeUser.name}</Text>
+              <Text style={styles.sub}>{activeUser.language === 'hi' ? 'Hindi' : 'English'} • {activeUser.state}</Text>
 
               <View style={styles.badgesRow}>
                 <View style={styles.badge}>
@@ -54,8 +71,8 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <Pressable style={styles.editBtn}>
-              <Text style={styles.editText}>EDIT</Text>
+            <Pressable style={styles.editBtn} onPress={handleSwitchUser}>
+              <Text style={styles.editText}>SWITCH</Text>
             </Pressable>
           </View>
 
@@ -132,9 +149,34 @@ export default function ProfileScreen() {
               onChange={setShareLearning}
             />
             <Divider />
-            <RowLink icon="time-outline" title="Sharing History" subtitle="See what was shared" />
+            <RowLink icon="time-outline" title="Sharing History" subtitle="See what was shared" onPress={async () => {
+              try {
+                const res = await opendataApi.exportUserData('json');
+                if (res.data) {
+                  showAlert({ title: 'Data Export', message: `Your data has been exported successfully. ${Object.keys(res.data).length} sections available.` });
+                } else {
+                  showAlert({ title: 'Info', message: res.error || 'No data available for export.' });
+                }
+              } catch { showAlert({ title: 'Error', message: 'Could not export data. Check backend connection.' }); }
+            }} />
             <Divider />
-            <RowLink icon="lock-closed-outline" title="Revoke Access" subtitle="Disable sharing anytime" danger />
+            <RowLink icon="lock-closed-outline" title="Revoke Access" subtitle="Disable sharing anytime" danger onPress={() => {
+              showAlert({
+                title: 'Revoke Access',
+                message: 'Are you sure you want to revoke all data sharing?',
+                actions: [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Revoke',
+                    style: 'destructive',
+                    onPress: () => {
+                      setShareLocation(false); setShareFarming(false); setShareHealth(false); setShareLearning(false);
+                      showAlert({ title: 'Done', message: 'All data sharing has been disabled.' });
+                    }
+                  }
+                ]
+              });
+            }} />
           </Card>
 
           {/* Support */}
@@ -142,9 +184,28 @@ export default function ProfileScreen() {
           <Card>
             <RowLink icon="help-circle-outline" title="Help & FAQ" subtitle="Common questions" />
             <Divider />
-            <RowLink icon="chatbox-ellipses-outline" title="Feedback" subtitle="Tell us what to improve" />
+            <RowLink icon="chatbox-ellipses-outline" title="Feedback" subtitle="Tell us what to improve" onPress={async () => {
+              try {
+                const refNo = `FEEDBACK-${Date.now().toString(36).toUpperCase()}`;
+                const res = await governmentApi.createComplaint({ portalName: 'RuralAI Feedback', referenceNo: refNo, description: 'User feedback submission from profile' });
+                if (!res.error) {
+                  showAlert({ title: '✅ Thank You!', message: `Feedback submitted. Ref: ${refNo}` });
+                } else {
+                  showAlert({ title: 'Error', message: res.error });
+                }
+              } catch { showAlert({ title: 'Error', message: 'Could not submit feedback.' }); }
+            }} />
             <Divider />
-            <RowLink icon="warning-outline" title="Report a Problem" subtitle="Safety & issues" danger />
+            <RowLink icon="warning-outline" title="Report a Problem" subtitle="Safety & issues" danger onPress={() => {
+              showAlert({
+                title: 'Report a Problem',
+                message: 'This will open the complaint filing form.',
+                actions: [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Continue', onPress: () => { showAlert({ title: 'Info', message: 'Use HEALTH > Report Issue from the Home screen to file a detailed complaint.' }); } }
+                ]
+              });
+            }} />
           </Card>
 
           <View style={{ height: 28 }} />
@@ -177,14 +238,16 @@ function RowLink({
   title,
   subtitle,
   danger,
+  onPress,
 }: {
   icon: any;
   title: string;
   subtitle: string;
   danger?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <Pressable style={styles.row}>
+    <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
         <View style={[styles.rowIconNormal, danger ? styles.rowIconDanger : styles.rowIconNormal]}>
           <Ionicons name={icon} size={18} color={danger ? "#B91C1C" : colors.earth} />
@@ -221,7 +284,7 @@ function RowToggle({
         <View style={{ flex: 1 }}>
           <Text style={styles.rowTitle}>{title}</Text>
           <Text style={styles.rowSub}>{subtitle}</Text>
-        </View> 
+        </View>
       </View>
 
       <Switch

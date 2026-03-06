@@ -2,7 +2,7 @@
  * Community API — Feature 1
  * Posts, Voice Rooms, Government Portals/Schemes, Social (bookmarks, follows).
  */
-import { feature1 } from './client';
+import { communityClient } from './client';
 
 // ── Posts ──
 export const communityApi = {
@@ -13,26 +13,26 @@ export const communityApi = {
     if (params?.topic) qs.set('topic', params.topic);
     if (params?.search) qs.set('search', params.search);
     const q = qs.toString();
-    return feature1.get(`/posts${q ? '?' + q : ''}`);
+    return communityClient.get(`/posts${q ? '?' + q : ''}`);
   },
 
-  getPost: (id: string) => feature1.get(`/posts/${id}`),
+  getPost: (id: string) => communityClient.get(`/posts/${id}`),
 
   createPost: (data: { title: string; content: string; topic?: string }) =>
-    feature1.post('/posts', data),
+    communityClient.post('/posts', data),
 
-  bookmarkPost: (postId: string) => feature1.post(`/posts/${postId}/bookmark`),
+  bookmarkPost: (postId: string) => communityClient.post(`/posts/${postId}/bookmark`),
 
   reportPost: (postId: string, reason: string) =>
-    feature1.post(`/posts/${postId}/report`, { reason }),
+    communityClient.post(`/posts/${postId}/report`, { reason }),
 
   listBookmarks: (page = 1, limit = 10) =>
-    feature1.get(`/bookmarks?page=${page}&limit=${limit}`),
+    communityClient.get(`/bookmarks?page=${page}&limit=${limit}`),
 
-  toggleFollow: (targetUserId: string) => feature1.post(`/follow/${targetUserId}`),
+  toggleFollow: (targetUserId: string) => communityClient.post(`/follow/${targetUserId}`),
 
   listFollowing: (page = 1, limit = 10) =>
-    feature1.get(`/following?page=${page}&limit=${limit}`),
+    communityClient.get(`/following?page=${page}&limit=${limit}`),
 };
 
 // ── Voice Rooms ──
@@ -43,18 +43,24 @@ export const voiceRoomApi = {
     if (params?.topic) qs.set('topic', params.topic);
     if (params?.search) qs.set('search', params.search);
     const q = qs.toString();
-    return feature1.get(`/voice-rooms${q ? '?' + q : ''}`);
+    return communityClient.get(`/voice-rooms${q ? '?' + q : ''}`);
   },
 
-  getRoom: (id: string) => feature1.get(`/voice-rooms/${id}`),
+  getRoom: (id: string) => communityClient.get(`/voice-rooms/${id}`),
 
   createRoom: (data: { title: string; topic?: string; maxParticipants?: number }) =>
-    feature1.post('/voice-rooms', data),
+    communityClient.post('/voice-rooms', data),
 
-  endRoom: (id: string) => feature1.post(`/voice-rooms/${id}/end`),
-
-  getChatMessages: (roomId: string, limit = 50) =>
-    feature1.get(`/voice-rooms/${roomId}/chat?limit=${limit}`),
+  endRoom: (roomId: string) => communityClient.post(`/voice-rooms/${roomId}/end`, {}),
+  getRoomToken: (roomId: string) => communityClient.get(`/voice-rooms/${roomId}/token`),
+  joinRoom: (roomId: string) => communityClient.post(`/voice-rooms/${roomId}/join`, {}),
+  leaveRoom: (roomId: string) => communityClient.post(`/voice-rooms/${roomId}/leave`, {}),
+  requestSpeak: (roomId: string) => communityClient.post(`/voice-rooms/${roomId}/request-speak`, {}),
+  approveSpeaker: (roomId: string, targetUserId: string) => communityClient.post(`/voice-rooms/${roomId}/approve-speaker/${targetUserId}`, {}),
+  revokeSpeaker: (roomId: string, targetUserId: string) => communityClient.post(`/voice-rooms/${roomId}/revoke-speaker/${targetUserId}`, {}),
+  getChatMessages: (roomId: string) => communityClient.get(`/voice-rooms/${roomId}/chat`),
+  sendChatMessage: (roomId: string, message: string) =>
+    communityClient.post(`/voice-rooms/${roomId}/chat`, { message }),
 };
 
 // ── Government ──
@@ -65,10 +71,10 @@ export const governmentApi = {
     if (params?.region) qs.set('region', params.region);
     if (params?.search) qs.set('search', params.search);
     const q = qs.toString();
-    return feature1.get(`/government/portals${q ? '?' + q : ''}`);
+    return communityClient.get(`/government/portals${q ? '?' + q : ''}`);
   },
 
-  getPortal: (id: string) => feature1.get(`/government/portals/${id}`),
+  getPortal: (id: string) => communityClient.get(`/government/portals/${id}`),
 
   listSchemes: (params?: { categoryId?: string; search?: string; page?: number }) => {
     const qs = new URLSearchParams();
@@ -76,15 +82,15 @@ export const governmentApi = {
     if (params?.search) qs.set('search', params.search);
     if (params?.page) qs.set('page', String(params.page));
     const q = qs.toString();
-    return feature1.get(`/government/schemes${q ? '?' + q : ''}`);
+    return communityClient.get(`/government/schemes${q ? '?' + q : ''}`);
   },
 
-  getScheme: (id: string) => feature1.get(`/government/schemes/${id}`),
+  getScheme: (id: string) => communityClient.get(`/government/schemes/${id}`),
 
-  listSchemeCategories: () => feature1.get('/government/schemes/categories'),
+  listSchemeCategories: () => communityClient.get('/government/schemes/categories'),
 
   createComplaint: (data: { portalName: string; referenceNo: string; description?: string }) =>
-    feature1.post('/government/complaints', data),
+    communityClient.post('/government/complaints', data),
 
-  listComplaints: (page = 1) => feature1.get(`/government/complaints?page=${page}`),
+  listComplaints: (page = 1) => communityClient.get(`/government/complaints?page=${page}`),
 };

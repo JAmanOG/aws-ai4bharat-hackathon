@@ -15,13 +15,7 @@ type Scheme = {
   verified?: boolean;
 };
 
-const SCHEMES: Scheme[] = [
-  { id: "pmkisan", title: "PM-Kisan Samman Nidhi", category: "Farmer", benefit: "₹6,000/year", eligibility: "Small & marginal farmers", verified: true },
-  { id: "kcc", title: "Kisan Credit Card (KCC)", category: "Loan", benefit: "Low-interest credit", eligibility: "Farmers with land records", verified: true },
-  { id: "pmsby", title: "PMSBY Accident Insurance", category: "Insurance", benefit: "₹2 lakh cover", eligibility: "Bank account holders", verified: true },
-  { id: "pmjay", title: "PM-JAY (Ayushman Bharat)", category: "Health", benefit: "₹5 lakh cover", eligibility: "Eligible families", verified: true },
-  { id: "subsidy-irrig", title: "Irrigation Subsidy", category: "Subsidy", benefit: "Partial subsidy", eligibility: "Depends on state scheme" },
-];
+
 
 const FILTERS: Array<Scheme["category"] | "All"> = ["All", "Farmer", "Loan", "Subsidy", "Insurance", "Health"];
 
@@ -33,13 +27,15 @@ export default function SchemesListScreen() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [loading, setLoading] = useState(false);
-  const [schemes, setSchemes] = useState<Scheme[]>(SCHEMES); // Start with hardcoded
+  const [schemes, setSchemes] = useState<Scheme[]>([]); // Start with empty instead of hardcoded
 
   const fetchSchemes = useCallback(async () => {
     setLoading(true);
+    console.log("[CRUD:READ] Fetching government schemes");
     try {
       const res = await governmentApi.listSchemes({ limit: 20 } as any);
       if (res.data?.schemes?.length) {
+        console.log(`[CRUD:READ] Fetched ${res.data.schemes.length} schemes`);
         const remote = res.data.schemes.map((s: any) => ({
           id: s.id,
           title: s.name || s.title,
@@ -49,9 +45,11 @@ export default function SchemesListScreen() {
           verified: true,
         }));
         setSchemes(remote);
+      } else {
+        console.log("[CRUD:READ] No schemes returned from API");
       }
     } catch (err) {
-      console.log("Schemes failed, using fallback");
+      console.log("[CRUD:READ] Schemes failed to fetch", err);
     } finally {
       setLoading(false);
     }
@@ -75,7 +73,7 @@ export default function SchemesListScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
+          <Pressable style={styles.backBtn} onPress={() => { console.log("[NAV] Navigating back from SchemesListScreen"); nav.goBack(); }}>
             <Ionicons name="chevron-back" size={22} color={colors.ink} />
           </Pressable>
 
@@ -124,7 +122,7 @@ export default function SchemesListScreen() {
               <Pressable
                 key={s.id}
                 style={styles.card}
-                onPress={() => nav.navigate("SchemeDetail", { schemeId: s.id })}
+                onPress={() => { console.log(`[NAV] Navigating to SchemeDetailScreen (${s.id})`); nav.navigate("SchemeDetail", { schemeId: s.id }); }}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <Text style={styles.cardTitle} numberOfLines={1}>{s.title}</Text>
