@@ -63,6 +63,7 @@ function objectToCSV(sectionName, obj) {
  * @returns {string}
  */
 function toCSV(exportData) {
+  console.log(`[ACTION] Formatting export data into CSV...`);
   const sections = [];
 
   // Metadata
@@ -106,6 +107,7 @@ function toCSV(exportData) {
     sections.push(objectToCSV('Learning Profile', exportData.learning_profile));
   }
 
+  console.log(`[ACTION] Completed CSV formatting with ${sections.length} blocks`);
   return sections.filter(s => s.length > 0).join('\n\n');
 }
 

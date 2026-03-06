@@ -7,11 +7,11 @@ const portals = require('./portals');
 const schemes = require('./schemes');
 
 exports.handler = async (event) => {
-  console.log('Government API event:', JSON.stringify(event, null, 2));
-
   const method = event.httpMethod || event.requestContext?.http?.method;
   const path = event.path || event.rawPath;
   const userId = event.requestContext?.authorizer?.claims?.sub || event.headers?.['x-user-id'] || 'demo-user';
+  console.log(`[API:EVENT] Government Lambda invoked. Method: ${method}, Path: ${path}, UserID: ${userId}`);
+
   const queryParams = event.queryStringParameters || {};
   let body = {};
   try { body = event.body ? JSON.parse(event.body) : {}; } catch (e) { return badRequest('Invalid JSON body'); }

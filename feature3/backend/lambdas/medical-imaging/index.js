@@ -6,19 +6,18 @@ const { success, error, badRequest, notFound } = require('../../utils/response')
 const { initiateUpload, getDocumentStatus, analyzeImage } = require('./imaging');
 
 exports.handler = async (event) => {
-  console.log('Medical Imaging event:', JSON.stringify(event, null, 2));
-
   const method = event.httpMethod;
   const path = event.path;
   const userId = event.requestContext?.authorizer?.claims?.sub
     || event.headers?.['x-user-id'] || 'anonymous';
+  console.log(`[API:EVENT] Medical Imaging Lambda invoked. Method: ${method}, Path: ${path}, UserID: ${userId}`);
 
   try {
     // ── Upload Initiation ──
     if (path.match(/\/health\/imaging\/upload$/) && method === 'POST') {
       const body = JSON.parse(event.body || '{}');
       if (!body.imagingType) return badRequest('imagingType is required (xray, mri, ct-scan, ultrasound)');
-      const result = await initiateUpload(userId, body.imagingType, body.description);
+      const result = await initiateUpload(userId, body.imagingType, body.description, body.contentType);
       return success(result, 201);
     }
 
@@ -26,7 +25,7 @@ exports.handler = async (event) => {
     const analyzeMatch = path.match(/\/health\/imaging\/([a-f0-9-]+)\/analyze$/);
     if (analyzeMatch && method === 'POST') {
       const body = JSON.parse(event.body || '{}');
-      const result = await analyzeImage(analyzeMatch[1], body.imagingType || 'xray');
+      const result = await analyzeImage(analyzeMatch[1], body.imagingType || 'xray', userId);
       return success(result);
     }
 

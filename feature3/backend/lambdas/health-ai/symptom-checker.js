@@ -9,7 +9,15 @@ const { v4: uuidv4 } = require('uuid');
 const { dynamoDB, TABLE_NAMES } = require('../../utils/db');
 const { BEDROCK_MODEL_ID, DISCLAIMER } = require('../../utils/constants');
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+const bedrock = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || 'ap-south-1',
+  endpoint: process.env.BEDROCK_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.BEDROCK_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || 'test',
+    secretAccessKey: process.env.BEDROCK_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || 'test',
+    sessionToken: process.env.BEDROCK_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN
+  }
+});
 
 /**
  * Run symptom pre-screening.
@@ -20,16 +28,22 @@ const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap
  * @param {string} userId
  */
 async function checkSymptoms(symptoms, age, gender, medicalHistory, userId) {
+  console.log(`[ACTION] Symptom check requested. User: ${userId}, Age: ${age}, Gender: ${gender}`);
+  console.log(`[TRACE] Input Symptoms: "${symptoms}" | History: "${medicalHistory || 'None'}"`);
+
   if (!symptoms || symptoms.trim().length < 5) {
+    console.log(`[ACTION] Rejected: symptoms description too short`);
     throw { statusCode: 400, message: 'Please describe your symptoms (at least 5 characters)' };
   }
 
   let result;
   try {
+    console.log(`[TRACE] Invoking Bedrock for triage analysis...`);
     result = await getBedrockTriage(symptoms, age, gender, medicalHistory);
+    console.log(`[TRACE] Bedrock Triage Result: ${JSON.stringify(result)}`);
   } catch (err) {
-    console.warn('[SymptomChecker] Bedrock unavailable, using fallback rules:', err.message);
-    result = getFallbackTriage(symptoms);
+    console.error('[SymptomChecker] Bedrock invocation failed:', err.message);
+    throw { statusCode: 503, message: `AI Analysis unavailable: ${err.message}` };
   }
 
   result.disclaimer = DISCLAIMER;
@@ -45,7 +59,10 @@ async function checkSymptoms(symptoms, age, gender, medicalHistory, userId) {
  * Call Bedrock Claude for AI-powered triage.
  */
 async function getBedrockTriage(symptoms, age, gender, medicalHistory) {
+  console.log(`[ACTION] Building triage prompt for Bedrock Claude inference`);
   const prompt = buildTriagePrompt(symptoms, age, gender, medicalHistory);
+
+  console.log(`[ACTION] Executing ModelInvokeCommand on Bedrock (${BEDROCK_MODEL_ID})`);
 
   const command = new InvokeModelCommand({
     modelId: BEDROCK_MODEL_ID,
@@ -61,6 +78,7 @@ async function getBedrockTriage(symptoms, age, gender, medicalHistory) {
   const response = await bedrock.send(command);
   const body = JSON.parse(new TextDecoder().decode(response.body));
   const text = body.content?.[0]?.text || '';
+  console.log(`[ACTION] Received ${text.length} chars of completion from Bedrock. Parsing...`);
 
   return parseTriageResponse(text);
 }
@@ -117,77 +135,13 @@ function parseTriageResponse(text) {
   }
 }
 
-/**
- * Keyword-based fallback triage when Bedrock is unavailable.
- */
-function getFallbackTriage(symptoms) {
-  const s = symptoms.toLowerCase();
-
-  // Emergency keywords
-  const emergency = ['chest pain', 'breathing difficulty', 'unconscious', 'seizure', 'heavy bleeding', 'snake bite', 'poisoning'];
-  if (emergency.some(k => s.includes(k))) {
-    return {
-      possible_conditions: ['Potentially serious condition detected'],
-      risk_level: 'Critical',
-      recommended_action: 'SEEK IMMEDIATE EMERGENCY CARE. Call 108 or go to nearest hospital.',
-      urgency: 'emergency',
-      home_remedies: [],
-      warning_signs: ['Do not delay medical attention'],
-    };
-  }
-
-  // High risk keywords
-  const highRisk = ['high fever', 'blood in', 'severe pain', 'persistent vomiting', 'jaundice', 'swelling'];
-  if (highRisk.some(k => s.includes(k))) {
-    return {
-      possible_conditions: ['Condition requires medical evaluation'],
-      risk_level: 'High',
-      recommended_action: 'Visit a doctor within 24 hours. If symptoms worsen, go to emergency.',
-      urgency: 'urgent',
-      home_remedies: ['Stay hydrated', 'Rest'],
-      warning_signs: ['Watch for worsening symptoms'],
-    };
-  }
-
-  // Common conditions
-  if (s.includes('fever') || s.includes('cold') || s.includes('cough')) {
-    return {
-      possible_conditions: ['Common cold/flu', 'Viral infection', 'Seasonal illness'],
-      risk_level: 'Low',
-      recommended_action: 'Rest and monitor symptoms. Visit doctor if fever persists beyond 3 days.',
-      urgency: 'routine',
-      home_remedies: ['Drink warm fluids', 'Rest', 'Take paracetamol as directed', 'Steam inhalation for congestion'],
-      warning_signs: ['Fever above 103°F', 'Difficulty breathing', 'Symptoms not improving after 3 days'],
-    };
-  }
-
-  if (s.includes('headache') || s.includes('body pain')) {
-    return {
-      possible_conditions: ['Tension headache', 'Dehydration', 'Stress-related pain'],
-      risk_level: 'Low',
-      recommended_action: 'Rest, stay hydrated, and take OTC pain relief. See doctor if persistent.',
-      urgency: 'routine',
-      home_remedies: ['Drink plenty of water', 'Rest in a dark quiet room', 'Apply cold compress'],
-      warning_signs: ['Sudden severe headache', 'Vision changes', 'Neck stiffness'],
-    };
-  }
-
-  // Default
-  return {
-    possible_conditions: ['Unable to determine without AI analysis'],
-    risk_level: 'Medium',
-    recommended_action: 'Please visit your nearest Primary Health Centre (PHC) for proper evaluation.',
-    urgency: 'soon',
-    home_remedies: ['Stay hydrated', 'Rest'],
-    warning_signs: ['If symptoms worsen or new symptoms appear, seek medical care'],
-  };
-}
 
 /**
  * Log symptom check to DynamoDB for audit.
  */
 async function logSymptomCheck(userId, symptoms, result) {
   try {
+    console.log(`[ACTION] Auditing symptom check to DynamoDB for user ${userId}`);
     await dynamoDB.send(new PutCommand({
       TableName: TABLE_NAMES.SYMPTOM_LOGS,
       Item: {
@@ -205,4 +159,4 @@ async function logSymptomCheck(userId, symptoms, result) {
   }
 }
 
-module.exports = { checkSymptoms, getFallbackTriage, buildTriagePrompt, parseTriageResponse };
+module.exports = { checkSymptoms, buildTriagePrompt, parseTriageResponse };

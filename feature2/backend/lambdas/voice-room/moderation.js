@@ -34,11 +34,13 @@ async function assertRoomActive(roomId) {
 }
 
 async function muteUser(roomId, targetUserId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} muting user ${targetUserId} in Voice Room ${roomId}`);
   await assertRoomActive(roomId);
   await assertModerator(roomId, moderatorId);
   if (moderatorId === targetUserId) throw new Error('CANNOT_SELF_ACTION');
 
   const target = await getParticipant(roomId, targetUserId);
+  console.log(`[TRACE] Muting target user ${targetUserId}. Moderator: ${moderatorId}. Current participant status: ${target ? 'Found' : 'Not Found'}`);
   if (!target) throw new Error('USER_NOT_IN_ROOM');
 
   await dynamoDB.send(new UpdateCommand({
@@ -52,10 +54,12 @@ async function muteUser(roomId, targetUserId, moderatorId) {
 }
 
 async function unmuteUser(roomId, targetUserId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} unmuting user ${targetUserId} in Voice Room ${roomId}`);
   await assertRoomActive(roomId);
   await assertModerator(roomId, moderatorId);
 
   const target = await getParticipant(roomId, targetUserId);
+  console.log(`[TRACE] Unmuting target user ${targetUserId}. Moderator: ${moderatorId}. Current participant status: ${target ? 'Found' : 'Not Found'}`);
   if (!target) throw new Error('USER_NOT_IN_ROOM');
 
   await dynamoDB.send(new UpdateCommand({
@@ -69,6 +73,7 @@ async function unmuteUser(roomId, targetUserId, moderatorId) {
 }
 
 async function kickUser(roomId, targetUserId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} kicking user ${targetUserId} from Voice Room ${roomId}`);
   await assertRoomActive(roomId);
   await assertModerator(roomId, moderatorId);
   if (moderatorId === targetUserId) throw new Error('CANNOT_SELF_ACTION');
@@ -95,6 +100,7 @@ async function kickUser(roomId, targetUserId, moderatorId) {
 }
 
 async function banUser(roomId, targetUserId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} banning user ${targetUserId} in Voice Room ${roomId}`);
   await assertRoomActive(roomId);
   await assertModerator(roomId, moderatorId);
   if (moderatorId === targetUserId) throw new Error('CANNOT_SELF_ACTION');
@@ -118,11 +124,13 @@ async function banUser(roomId, targetUserId, moderatorId) {
 }
 
 async function transferModerator(roomId, targetUserId, currentModeratorId) {
+  console.log(`[ACTION] Moderator ${currentModeratorId} transferring moderation to ${targetUserId} in Voice Room ${roomId}`);
   await assertRoomActive(roomId);
   await assertModerator(roomId, currentModeratorId);
   if (currentModeratorId === targetUserId) throw new Error('CANNOT_SELF_ACTION');
 
   const target = await getParticipant(roomId, targetUserId);
+  console.log(`[TRACE] Transferring moderation to ${targetUserId}. Current target status: ${target ? 'Found' : 'Not Found'}`);
   if (!target || target.leftAt) throw new Error('USER_NOT_IN_ROOM');
 
   // Demote current moderator
@@ -147,6 +155,7 @@ async function transferModerator(roomId, targetUserId, currentModeratorId) {
 }
 
 async function toggleRecording(roomId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} toggling recording state in Voice Room ${roomId}`);
   await assertModerator(roomId, moderatorId);
 
   const room = await assertRoomActive(roomId);
@@ -163,6 +172,7 @@ async function toggleRecording(roomId, moderatorId) {
 }
 
 async function togglePrivacy(roomId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} toggling privacy state in Voice Room ${roomId}`);
   await assertModerator(roomId, moderatorId);
 
   const room = await assertRoomActive(roomId);
@@ -178,4 +188,62 @@ async function togglePrivacy(roomId, moderatorId) {
   return { roomId, isPrivate: newState };
 }
 
-module.exports = { muteUser, unmuteUser, kickUser, banUser, transferModerator, toggleRecording, togglePrivacy };
+async function requestToSpeak(roomId, userId) {
+  console.log(`[ACTION] User ${userId} requesting to speak in Voice Room ${roomId}`);
+  await assertRoomActive(roomId);
+
+  const target = await getParticipant(roomId, userId);
+  if (!target) throw new Error('USER_NOT_IN_ROOM');
+
+  await dynamoDB.send(new UpdateCommand({
+    TableName: TABLE_NAMES.VOICE_ROOM_PARTICIPANTS,
+    Key: { roomId, userId },
+    UpdateExpression: 'SET requestedSpeak = :req',
+    ExpressionAttributeValues: { ':req': true },
+  }));
+
+  return { roomId, userId, requestedSpeak: true };
+}
+
+async function approveSpeaker(roomId, targetUserId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} approving user ${targetUserId} as Speaker in Voice Room ${roomId}`);
+  await assertRoomActive(roomId);
+  await assertModerator(roomId, moderatorId);
+
+  const target = await getParticipant(roomId, targetUserId);
+  if (!target) throw new Error('USER_NOT_IN_ROOM');
+
+  await dynamoDB.send(new UpdateCommand({
+    TableName: TABLE_NAMES.VOICE_ROOM_PARTICIPANTS,
+    Key: { roomId, userId: targetUserId },
+    UpdateExpression: 'SET #role = :speaker, requestedSpeak = :false, isMuted = :false',
+    ExpressionAttributeNames: { '#role': 'role' },
+    ExpressionAttributeValues: { ':speaker': VOICE_ROOM_ROLES.SPEAKER, ':false': false },
+  }));
+
+  return { roomId, userId: targetUserId, role: VOICE_ROOM_ROLES.SPEAKER };
+}
+
+async function revokeSpeaker(roomId, targetUserId, moderatorId) {
+  console.log(`[ACTION] Moderator ${moderatorId} revoking speaking rights from ${targetUserId} in Voice Room ${roomId}`);
+  await assertRoomActive(roomId);
+  await assertModerator(roomId, moderatorId);
+
+  const target = await getParticipant(roomId, targetUserId);
+  if (!target) throw new Error('USER_NOT_IN_ROOM');
+
+  await dynamoDB.send(new UpdateCommand({
+    TableName: TABLE_NAMES.VOICE_ROOM_PARTICIPANTS,
+    Key: { roomId, userId: targetUserId },
+    UpdateExpression: 'SET #role = :listener, isMuted = :true',
+    ExpressionAttributeNames: { '#role': 'role' },
+    ExpressionAttributeValues: { ':listener': VOICE_ROOM_ROLES.LISTENER, ':true': true },
+  }));
+
+  return { roomId, userId: targetUserId, role: VOICE_ROOM_ROLES.LISTENER };
+}
+
+module.exports = {
+  muteUser, unmuteUser, kickUser, banUser, transferModerator, toggleRecording, togglePrivacy,
+  requestToSpeak, approveSpeaker, revokeSpeaker
+};

@@ -3,12 +3,29 @@
  * Run from backend/: node local-server.js
  */
 const express = require('express');
+require('dotenv').config();
 const cors = require('cors');
 const app = express();
-const PORT = 3003;
+const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Global Request Logger
+app.use((req, res, next) => {
+  const start = Date.now();
+  console.log(`\n[API:REQUEST] ${req.method} ${req.url}`);
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (res.statusCode >= 400) {
+      console.log(`[API:ERROR] ${req.method} ${req.url} - Status: ${res.statusCode} (${duration}ms)`);
+    } else {
+      console.log(`[API:SUCCESS] ${req.method} ${req.url} - Status: ${res.statusCode} (${duration}ms)`);
+    }
+  });
+  next();
+});
 
 const openDataHandler = require('./lambdas/open-data/index');
 
@@ -30,12 +47,15 @@ function lambdaRoute(handler) {
   return async (req, res) => {
     try {
       const event = toLambdaEvent(req);
+      console.log(`\n[API:REQ_PAYLOAD] ${req.method} ${req.originalUrl} =>\n  Query: ${JSON.stringify(event.queryStringParameters)}\n  Body:  ${JSON.stringify(req.body)}`);
       const result = await handler.handler(event);
       const statusCode = result.statusCode || 200;
       const body = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      const resLog = JSON.stringify(body) || 'empty';
+      console.log(`[API:RES_PAYLOAD] ${req.method} ${req.originalUrl} <= Status: ${statusCode}\n  Body:  ${resLog.substring(0, 1000)}${resLog.length > 1000 ? '...' : ''}`);
       res.status(statusCode).json(body);
     } catch (err) {
-      console.error('Error:', err.message);
+      console.error(`[API:ERR_PAYLOAD] ${req.method} ${req.originalUrl} <=`, err.message);
       res.status(500).json({ error: err.message });
     }
   };
@@ -43,7 +63,7 @@ function lambdaRoute(handler) {
 
 app.use('/api/v1/export', lambdaRoute(openDataHandler));
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Feature 1 (Open Data) running at http://localhost:${PORT}`);
   console.log(`   Routes: /api/v1/export/*`);
 });

@@ -7,23 +7,28 @@ const { query } = require('../../utils/db');
 
 // ── Bookmarks ──
 async function toggleBookmark(postId, userId) {
+  console.log(`[ACTION] Toggling bookmark for user ${userId} on post ${postId}.`);
   const existing = await query(
     'SELECT id FROM bookmarks WHERE user_id = $1 AND post_id = $2', [userId, postId]
   );
 
   if (existing.rows.length > 0) {
+    console.log(`[ACTION] User ${userId} is removing bookmark from post ${postId}`);
     await query('DELETE FROM bookmarks WHERE user_id = $1 AND post_id = $2', [userId, postId]);
     return { postId, bookmarked: false };
   }
 
+  console.log(`[TRACE] Bookmark not found. Creating new bookmark for user ${userId} -> post ${postId}`);
   await query(
     'INSERT INTO bookmarks (id, user_id, post_id) VALUES ($1, $2, $3)',
     [uuidv4(), userId, postId]
   );
+  console.log(`[ACTION] Bookmark added successfully for post ${postId}`);
   return { postId, bookmarked: true };
 }
 
 async function listBookmarks(userId, { page = 1, limit = 10 }) {
+  console.log(`[ACTION] Fetching bookmarks for user ${userId}. Page: ${page}, Limit: ${limit}`);
   const countResult = await query('SELECT COUNT(*) as total FROM bookmarks WHERE user_id = $1', [userId]);
   const total = parseInt(countResult.rows[0].total);
 
@@ -43,17 +48,23 @@ async function listBookmarks(userId, { page = 1, limit = 10 }) {
 
 // ── Follows ──
 async function toggleFollow(targetUserId, followerId) {
-  if (targetUserId === followerId) throw new Error('CANNOT_FOLLOW_SELF');
+  console.log(`[ACTION] User ${followerId} requested toggle follow on target: ${targetUserId}`);
+  if (targetUserId === followerId) {
+    console.log(`[ACTION] Follow rejected: User ${followerId} attempted to follow self.`);
+    throw new Error('CANNOT_FOLLOW_SELF');
+  }
 
   const existing = await query(
     'SELECT id FROM follows WHERE follower_id = $1 AND following_id = $2', [followerId, targetUserId]
   );
 
   if (existing.rows.length > 0) {
+    console.log(`[ACTION] User ${followerId} is unfollowing user ${targetUserId}`);
     await query('DELETE FROM follows WHERE follower_id = $1 AND following_id = $2', [followerId, targetUserId]);
     return { userId: targetUserId, following: false };
   }
 
+  console.log(`[ACTION] User ${followerId} is now following user ${targetUserId}`);
   await query(
     'INSERT INTO follows (id, follower_id, following_id) VALUES ($1, $2, $3)',
     [uuidv4(), followerId, targetUserId]
@@ -62,6 +73,7 @@ async function toggleFollow(targetUserId, followerId) {
 }
 
 async function listFollowing(userId, { page = 1, limit = 10 }) {
+  console.log(`[ACTION] Fetching followed users for user ${userId}. Page: ${page}`);
   const countResult = await query('SELECT COUNT(*) as total FROM follows WHERE follower_id = $1', [userId]);
   const total = parseInt(countResult.rows[0].total);
 
@@ -80,11 +92,15 @@ async function listFollowing(userId, { page = 1, limit = 10 }) {
 
 // ── Reports ──
 async function reportPost(postId, userId, reason) {
+  console.log(`[ACTION] Received report for post ${postId} from user ${userId}. Reason: ${reason}`);
   // Check duplicate report
   const existing = await query(
     'SELECT id FROM content_reports WHERE reporter_id = $1 AND post_id = $2', [userId, postId]
   );
-  if (existing.rows.length > 0) throw new Error('ALREADY_REPORTED');
+  if (existing.rows.length > 0) {
+    console.log(`[ACTION] Report rejected: Already reported`);
+    throw new Error('ALREADY_REPORTED');
+  }
 
   const id = uuidv4();
   await query(

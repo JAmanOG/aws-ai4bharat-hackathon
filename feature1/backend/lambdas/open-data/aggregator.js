@@ -33,9 +33,13 @@ const DATA_EXTRACTORS = {
  */
 async function fetchService(key, userId, authToken) {
   const endpoint = SERVICE_ENDPOINTS[key];
-  if (!endpoint) return { key, data: null, error: 'Unknown service' };
+  if (!endpoint) {
+    console.log(`[ACTION] Fetch skipped: Unknown service key '${key}'`);
+    return { key, data: null, error: 'Unknown service' };
+  }
 
   const url = `${endpoint.base}${endpoint.path(userId)}`;
+  console.log(`[ACTION] Initiating fetch for service '${key}' at URL: ${url}`);
 
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -44,7 +48,9 @@ async function fetchService(key, userId, authToken) {
 
     const response = await axios.get(url, { headers, timeout: 10000 });
     const rawData = response.data;
+    console.log(`[ACTION] Successfully fetched data for '${key}'. Response size: ${JSON.stringify(rawData).length} chars.`);
     const extractedData = DATA_EXTRACTORS[key](rawData);
+    console.log(`[TRACE] Extracted ${key} data preview: ${JSON.stringify(extractedData).substring(0, 200)}...`);
 
     return { key, data: extractedData };
   } catch (err) {
@@ -62,13 +68,16 @@ async function fetchService(key, userId, authToken) {
  * @returns {object} — unified export object
  */
 async function aggregateUserData(userId, serviceKeys = VALID_SERVICES, authToken = null) {
+  console.log(`[ACTION] Starting aggregation for user ${userId} over services: ${serviceKeys.join(',')}`);
   // Filter to valid service keys only
   const keys = serviceKeys.filter(k => VALID_SERVICES.includes(k));
   if (keys.length === 0) {
+    console.log(`[ACTION] Aggregation failed: No valid services found`);
     throw new Error('INVALID_SERVICES');
   }
 
   // Fetch all services in parallel
+  console.log(`[ACTION] Dispatching ${keys.length} parallel service fetches`);
   const results = await Promise.all(
     keys.map(key => fetchService(key, userId, authToken))
   );
@@ -85,15 +94,19 @@ async function aggregateUserData(userId, serviceKeys = VALID_SERVICES, authToken
   };
 
   // Run each result through its adapter
+  console.log(`[ACTION] Passing fetched results through adapters...`);
   for (const { key, data } of results) {
     const adapter = ADAPTER_MAP[key];
     if (adapter && data !== null) {
+      console.log(`[TRACE] Adapting ${key} data...`);
       exportData[key] = adapter(data);
+      console.log(`[TRACE] ${key} adaptation complete.`);
     } else if (data === null) {
       exportData[key] = key === 'profile' || key === 'learning_profile' ? null : [];
     }
   }
 
+  console.log(`[ACTION] Aggregation completed successfully for user ${userId}`);
   return exportData;
 }
 
