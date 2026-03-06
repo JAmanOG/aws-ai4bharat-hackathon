@@ -15,7 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useCourses, usePeerGroups, useLearningProfile, useHealthCheck } from "../hooks/useData";
+import { useCourses, usePeerGroups, useLearningProfile, useHealthCheck, useMyCourses, useMyPeerGroups } from "../hooks/useData";
+import { knowledgeApi } from "../services/api";
 
 /* ── Circular progress badge ── */
 function ProgressCircle({ score, size = 56 }: { score: number; size?: number }) {
@@ -41,19 +42,23 @@ export default function KnowledgeDashboardScreen() {
   const nav = useNavigation<any>();
   const health = useHealthCheck();
   const courses = useCourses();
+  const myCourses = useMyCourses();
   const groups = usePeerGroups();
+  const myGroups = useMyPeerGroups();
   const profile = useLearningProfile();
   const isOnline = health.data?.status === "ok";
 
   const courseList = (courses.data as any)?.courses ?? [];
-  const groupList = (groups.data as any)?.groups ?? (groups.data as any) ?? [];
-  const skillScore = (profile.data as any)?.score ?? 32;
+  const myEnrollments = (myCourses.data as any)?.enrollments ?? (myCourses.data as any)?.courses ?? [];
+  const groupList = (myGroups.data as any)?.groups ?? (groups.data as any)?.groups ?? (groups.data as any) ?? [];
+  const skillScore = (profile.data as any)?.score ?? (profile.data as any)?.skill_score ?? 0;
+  const displayCourses = myEnrollments.length > 0 ? myEnrollments : courseList;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
         <Text style={styles.headerTitle}>Knowledge Hub</Text>
@@ -66,51 +71,56 @@ export default function KnowledgeDashboardScreen() {
           <View style={styles.cardHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Skill Progress</Text>
-              <Text style={styles.cardSub}>{courseList.length || 3} courses in progress</Text>
+              <Text style={styles.cardSub}>{displayCourses.length} courses {myEnrollments.length > 0 ? "enrolled" : "available"}</Text>
             </View>
             <ProgressCircle score={skillScore} />
           </View>
           {/* Course items */}
-          {(courseList.length > 0 ? courseList.slice(0, 3) : [
-            { id: "1", title: "Organic Farming", progress: 0.65 },
-            { id: "2", title: "Water Management", progress: 0.4 },
-            { id: "3", title: "Soil Health", progress: 0.25 },
-          ]).map((c: any) => (
-            <View key={c.id} style={styles.courseRow}>
+          {displayCourses.length > 0 ? displayCourses.slice(0, 3).map((c: any) => (
+            <Pressable
+              key={c.course_id ?? c.id ?? c.title}
+              style={styles.courseRow}
+              onPress={() => c.course_id && nav.navigate("CourseDetail", { courseId: c.course_id })}
+            >
               <View style={styles.courseIcon}>
                 <Ionicons name="book" size={14} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.courseName}>{c.title}</Text>
                 <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${(c.progress ?? 0.5) * 100}%` }]} />
+                  <View style={[styles.progressFill, { width: `${(c.progress ?? 0) * 100}%` }]} />
                 </View>
               </View>
-              <Text style={styles.progressPct}>{Math.round((c.progress ?? 0.5) * 100)}%</Text>
+              <Text style={styles.progressPct}>{Math.round((c.progress ?? 0) * 100)}%</Text>
+            </Pressable>
+          )) : (
+            <View style={{ paddingVertical: 12, alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: colors.muted, fontWeight: "600" }}>
+                {courses.loading ? "Loading courses…" : "No courses available yet"}
+              </Text>
             </View>
-          ))}
+          )}
         </View>
 
         {/* Peer learning groups */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Peer Learning Groups</Text>
-          {(groupList.length > 0 ? groupList.slice(0, 3) : [
-            { id: "1", name: "Wheat Farmers Collective", members: 34, verified: true },
-            { id: "2", name: "Organic Practices", members: 18, verified: false },
-            { id: "3", name: "Water Conservation", members: 22, verified: true },
-          ]).map((g: any) => (
-            <View key={g.id} style={styles.groupRow}>
+          {groupList.length > 0 ? groupList.slice(0, 3).map((g: any) => (
+            <Pressable
+              key={g.group_id ?? g.id ?? g.name}
+              style={styles.groupRow}
+              onPress={() => (g.group_id || g.id) && nav.navigate("PeerGroupDetail", { groupId: g.group_id ?? g.id })}
+            >
               <View style={[styles.groupIcon, g.verified && { backgroundColor: colors.successTint }]}>
                 <Ionicons name="people" size={16} color={g.verified ? colors.success : colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Text style={styles.groupName}>{g.name}</Text>
+                  <Text style={styles.groupName}>{g.group_name ?? g.name}</Text>
                   {g.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} />}
                 </View>
-                <Text style={styles.groupMeta}>{g.members} members • Active</Text>
+                <Text style={styles.groupMeta}>{g.member_count ?? g.members ?? 0} members • {g.crop_type ?? "Active"}</Text>
               </View>
-              {/* Member avatars */}
               <View style={styles.avatarStack}>
                 {[0, 1, 2].map((i) => (
                   <View key={i} style={[styles.avatar, { left: i * 14, backgroundColor: ["#BDD4EE", "#B5E6C5", "#FDE68A"][i] }]}>
@@ -118,8 +128,14 @@ export default function KnowledgeDashboardScreen() {
                   </View>
                 ))}
               </View>
+            </Pressable>
+          )) : (
+            <View style={{ paddingVertical: 12, alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: colors.muted, fontWeight: "600" }}>
+                {groups.loading ? "Loading groups…" : "No peer groups yet — join one!"}
+              </Text>
             </View>
-          ))}
+          )}
         </View>
 
         {/* Audio stream card */}

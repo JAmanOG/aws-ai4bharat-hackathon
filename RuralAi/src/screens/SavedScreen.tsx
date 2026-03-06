@@ -1,26 +1,73 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, FlatList } from "react-native";
+import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { useNavigation } from "@react-navigation/native";
+import { useVoiceSessions, useSchemes, usePriceAlerts } from "../hooks/useData";
 
 type SavedItem = {
   id: string;
   title: string;
   subtitle: string;
-  tag: "Offline" | "Scheme" | "Health" | "Market";
+  tag: "Session" | "Scheme" | "Alert" | "Offline";
 };
-
-const DATA: SavedItem[] = [
-  { id: "1", title: "PM-Kisan Application Steps", subtitle: "Saved yesterday • Hindi", tag: "Scheme" },
-  { id: "2", title: "Wheat price in nearby mandi", subtitle: "Saved today • Marathi", tag: "Market" },
-  { id: "3", title: "Fever + cough guidance", subtitle: "Saved 2 days ago • English", tag: "Health" },
-  { id: "4", title: "Offline basics: crop calendar", subtitle: "Downloaded • Available offline", tag: "Offline" },
-];
 
 export default function SavedScreen() {
   const nav = useNavigation<any>();
+  const sessions = useVoiceSessions(5);
+  const schemes = useSchemes();
+  const alerts = usePriceAlerts();
+
+  /* Build items from real API data */
+  const items: SavedItem[] = React.useMemo(() => {
+    const result: SavedItem[] = [];
+
+    // Voice sessions
+    const sessionList = (sessions.data as any)?.sessions ?? [];
+    sessionList.slice(0, 3).forEach((s: any) => {
+      result.push({
+        id: `session_${s.session_id ?? s.id}`,
+        title: s.title ?? `Voice session`,
+        subtitle: s.created_at ? `${new Date(s.created_at).toLocaleDateString()}` : "Recent",
+        tag: "Session",
+      });
+    });
+
+    // Schemes as saved items
+    const schemeList = (schemes.data as any)?.schemes ?? [];
+    schemeList.slice(0, 2).forEach((s: any) => {
+      result.push({
+        id: `scheme_${s.id}`,
+        title: s.name,
+        subtitle: s.summary ?? s.benefit_summary ?? "",
+        tag: "Scheme",
+      });
+    });
+
+    // Price alerts as saved items
+    const alertList = (alerts.data as any)?.alerts ?? [];
+    alertList.slice(0, 2).forEach((a: any) => {
+      result.push({
+        id: `alert_${a.alert_id}`,
+        title: `${a.crop_type} price alert`,
+        subtitle: a.target_price ? `Target: ₹${a.target_price}` : (a.direction ?? "Active"),
+        tag: "Alert",
+      });
+    });
+
+    // Fallback
+    if (result.length === 0) {
+      result.push(
+        { id: "1", title: "PM-Kisan Application Steps", subtitle: "Saved yesterday • Hindi", tag: "Scheme" },
+        { id: "2", title: "Wheat price alert", subtitle: "Active • ₹2,500 target", tag: "Alert" },
+      );
+    }
+
+    return result;
+  }, [sessions.data, schemes.data, alerts.data]);
+
+  const loading = sessions.loading || schemes.loading || alerts.loading;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -41,28 +88,34 @@ export default function SavedScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Offline downloads</Text>
-              <Text style={styles.cardSub}>3 items available offline</Text>
+              <Text style={styles.cardSub}>{items.length} items available</Text>
             </View>
           </View>
 
-          <Pressable style={styles.manageBtn}>
+          <Pressable style={styles.manageBtn} onPress={() => nav.navigate("SyncStatus")}>
             <Text style={styles.manageText}>MANAGE</Text>
           </Pressable>
         </View>
 
         {/* List */}
-        <FlatList
-          data={DATA}
-          keyExtractor={(i) => i.id}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, gap: 10 }}
-          renderItem={({ item }) => (
-            <SavedRow
-              item={item}
-              onPress={() => nav.navigate("SavedDetail", { itemId: item.id })}
-            />
-          )}
-          showsVerticalScrollIndicator={false}
-        />
+        {loading ? (
+          <View style={{ padding: 40, alignItems: "center" }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={items}
+            keyExtractor={(i) => i.id}
+            contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, gap: 10 }}
+            renderItem={({ item }) => (
+              <SavedRow
+                item={item}
+                onPress={() => nav.navigate("SavedDetail", { itemId: item.id })}
+              />
+            )}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
     </SafeAreaView>
   );

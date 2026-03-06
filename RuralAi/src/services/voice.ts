@@ -20,6 +20,37 @@ import { useRef } from "react";
 import { logger } from "../utils/logger";
 
 /* ────────────────────────────────────────────── */
+/*  Language normaliser (short code → BCP-47)    */
+/* ────────────────────────────────────────────── */
+
+/**
+ * AWS Transcribe / Sarvam require full BCP-47 codes.
+ * Map common short codes so callers can use "hi", "en", etc.
+ */
+const BCP47_MAP: Record<string, string> = {
+  hi: "hi-IN",
+  en: "en-IN",
+  ta: "ta-IN",
+  te: "te-IN",
+  bn: "bn-IN",
+  gu: "gu-IN",
+  mr: "mr-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  pa: "pa-IN",
+  or: "or-IN",
+  "en-us": "en-US",
+  "en-gb": "en-GB",
+};
+
+function toBCP47(code: string): string {
+  if (!code) return "hi-IN";
+  // Already full BCP-47 (contains a dash)
+  if (code.includes("-")) return code;
+  return BCP47_MAP[code.toLowerCase()] ?? `${code}-IN`;
+}
+
+/* ────────────────────────────────────────────── */
 /*  Types                                        */
 /* ────────────────────────────────────────────── */
 
@@ -153,14 +184,49 @@ export function useVoiceService() {
 
   async function _playBase64Audio(base64: string): Promise<void> {
     if (!base64) return;
-    try {
-      const uri = `data:audio/wav;base64,${base64}`;
-      player.replace({ uri });
-      player.play();
-      logger.debug("Voice", "Playing audio", { length: base64.length });
-    } catch (err: any) {
-      logger.error("Voice", "Playback error", err);
-    }
+    return new Promise((resolve, reject) => {
+      let hasStarted = false;
+      let pollCount = 0;
+      let interval: ReturnType<typeof setInterval> | null = null;
+
+      const cleanup = () => {
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      };
+
+      try {
+        const uri = `data:audio/wav;base64,${base64}`;
+        player.replace({ uri });
+        player.play();
+        logger.debug("Voice", "Playing audio", { length: base64.length });
+
+        interval = setInterval(() => {
+          const status = player.currentStatus;
+
+          if (status.playing) {
+            hasStarted = true;
+          }
+
+          if (status.didJustFinish || (hasStarted && !status.playing && !status.isBuffering)) {
+            cleanup();
+            resolve();
+            return;
+          }
+
+          pollCount += 1;
+          if (pollCount >= 300) {
+            cleanup();
+            resolve();
+          }
+        }, 100);
+      } catch (err: any) {
+        cleanup();
+        logger.error("Voice", "Playback error", err);
+        reject(err);
+      }
+    });
   }
 
   async function _stopPlayback(): Promise<void> {
@@ -210,15 +276,17 @@ export async function chatWithText(
   } = {}
 ): Promise<ChatResult> {
   const start = Date.now();
-  logger.info("Voice", "chatWithText → sending", {
+  const langCode = toBCP47(opts.language_code ?? opts.language ?? "hi-IN");
+
+  logger.info("Voice", "chatWithText \u2192 sending", {
     textLength: text.length,
     textPreview: text.substring(0, 60),
-    language: opts.language_code ?? opts.language ?? "hi",
+    language: langCode,
   });
 
   const result = await api.postVoice<ChatResult>("/voice/chat", {
     text,
-    language_code: opts.language_code ?? opts.language ?? "hi",
+    language_code: langCode,
     session_id: opts.session_id,
     generate_audio: opts.generate_audio ?? true,
   });
@@ -249,15 +317,16 @@ export async function chatWithAudio(
   } = {}
 ): Promise<ChatResult> {
   const start = Date.now();
-  logger.info("Voice", "chatWithAudio → sending", {
+  const langCode = toBCP47(opts.language_code ?? "hi-IN");
+  logger.info("Voice", "chatWithAudio \u2192 sending", {
     audioBytes: audioBase64.length,
-    language: opts.language_code ?? "unknown",
+    language: langCode,
     sessionId: opts.session_id?.substring(0, 8),
   });
 
   const result = await api.postVoice<ChatResult>("/voice/chat/audio", {
     audio_base64: audioBase64,
-    language_code: opts.language_code ?? "unknown",
+    language_code: langCode,
     session_id: opts.session_id,
   });
 

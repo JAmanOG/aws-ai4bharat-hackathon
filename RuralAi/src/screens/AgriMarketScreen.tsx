@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useMarketPrices, useMandis, useHealthCheck } from "../hooks/useData";
+import { useMarketPrices, useMandis, useHealthCheck, usePriceTrend, useBargainingGroups } from "../hooks/useData";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -61,19 +61,35 @@ export default function AgriMarketScreen() {
   const wheat = useMarketPrices("wheat");
   const rice = useMarketPrices("rice");
   const mandis = useMandis();
+  const wheatTrendData = usePriceTrend("wheat");
+  const riceTrendData = usePriceTrend("rice");
+  const bargaining = useBargainingGroups();
   const isOnline = health.data?.status === "ok";
 
   const wheatPrice = wheat.data?.summary?.average_price ?? 2245;
   const ricePrice = rice.data?.summary?.average_price ?? 1890;
   const mandiCount = mandis.data?.mandis?.length ?? 5;
-  const wheatTrend: number[] = [2100, 2150, 2200, 2180, 2245, 2260, 2245];
-  const riceTrend: number[] = [1820, 1850, 1870, 1860, 1890, 1880, 1890];
+  const bargainCount = ((bargaining.data as any)?.groups ?? []).length;
+
+  /* Parse trend data from API or use fallback */
+  const parseTrend = (trendRaw: any): number[] => {
+    if (!trendRaw?.data) return [];
+    const points = trendRaw.data?.trend ?? trendRaw.data?.prices ?? trendRaw.data;
+    if (Array.isArray(points)) {
+      return points.map((p: any) => typeof p === "number" ? p : p.price ?? p.price_per_quintal ?? 0).slice(-7);
+    }
+    return [];
+  };
+  const wheatTrend = parseTrend(wheatTrendData).length > 0 ? parseTrend(wheatTrendData) : [2100, 2150, 2200, 2180, 2245, 2260, 2245];
+  const riceTrend = parseTrend(riceTrendData).length > 0 ? parseTrend(riceTrendData) : [1820, 1850, 1870, 1860, 1890, 1880, 1890];
+  const wheatDelta = wheatTrend.length >= 2 ? (((wheatTrend[wheatTrend.length - 1] - wheatTrend[0]) / wheatTrend[0]) * 100).toFixed(1) : "0.0";
+  const riceDelta = riceTrend.length >= 2 ? (((riceTrend[riceTrend.length - 1] - riceTrend[0]) / riceTrend[0]) * 100).toFixed(1) : "0.0";
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
         <Text style={styles.headerTitle}>Agriculture & Market</Text>
@@ -138,10 +154,12 @@ export default function AgriMarketScreen() {
             </View>
             <View style={styles.priceCol}>
               <Text style={styles.priceVal}>₹{wheatPrice}/q</Text>
-              <Text style={[styles.priceDelta, { color: colors.success }]}>+2.1%</Text>
+              <Text style={[styles.priceDelta, { color: Number(wheatDelta) >= 0 ? colors.success : colors.danger }]}>
+                {Number(wheatDelta) >= 0 ? "+" : ""}{wheatDelta}%
+              </Text>
             </View>
           </View>
-          <Sparkline data={wheatTrend} color={colors.success} />
+          <Sparkline data={wheatTrend} color={Number(wheatDelta) >= 0 ? colors.success : colors.danger} />
         </View>
 
         <View style={styles.priceCard}>
@@ -155,16 +173,18 @@ export default function AgriMarketScreen() {
             </View>
             <View style={styles.priceCol}>
               <Text style={styles.priceVal}>₹{ricePrice}/q</Text>
-              <Text style={[styles.priceDelta, { color: colors.warn }]}>+0.5%</Text>
+              <Text style={[styles.priceDelta, { color: Number(riceDelta) >= 0 ? colors.success : colors.warn }]}>
+                {Number(riceDelta) >= 0 ? "+" : ""}{riceDelta}%
+              </Text>
             </View>
           </View>
-          <Sparkline data={riceTrend} color={colors.warn} />
+          <Sparkline data={riceTrend} color={Number(riceDelta) >= 0 ? colors.success : colors.warn} />
         </View>
 
         {/* CTA */}
-        <Pressable style={styles.cta} onPress={() => nav.navigate("AgriMarket")}>
+        <Pressable style={styles.cta} onPress={() => nav.navigate("BargainingGroups")}>
           <Ionicons name="people" size={20} color="#FFF" />
-          <Text style={styles.ctaText}>Collect to Bargain</Text>
+          <Text style={styles.ctaText}>Collect to Bargain{bargainCount > 0 ? ` (${bargainCount} groups)` : ""}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

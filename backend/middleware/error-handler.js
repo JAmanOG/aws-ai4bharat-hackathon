@@ -40,8 +40,8 @@ function errorHandler(error, request, reply) {
     }
 
     // Default 500
-    reply.status(error.statusCode || 500).send({
-        error: 'Internal server error',
+    reply.status(error.statusCode || error.status || 500).send({
+        error: error.statusCode || error.status ? error.message : 'Internal server error',
         details: process.env.NODE_ENV !== 'production' ? error.message : undefined,
     });
 }

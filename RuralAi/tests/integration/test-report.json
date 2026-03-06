@@ -1,0 +1,851 @@
+{
+  "summary": {
+    "base_url": "http://localhost:3000",
+    "timestamp": "2026-03-06T19:19:08.114Z",
+    "total": 90,
+    "passed": 90,
+    "failed": 0,
+    "skipped": 0,
+    "pass_rate": "100.0%"
+  },
+  "suites": [
+    {
+      "name": "FE Contract: Auth — Register & Login (AuthContext)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /auth/register returns { user, token } (AuthContext.register)",
+          "status": "PASS",
+          "elapsed": 102
+        },
+        {
+          "name": "POST /auth/login returns { user, token } (AuthContext.login)",
+          "status": "PASS",
+          "elapsed": 101
+        },
+        {
+          "name": "POST /auth/login wrong PIN → 401 (AuthContext error path)",
+          "status": "PASS",
+          "elapsed": 95
+        },
+        {
+          "name": "POST /auth/register missing phone → 400",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Auth — Profile (ProfileScreen)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/profile returns { success, profile } (authApi.getProfile)",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "GET /auth/profile/unified returns unified profile (authApi.getUnifiedProfile)",
+          "status": "PASS",
+          "elapsed": 10
+        },
+        {
+          "name": "PUT /auth/profile updates fields (authApi.updateProfile)",
+          "status": "PASS",
+          "elapsed": 13
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Auth — DigiLocker",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/digilocker/authorize returns { authorizationUrl } (authApi.getDigilockerUrl)",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "POST /auth/digilocker/verify with valid Aadhaar (authApi.verifyAadhaar)",
+          "status": "PASS",
+          "elapsed": 265
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Auth — Recommendations & Feedback",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/recommendations returns { success, recommendations[] } (authApi.getRecommendations)",
+          "status": "PASS",
+          "elapsed": 16
+        },
+        {
+          "name": "POST /auth/recommendations/feedback accepts feedback (authApi.submitFeedback)",
+          "status": "PASS",
+          "elapsed": 12
+        },
+        {
+          "name": "GET /auth/engagement returns analytics (authApi.getEngagement)",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Auth — Peers & Groups",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/peers returns matching peers (authApi.findPeers)",
+          "status": "PASS",
+          "elapsed": 199
+        },
+        {
+          "name": "GET /auth/groups returns { success, groups[] } (authApi.getGroups)",
+          "status": "PASS",
+          "elapsed": 12
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Voice — Languages (AskScreen)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/languages returns { languages[] } with expected shape",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Hindi (hi) is in the language list",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Voice — Chat (AskScreen, SymptomChecker)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /voice/chat returns ChatResult shape",
+          "status": "PASS",
+          "elapsed": 1872
+        },
+        {
+          "name": "POST /voice/chat with generate_audio=true returns audio_base64",
+          "status": "PASS",
+          "elapsed": 2637
+        },
+        {
+          "name": "POST /voice/chat empty text → 400 (AskScreen guards this)",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Voice — Synthesis",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /voice/synthesize returns { audio_base64, request_id }",
+          "status": "PASS",
+          "elapsed": 839
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Voice — Translation",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /voice/translate returns { translated_text }",
+          "status": "PASS",
+          "elapsed": 211
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Voice — Sessions & Memory",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/sessions returns session list",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /voice/memory/facts returns { facts } (ProfileScreen, EligibilityScreen)",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /voice/pipeline/health returns component status",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "GET /voice/agents returns agent list",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Market — Prices (MarketPricesScreen)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /agriculture/prices/wheat returns PricesResult shape",
+          "status": "PASS",
+          "elapsed": 18
+        },
+        {
+          "name": "GET /agriculture/prices/rice with state filter",
+          "status": "PASS",
+          "elapsed": 4
+        },
+        {
+          "name": "GET /agriculture/prices/:crop/trend returns trend data",
+          "status": "PASS",
+          "elapsed": 5
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Market — Mandis (AgriMarketScreen)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /agriculture/mandis returns { mandis[] } with expected shape",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "GET /agriculture/mandis with state filter",
+          "status": "PASS",
+          "elapsed": 3
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Market — Price Alerts (AlertsScreen)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/alerts creates alert (alertsApi.createAlert)",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /agriculture/alerts returns { alerts: PriceAlert[] }",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "DELETE /agriculture/alerts/:id removes alert (alertsApi.deleteAlert)",
+          "status": "PASS",
+          "elapsed": 23
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Supply Chain — Listings",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/listings creates listing (supplyChainApi.createListing)",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /agriculture/listings returns paginated results (supplyChainApi.searchListings)",
+          "status": "PASS",
+          "elapsed": 9
+        },
+        {
+          "name": "GET /agriculture/listings/:id returns detail (supplyChainApi.getListing)",
+          "status": "PASS",
+          "elapsed": 11
+        },
+        {
+          "name": "GET /agriculture/listings/my returns farmer listings (supplyChainApi.getMyListings)",
+          "status": "PASS",
+          "elapsed": 4
+        },
+        {
+          "name": "GET /agriculture/buyers searches buyers (supplyChainApi.searchBuyers)",
+          "status": "PASS",
+          "elapsed": 6
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Supply Chain — Logistics",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /agriculture/bargaining/groups returns groups (logisticsApi.getBargainingGroups)",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "GET /agriculture/logistics/vehicles returns vehicle types",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "POST /agriculture/logistics/estimate returns cost",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Precision — Crop Analysis",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/analyze returns diagnosis",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Precision — Pest Detection",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/pest-disease/analyze returns detections",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Precision — Carbon Footprint",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/carbon/calculate returns emissions data",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Precision — Weather Advisory",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/weather/advisory returns alerts",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Precision — Practice Tracking",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/practices/log stores a practice",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /agriculture/precision/practices/logs returns stored practices",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "POST /agriculture/precision/practices/analyze returns sustainability score",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Knowledge — Courses (KnowledgeDashboardScreen)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/courses returns { courses: Course[] }",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /knowledge/courses with language filter",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "GET /knowledge/courses/:id returns course detail",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "GET /knowledge/my-courses returns user enrollments (knowledgeApi.getMyCourses)",
+          "status": "PASS",
+          "elapsed": 5
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Knowledge — Learning Profile",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /knowledge/learning-profile creates/updates profile",
+          "status": "PASS",
+          "elapsed": 18
+        },
+        {
+          "name": "GET /knowledge/learning-profile returns profile",
+          "status": "PASS",
+          "elapsed": 6
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Knowledge — Peer Groups (KnowledgeDashboardScreen)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/peer-groups/my-groups returns groups",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "POST /knowledge/peer-groups creates group",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Knowledge — Recommendations",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/recommendations returns recommendations",
+          "status": "PASS",
+          "elapsed": 215
+        },
+        {
+          "name": "GET /knowledge/progress-summary returns learning analytics",
+          "status": "PASS",
+          "elapsed": 18
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Knowledge — Govt Courses",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/govt-courses returns courses",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "GET /knowledge/govt-courses/portals returns portals",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Economic — Schemes (SchemesListScreen)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /economics/schemes returns { schemes: Scheme[] }",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "GET /economics/schemes with category filter",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /economics/schemes/:id returns Scheme detail (SchemeDetailScreen)",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Economic — Profile",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/profile creates/updates profile",
+          "status": "PASS",
+          "elapsed": 13
+        },
+        {
+          "name": "GET /economics/profile returns profile data",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Economic — Eligibility (EligibilityScreen)",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/eligibility/assess returns assessments",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Economic — Savings (SavingsNudgeScreen)",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/savings/plan returns plan",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Economic — Insurance Claims",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/insurance/claims creates claim",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "GET /economics/insurance/claims lists claims",
+          "status": "PASS",
+          "elapsed": 9
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Economic — Nudges (SavingsNudgeScreen)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/nudges/generate creates nudge",
+          "status": "PASS",
+          "elapsed": 9
+        },
+        {
+          "name": "GET /economics/nudges returns { nudges[] } (useNudges hook)",
+          "status": "PASS",
+          "elapsed": 8
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: HomeScreen — Health Check",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /health returns { status: \"ok\" }",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: AskScreen — Voice Chat Flow",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Chat message returns text + session for UI rendering",
+          "status": "PASS",
+          "elapsed": 1485
+        },
+        {
+          "name": "Follow-up in same session preserves context",
+          "status": "PASS",
+          "elapsed": 1272
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: ProfileScreen — Memory Facts & Health",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/memory/facts returns object shape for rendering",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /health for connection indicator",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: MarketPricesScreen — Price Data",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Wheat prices have summary fields for UI cards",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "Each price entry has fields for list rendering",
+          "status": "PASS",
+          "elapsed": 3
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: AgriMarketScreen — Market Overview",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Multiple crop prices load (wheat, rice)",
+          "status": "PASS",
+          "elapsed": 21
+        },
+        {
+          "name": "Mandis list loads for dropdown",
+          "status": "PASS",
+          "elapsed": 6
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: SchemesListScreen — Scheme Catalog",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Scheme list has fields for card rendering",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: SchemeDetailScreen — Scheme Detail",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Scheme detail has all fields for detail view",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: KnowledgeDashboardScreen — Learning Hub",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "All three data sources load for dashboard",
+          "status": "PASS",
+          "elapsed": 9
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: AlertsScreen — Alert CRUD",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Full alert lifecycle: create → list → delete",
+          "status": "PASS",
+          "elapsed": 15
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: SavingsNudgeScreen — Nudges",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Nudges list loads for display",
+          "status": "PASS",
+          "elapsed": 4
+        }
+      ]
+    },
+    {
+      "name": "FE Screen: EligibilityScreen — Eligibility Check",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Memory facts load for pre-filling form",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "Eligibility assessment works end-to-end",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "FE Contract: Error Handling (api.ts catch paths)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Invalid ID returns error (api.ts parses res.text → json)",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "400 returns structured error",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Response time under 15s (ENV.REQUEST_TIMEOUT)",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,34 @@
+{
+    "TableDescription": {
+        "AttributeDefinitions": [
+            {
+                "AttributeName": "userId",
+                "AttributeType": "S"
+            }
+        ],
+        "TableName": "PersonalizedRecommendations",
+        "KeySchema": [
+            {
+                "AttributeName": "userId",
+                "KeyType": "HASH"
+            }
+        ],
+        "TableStatus": "ACTIVE",
+        "CreationDateTime": "2026-03-06T19:26:54.230000+05:30",
+        "ProvisionedThroughput": {
+            "LastIncreaseDateTime": "1970-01-01T05:30:00+05:30",
+            "LastDecreaseDateTime": "1970-01-01T05:30:00+05:30",
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 0,
+        "ItemCount": 0,
+        "TableArn": "arn:aws:dynamodb:ddblocal:000000000000:table/PersonalizedRecommendations",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": "2026-03-06T19:26:54.230000+05:30"
+        },
+        "DeletionProtectionEnabled": false
+    }
+}

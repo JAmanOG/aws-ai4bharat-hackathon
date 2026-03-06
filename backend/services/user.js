@@ -172,12 +172,16 @@ async function updateProfile(userId, updates) {
     const exprValues = { ':now': new Date().toISOString() };
     const exprNames = {};
 
+    // DynamoDB reserved keywords that need ExpressionAttributeNames
+    const reservedWords = new Set(['name', 'state', 'district', 'status', 'language']);
+
     for (const [key, value] of Object.entries(updates)) {
         if (allowedFields.includes(key) && value !== undefined) {
             const attr = `:${key}`;
-            if (key === 'name') {
-                updateParts.push('#n = ' + attr);
-                exprNames['#n'] = 'name';
+            const placeholder = `#${key}`;
+            if (reservedWords.has(key)) {
+                updateParts.push(`${placeholder} = ${attr}`);
+                exprNames[placeholder] = key;
             } else {
                 updateParts.push(`${key} = ${attr}`);
             }

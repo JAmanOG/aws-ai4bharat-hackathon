@@ -15,6 +15,15 @@ import EligibilityScreen from "../screens/EligibilityScreen";
 import SyncStatusScreen from "../screens/SyncStatusScreen";
 import SavedScreen from "../screens/SavedScreen";
 import SavedDetailScreen from "../screens/SavedDetailScreen";
+import BargainingGroupsScreen from "../screens/BargainingGroupsScreen";
+import OrdersScreen from "../screens/OrdersScreen";
+import LogisticsScreen from "../screens/LogisticsScreen";
+import CourseDetailScreen from "../screens/CourseDetailScreen";
+import PeerGroupDetailScreen from "../screens/PeerGroupDetailScreen";
+import InsuranceClaimsScreen from "../screens/InsuranceClaimsScreen";
+import PracticeLogScreen from "../screens/PracticeLogScreen";
+import CreateListingScreen from "../screens/CreateListingScreen";
+import VoiceDrivenScreen from "../screens/VoiceDrivenScreen";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
@@ -32,6 +41,15 @@ export type HomeStackParamList = {
   SyncStatus: undefined;
   Saved: undefined;
   SavedDetail: { itemId: string };
+  BargainingGroups: undefined;
+  Orders: undefined;
+  Logistics: undefined;
+  CourseDetail: { courseId: string; courseName?: string; enrolled?: boolean };
+  PeerGroupDetail: { groupId: string; groupName?: string; isMember?: boolean };
+  InsuranceClaims: undefined;
+  PracticeLog: undefined;
+  CreateListing: undefined;
+  VoiceDriven: undefined;
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -54,6 +72,15 @@ export default function HomeStack() {
       <Stack.Screen name="SyncStatus" component={SyncStatusScreen} />
       <Stack.Screen name="Saved" component={SavedScreen} />
       <Stack.Screen name="SavedDetail" component={SavedDetailScreen} />
+      <Stack.Screen name="BargainingGroups" component={BargainingGroupsScreen} />
+      <Stack.Screen name="Orders" component={OrdersScreen} />
+      <Stack.Screen name="Logistics" component={LogisticsScreen} />
+      <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
+      <Stack.Screen name="PeerGroupDetail" component={PeerGroupDetailScreen} />
+      <Stack.Screen name="InsuranceClaims" component={InsuranceClaimsScreen} />
+      <Stack.Screen name="PracticeLog" component={PracticeLogScreen} />
+      <Stack.Screen name="CreateListing" component={CreateListingScreen} />
+      <Stack.Screen name="VoiceDriven" component={VoiceDrivenScreen} />
     </Stack.Navigator>
   );
 }

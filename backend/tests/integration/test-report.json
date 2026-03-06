@@ -1,0 +1,1841 @@
+{
+  "summary": {
+    "base_url": "http://localhost:3000",
+    "timestamp": "2026-03-06T16:08:11.049Z",
+    "duration_ms": 84958,
+    "total": 250,
+    "passed": 249,
+    "failed": 0,
+    "skipped": 1,
+    "pass_rate": "100.0%"
+  },
+  "suites": [
+    {
+      "name": "REQ-2: Voice — Supported Languages (AC 2.4)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/languages returns language list",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Hindi is supported with TTS",
+          "status": "PASS",
+          "elapsed": 0
+        },
+        {
+          "name": "English is supported with TTS",
+          "status": "PASS",
+          "elapsed": 0
+        },
+        {
+          "name": "At least 5 regional Indian languages supported",
+          "status": "PASS",
+          "elapsed": 0
+        },
+        {
+          "name": "Each language has required fields",
+          "status": "PASS",
+          "elapsed": 0
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Text Chat Pipeline (AC 2.3, 2.6)",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /voice/chat with Hindi text returns structured response",
+          "status": "PASS",
+          "elapsed": 2414
+        },
+        {
+          "name": "POST /voice/chat with English agriculture query",
+          "status": "PASS",
+          "elapsed": 1356
+        },
+        {
+          "name": "POST /voice/chat with market query routes to market domain",
+          "status": "PASS",
+          "elapsed": 1258
+        },
+        {
+          "name": "POST /voice/chat with scheme query routes to schemes domain",
+          "status": "PASS",
+          "elapsed": 1592
+        },
+        {
+          "name": "Context preserved across same session (AC 2.6)",
+          "status": "PASS",
+          "elapsed": 1758
+        },
+        {
+          "name": "POST /voice/chat with empty text → 400",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "POST /voice/chat responds within 10 seconds",
+          "status": "PASS",
+          "elapsed": 1121
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Text-to-Speech Synthesis (AC 2.2)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /voice/synthesize Hindi text → audio base64",
+          "status": "PASS",
+          "elapsed": 1442
+        },
+        {
+          "name": "POST /voice/synthesize English text",
+          "status": "PASS",
+          "elapsed": 1666
+        },
+        {
+          "name": "POST /voice/synthesize empty text → 400",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Translation (AC 2.3)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /voice/translate Hindi → English",
+          "status": "PASS",
+          "elapsed": 212
+        },
+        {
+          "name": "POST /voice/translate English → Hindi",
+          "status": "PASS",
+          "elapsed": 227
+        },
+        {
+          "name": "POST /voice/translate missing target → 400",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Agents & Pipeline Health",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/agents returns agent list",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /voice/pipeline/health returns component status",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /voice/sessions returns user sessions",
+          "status": "PASS",
+          "elapsed": 24
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Ambiguous Input & Clarification (AC 2.5)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Ambiguous single-word input still gets response",
+          "status": "PASS",
+          "elapsed": 582
+        },
+        {
+          "name": "Gibberish input handled gracefully (no crash)",
+          "status": "PASS",
+          "elapsed": 965
+        },
+        {
+          "name": "Very long input (2000 chars) handled",
+          "status": "PASS",
+          "elapsed": 1067
+        },
+        {
+          "name": "Special characters in text do not crash",
+          "status": "PASS",
+          "elapsed": 788
+        },
+        {
+          "name": "Unicode/Devanagari script processed correctly",
+          "status": "PASS",
+          "elapsed": 1316
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Session Isolation & Multi-Turn Stress",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Different sessions are isolated",
+          "status": "PASS",
+          "elapsed": 2881
+        },
+        {
+          "name": "5-turn deep conversation maintains context",
+          "status": "PASS",
+          "elapsed": 4691
+        },
+        {
+          "name": "Mixed language in same session",
+          "status": "PASS",
+          "elapsed": 2471
+        }
+      ]
+    },
+    {
+      "name": "REQ-2: Voice — Synthesis Edge Cases",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Synthesize very long text (500+ chars)",
+          "status": "PASS",
+          "elapsed": 8939
+        },
+        {
+          "name": "Synthesize with numbers and special content",
+          "status": "PASS",
+          "elapsed": 4253
+        },
+        {
+          "name": "Synthesize regional language (Tamil)",
+          "status": "PASS",
+          "elapsed": 1175
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Produce Listings (AC 5.1)",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/listings creates a produce listing",
+          "status": "PASS",
+          "elapsed": 62
+        },
+        {
+          "name": "GET /agriculture/listings returns paginated search results",
+          "status": "PASS",
+          "elapsed": 32
+        },
+        {
+          "name": "GET /agriculture/listings/:id returns listing detail",
+          "status": "PASS",
+          "elapsed": 16
+        },
+        {
+          "name": "GET /agriculture/listings/my returns farmer listings",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "PUT /agriculture/listings/:id/status updates listing status",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /agriculture/listings with filters narrows results",
+          "status": "PASS",
+          "elapsed": 20
+        },
+        {
+          "name": "GET /agriculture/listings with invalid params → still 200 empty",
+          "status": "PASS",
+          "elapsed": 9
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Buyer Registration (AC 5.1, 5.2)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/buyers/register creates a buyer",
+          "status": "PASS",
+          "elapsed": 15
+        },
+        {
+          "name": "GET /agriculture/buyers searches buyers",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "GET /agriculture/buyers with crop filter",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "Duplicate buyer registration → error",
+          "status": "PASS",
+          "elapsed": 11
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Trade Orders (AC 5.1)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/listings/:id/order creates a trade order",
+          "status": "PASS",
+          "elapsed": 27
+        },
+        {
+          "name": "GET /agriculture/orders returns farmer orders",
+          "status": "PASS",
+          "elapsed": 9
+        },
+        {
+          "name": "PUT /agriculture/orders/:id updates order status",
+          "status": "PASS",
+          "elapsed": 9
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Market Prices (AC 5.4)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /agriculture/prices/:crop returns current prices",
+          "status": "PASS",
+          "elapsed": 15
+        },
+        {
+          "name": "GET /agriculture/prices/:crop/trend returns trend data",
+          "status": "PASS",
+          "elapsed": 16
+        },
+        {
+          "name": "GET /agriculture/mandis returns mandi list",
+          "status": "PASS",
+          "elapsed": 12
+        },
+        {
+          "name": "POST /agriculture/prices/ingest accepts price records",
+          "status": "PASS",
+          "elapsed": 14
+        },
+        {
+          "name": "Price data responds within 3 seconds",
+          "status": "PASS",
+          "elapsed": 35
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Price Alerts (AC 5.6)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/alerts subscribes to price alert",
+          "status": "PASS",
+          "elapsed": 13
+        },
+        {
+          "name": "GET /agriculture/alerts returns user alerts",
+          "status": "PASS",
+          "elapsed": 16
+        },
+        {
+          "name": "POST /agriculture/alerts/check dispatches alerts",
+          "status": "PASS",
+          "elapsed": 15
+        },
+        {
+          "name": "DELETE /agriculture/alerts/:id removes alert",
+          "status": "PASS",
+          "elapsed": 24
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Collective Bargaining (AC 5.3)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/bargaining/groups creates a bargaining group",
+          "status": "PASS",
+          "elapsed": 22
+        },
+        {
+          "name": "GET /agriculture/bargaining/groups lists groups",
+          "status": "PASS",
+          "elapsed": 14
+        },
+        {
+          "name": "GET /agriculture/bargaining/groups/:id returns group details",
+          "status": "PASS",
+          "elapsed": 18
+        },
+        {
+          "name": "POST /agriculture/bargaining/groups/:id/join adds member",
+          "status": "PASS",
+          "elapsed": 31
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Logistics (AC 5.5)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/logistics creates transport request",
+          "status": "PASS",
+          "elapsed": 12
+        },
+        {
+          "name": "GET /agriculture/logistics/vehicles returns vehicle types",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "POST /agriculture/logistics/estimate returns cost estimate",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "GET /agriculture/logistics lists user requests",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Cross-state transport estimate is higher",
+          "status": "PASS",
+          "elapsed": 4
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Data Verification",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Listing created with correct data persists",
+          "status": "PASS",
+          "elapsed": 16
+        },
+        {
+          "name": "GET /agriculture/listings/:invalid → 404",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "POST /agriculture/listings missing required field → 400",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Order Lifecycle (AC 5.1)",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Full order lifecycle: create → confirm → complete",
+          "status": "PASS",
+          "elapsed": 34
+        }
+      ]
+    },
+    {
+      "name": "REQ-5: Supply Chain — Brutal Validation Edge Cases",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Listing with negative quantity → 400",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Listing with zero price → server handles gracefully",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Listing with extremely large quantity handled",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "Buyer registration with SQL injection in name → safe",
+          "status": "PASS",
+          "elapsed": 4
+        },
+        {
+          "name": "Multiple price trend periods return valid data",
+          "status": "PASS",
+          "elapsed": 11
+        },
+        {
+          "name": "Price for nonexistent crop → 200 empty",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "Bargaining group with max_members=1 limits membership",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Logistics estimate with 0 weight → 400 or 0 cost",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Listing with Unicode crop name handled",
+          "status": "PASS",
+          "elapsed": 6
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Crop Analysis (AC 6.1)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/analyze with symptoms returns diagnosis",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Analysis includes preventive actions and follow-up questions",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Weather conditions boost confidence (humidity + rain)",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "Empty symptoms still returns valid response",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Analysis responds within 5 seconds",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Pest & Disease Detection (AC 6.2)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/pest-disease/analyze detects rice blast",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Pest alert with detections array",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Critical pest → next_review_in_hours = 12",
+          "status": "PASS",
+          "elapsed": 0
+        },
+        {
+          "name": "Unknown crop gets generic response",
+          "status": "PASS",
+          "elapsed": 0
+        },
+        {
+          "name": "Pest detection responds within 3 seconds",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Carbon Footprint (AC 6.3)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/carbon/calculate returns emissions",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "High emissions → high carbon intensity",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Zero practices → zero emissions",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Breakdown has same count as practices",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Weather Advisory (AC 6.4)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/weather/advisory returns alerts",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Extreme heat triggers heat stress alert",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Cold snap triggers cold stress alert",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Clear weather → no high-risk alerts",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Practice Tracking (AC 6.5)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /agriculture/precision/practices/analyze returns score",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Good practices → strong band",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Bad practices → needs_attention",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "POST /agriculture/precision/practices/log stores a practice",
+          "status": "PASS",
+          "elapsed": 29
+        },
+        {
+          "name": "GET /agriculture/precision/practices/logs returns stored practices",
+          "status": "PASS",
+          "elapsed": 9
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Validation & Edge Cases",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Carbon calc with unknown practice type handles gracefully",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "Weather advisory with empty forecast → valid empty response",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Pest detection missing crop_type → 400",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Multi-Crop Comparison (AC 6.1)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Same symptoms, different crops → different diagnosis",
+          "status": "PASS",
+          "elapsed": 4
+        },
+        {
+          "name": "Cotton analysis with multiple symptoms",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Sugarcane pest detection with multiple detections",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Extreme Weather Scenarios",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Cyclone conditions trigger multiple alerts",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Week-long forecast with mixed conditions",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Carbon Stress Tests",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "All practice types calculate correctly",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Very large farm operations → high intensity",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-6: Precision Agri — Practice Analysis Deep Dive",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Organic-only practices → high sustainability score",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Empty practices → needs_attention with improvements",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Practice log and retrieve cycle",
+          "status": "PASS",
+          "elapsed": 14
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Course Catalog (AC 7.5)",
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/courses returns paginated course list",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "POST /knowledge/courses creates a new course",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "GET /knowledge/courses/:id returns course detail",
+          "status": "PASS",
+          "elapsed": 10
+        },
+        {
+          "name": "GET /knowledge/courses with language filter",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "GET /knowledge/courses with category filter",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /knowledge/courses with search query",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /knowledge/courses/:invalid → 404",
+          "status": "PASS",
+          "elapsed": 4
+        },
+        {
+          "name": "Course listing responds within 2 seconds",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Enrollment & Progress (AC 7.4, 7.6)",
+      "total": 5,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 1,
+      "tests": [
+        {
+          "name": "POST /knowledge/courses/:id/enroll enrolls user",
+          "status": "PASS",
+          "elapsed": 15
+        },
+        {
+          "name": "GET /knowledge/my-courses returns user enrollments",
+          "status": "PASS",
+          "elapsed": 9
+        },
+        {
+          "name": "No modules available",
+          "status": "SKIP",
+          "elapsed": 0
+        },
+        {
+          "name": "POST complete module marks progress",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "GET /knowledge/progress-summary returns learning analytics",
+          "status": "PASS",
+          "elapsed": 16
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Content Delivery (AC 7.1)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/courses/:id/content returns localized content",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "Content with audio=true includes audio data",
+          "status": "PASS",
+          "elapsed": 6
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Government Courses (AC 7.5)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /knowledge/govt-courses returns government courses",
+          "status": "PASS",
+          "elapsed": 9
+        },
+        {
+          "name": "GET /knowledge/govt-courses/portals lists available portals",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "POST /knowledge/govt-courses/sync triggers sync",
+          "status": "PASS",
+          "elapsed": 4
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Peer Groups (AC 7.2)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /knowledge/peer-groups creates a new group",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "POST /knowledge/peer-groups/join finds peer matches",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "GET /knowledge/peer-groups/my-groups returns user groups",
+          "status": "PASS",
+          "elapsed": 20
+        },
+        {
+          "name": "GET /knowledge/peer-groups/:id returns group details",
+          "status": "PASS",
+          "elapsed": 11
+        },
+        {
+          "name": "POST /knowledge/peer-groups/:id/join adds member",
+          "status": "PASS",
+          "elapsed": 24
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — DigiLocker Verification (AC 7.3)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /knowledge/peer-groups/verify/start initiates verification",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "POST /knowledge/peer-groups/verify/complete with mock code",
+          "status": "PASS",
+          "elapsed": 10
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Learning Recommendations (AC 7.4, 7.6)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /knowledge/learning-profile creates/updates profile",
+          "status": "PASS",
+          "elapsed": 23
+        },
+        {
+          "name": "GET /knowledge/learning-profile returns user profile",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "GET /knowledge/recommendations returns personalized recommendations",
+          "status": "PASS",
+          "elapsed": 226
+        },
+        {
+          "name": "GET /knowledge/recommendations/status checks refresh need",
+          "status": "PASS",
+          "elapsed": 10
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Full Learning Journey",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Full journey: create → enroll → progress → complete modules",
+          "status": "PASS",
+          "elapsed": 41
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Multi-Language Content (AC 7.1)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Content in English returns English modules",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "Multiple course creation → catalog grows",
+          "status": "PASS",
+          "elapsed": 17
+        }
+      ]
+    },
+    {
+      "name": "REQ-7: Knowledge — Brutal Edge Cases",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Course with empty modules array → valid",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "Enroll in nonexistent course → error",
+          "status": "PASS",
+          "elapsed": 4
+        },
+        {
+          "name": "Complete nonexistent module → graceful response",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Course with very long title handled",
+          "status": "PASS",
+          "elapsed": 20
+        },
+        {
+          "name": "Peer group with duplicate name allowed or rejected gracefully",
+          "status": "PASS",
+          "elapsed": 17
+        },
+        {
+          "name": "Learning profile update preserves existing data",
+          "status": "PASS",
+          "elapsed": 37
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Economic Profile",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/profile creates farmer economic profile",
+          "status": "PASS",
+          "elapsed": 13
+        },
+        {
+          "name": "POST /economics/profile with minimal data defaults correctly",
+          "status": "PASS",
+          "elapsed": 10
+        },
+        {
+          "name": "POST /economics/profile merges with existing data",
+          "status": "PASS",
+          "elapsed": 22
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Government Schemes (AC 8.1)",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /economics/schemes returns scheme catalog",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Scheme catalog has loan, insurance, subsidy types",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /economics/schemes?type=loan filters by type",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /economics/schemes?type=insurance filters insurance",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /economics/schemes?state=madhya pradesh includes state-specific",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /economics/schemes?land_size_acres=0.1 filters by land",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "GET /economics/schemes?search=credit card finds KCC",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "GET /economics/schemes/:id returns full scheme",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "GET /economics/schemes/:invalid → 404",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Scheme query responds within 1 second",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Loan Eligibility (AC 8.2)",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/eligibility/assess with full profile",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Fully eligible farmer gets eligible=true for KCC",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "No bank account → ineligible for KCC with gap",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Insufficient land → ineligible with land gap",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Invalid scheme_ids → empty assessments",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "No profile → missing_profile response",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Savings Plan (AC 8.3)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/savings/plan generates full plan",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Zero income → zero savings with helpful narrative",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "No harvest months → alternative story",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Savings plan responds within 1 second",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Insurance Claims (AC 8.4)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/insurance/claims creates flood claim",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "Claim without digilocker consent → awaiting_consent",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "Damage assessment returns 4 required documents",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "GET /economics/insurance/claims lists user claims",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Drought damage → medium severity",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Financial Nudges (AC 8.5)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /economics/nudges/generate creates harvest nudge",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Pre-sowing nudge mentions crop names",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Default season is pre-sowing",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "GET /economics/nudges lists user nudges",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "Custom channel in nudge",
+          "status": "PASS",
+          "elapsed": 10
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — End-to-End Verification",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Full economic journey: profile → eligibility → savings → nudge",
+          "status": "PASS",
+          "elapsed": 23
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Multi-Scheme Eligibility Comparison",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Assess ALL schemes at once for wealthy farmer",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Assess schemes for landless farmer",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Insurance Claim Deep Dive (AC 8.4)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Multiple damage types in one claim",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Claim with future date handled",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "List claims filters correctly",
+          "status": "PASS",
+          "elapsed": 8
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — All Seasons Nudges (AC 8.5)",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Pre-sowing nudge generated",
+          "status": "PASS",
+          "elapsed": 10
+        },
+        {
+          "name": "Growing season nudge generated",
+          "status": "PASS",
+          "elapsed": 6
+        },
+        {
+          "name": "Post-harvest nudge generated",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "Invalid season handled gracefully",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Savings Stress Tests (AC 8.3)",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Very high income → correct calculations",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "12 harvest months plan",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Many seasonal expenses tracked",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-8: Economic — Validation Edge Cases",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Profile with extreme values persists",
+          "status": "PASS",
+          "elapsed": 13
+        },
+        {
+          "name": "Eligibility with empty scheme_ids → assesses all",
+          "status": "PASS",
+          "elapsed": 2
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Auth — Registration & Login",
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /auth/register creates new user → JWT",
+          "status": "PASS",
+          "elapsed": 97
+        },
+        {
+          "name": "POST /auth/register duplicate phone → error or existing",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "POST /auth/login with correct PIN → JWT",
+          "status": "PASS",
+          "elapsed": 97
+        },
+        {
+          "name": "POST /auth/login wrong PIN → 401",
+          "status": "PASS",
+          "elapsed": 98
+        },
+        {
+          "name": "POST /auth/register missing phone → 400",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "POST /auth/register missing pin → 400",
+          "status": "PASS",
+          "elapsed": 1
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Profile — Unified AI Profile",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/profile returns basic profile",
+          "status": "PASS",
+          "elapsed": 5
+        },
+        {
+          "name": "PUT /auth/profile updates profile fields",
+          "status": "PASS",
+          "elapsed": 11
+        },
+        {
+          "name": "GET /auth/profile/unified returns full AI context profile",
+          "status": "PASS",
+          "elapsed": 6
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: DigiLocker — Identity Verification",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/digilocker/authorize returns authorization URL",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "POST /auth/digilocker/verify with 12-digit Aadhaar",
+          "status": "PASS",
+          "elapsed": 403
+        },
+        {
+          "name": "POST /auth/digilocker/verify short Aadhaar → 400",
+          "status": "PASS",
+          "elapsed": 3
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: AI Query Routing — Multi-Domain (AC 13.1)",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Agriculture query routes to agriculture agent",
+          "status": "PASS",
+          "elapsed": 1903
+        },
+        {
+          "name": "Market query routes to market agent",
+          "status": "PASS",
+          "elapsed": 1777
+        },
+        {
+          "name": "Schemes/economic query recognized",
+          "status": "PASS",
+          "elapsed": 2085
+        },
+        {
+          "name": "Weather query routes to weather/agriculture domain",
+          "status": "PASS",
+          "elapsed": 1865
+        },
+        {
+          "name": "English query also routes correctly",
+          "status": "PASS",
+          "elapsed": 6180
+        },
+        {
+          "name": "General/health query handled gracefully",
+          "status": "PASS",
+          "elapsed": 7189
+        },
+        {
+          "name": "Chat with audio response generation",
+          "status": "PASS",
+          "elapsed": 2635
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Conversation Context (AC 13.2)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Context preserved: first message sets topic",
+          "status": "PASS",
+          "elapsed": 1622
+        },
+        {
+          "name": "Context preserved: follow-up references prior info",
+          "status": "PASS",
+          "elapsed": 1633
+        },
+        {
+          "name": "Context preserved: third turn continues conversation",
+          "status": "PASS",
+          "elapsed": 1298
+        },
+        {
+          "name": "GET /voice/sessions lists active sessions",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "GET /voice/sessions/:id returns conversation history",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Memory & Facts Extraction",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/memory/facts returns user facts",
+          "status": "PASS",
+          "elapsed": 7
+        },
+        {
+          "name": "DELETE /voice/memory/facts/:key removes a fact",
+          "status": "PASS",
+          "elapsed": 13
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Personalized Recommendations (AC 13.4)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/recommendations returns personalized recs",
+          "status": "PASS",
+          "elapsed": 22
+        },
+        {
+          "name": "Recommendations include categories/items",
+          "status": "PASS",
+          "elapsed": 21
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Feedback Loop — Continuous Learning (AC 13.5)",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "POST /auth/recommendations/feedback records feedback",
+          "status": "PASS",
+          "elapsed": 16
+        },
+        {
+          "name": "Rating outside 1-5 → 400 validation error",
+          "status": "PASS",
+          "elapsed": 3
+        },
+        {
+          "name": "POST /auth/recommendations/:id/action tracks action",
+          "status": "PASS",
+          "elapsed": 13
+        },
+        {
+          "name": "Invalid action value → 400",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "GET /auth/engagement returns engagement analytics",
+          "status": "PASS",
+          "elapsed": 8
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Peer Clustering (AC 13.3)",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /auth/peers finds matching peers",
+          "status": "PASS",
+          "elapsed": 8
+        },
+        {
+          "name": "GET /auth/groups lists user peer groups",
+          "status": "PASS",
+          "elapsed": 12
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: AI Pipeline Health & Latency",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "GET /voice/pipeline/health shows component status",
+          "status": "PASS",
+          "elapsed": 2
+        },
+        {
+          "name": "Pipeline health responds within 500ms",
+          "status": "PASS",
+          "elapsed": 1
+        },
+        {
+          "name": "Chat query responds within 15 seconds",
+          "status": "PASS",
+          "elapsed": 695
+        },
+        {
+          "name": "GET /voice/agents lists all registered agents",
+          "status": "PASS",
+          "elapsed": 3
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Cross-Domain Context Switching",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Start with agriculture, switch to economics",
+          "status": "PASS",
+          "elapsed": 2193
+        },
+        {
+          "name": "Switch from market to weather in same session",
+          "status": "PASS",
+          "elapsed": 1973
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Recommendation Quality After Feedback",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Submit positive feedback → recommendations still work",
+          "status": "PASS",
+          "elapsed": 59
+        },
+        {
+          "name": "Submit negative feedback → recommendations adjust",
+          "status": "PASS",
+          "elapsed": 64
+        },
+        {
+          "name": "Multiple feedback submissions do not break system",
+          "status": "PASS",
+          "elapsed": 95
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Security & Injection Tests",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "NoSQL injection in chat text → safe response",
+          "status": "PASS",
+          "elapsed": 971
+        },
+        {
+          "name": "XSS in auth register name → safe",
+          "status": "PASS",
+          "elapsed": 127
+        },
+        {
+          "name": "Extremely long session_id handled",
+          "status": "PASS",
+          "elapsed": 823
+        },
+        {
+          "name": "Missing Authorization header on protected route → fallback auth",
+          "status": "PASS",
+          "elapsed": 7
+        }
+      ]
+    },
+    {
+      "name": "REQ-13: Concurrent-Style Rapid Requests",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "5 rapid sequential chat requests all succeed",
+          "status": "PASS",
+          "elapsed": 5011
+        },
+        {
+          "name": "Rapid economic API calls all succeed",
+          "status": "PASS",
+          "elapsed": 29
+        },
+        {
+          "name": "Parallel market + knowledge queries",
+          "status": "PASS",
+          "elapsed": 20
+        }
+      ]
+    }
+  ],
+  "failures": []
+}

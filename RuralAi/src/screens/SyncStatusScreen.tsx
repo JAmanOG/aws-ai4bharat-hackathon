@@ -3,35 +3,56 @@
  * per-domain sync items, cached KB size, sync badges.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useHealthCheck } from "../hooks/useData";
+import { useHealthCheck, usePipelineHealth } from "../hooks/useData";
 
 const CATEGORIES = ["All", "Agriculture", "Economics", "Health", "Knowledge"];
 
-const SYNC_ITEMS = [
-  { id: "agri", domain: "Agriculture", icon: "leaf", items: "Market prices, crop data", kb: 14, synced: true, ago: "2 min" },
-  { id: "econ", domain: "Economics", icon: "business", items: "Savings, schemes", kb: 8, synced: true, ago: "5 min" },
-  { id: "health", domain: "Health", icon: "heart-circle", items: "Symptom data, providers", kb: 22, synced: false, ago: "Pending" },
-  { id: "knowledge", domain: "Knowledge", icon: "bulb", items: "Courses, credentials", kb: 18, synced: true, ago: "10 min" },
-  { id: "weather", domain: "Weather", icon: "cloud", items: "7-day forecast, alerts", kb: 6, synced: true, ago: "1 min" },
-];
+type SyncItem = { id: string; domain: string; icon: string; items: string; kb: number; synced: boolean; ago: string };
 
 export default function SyncStatusScreen() {
   const nav = useNavigation<any>();
   const health = useHealthCheck();
+  const pipeline = usePipelineHealth();
   const isOnline = health.data?.status === "ok";
   const [filter, setFilter] = useState("All");
+
+  /* Build sync items from real pipeline health or fallback */
+  const pipelineData = pipeline.data as any;
+  const SYNC_ITEMS: SyncItem[] = React.useMemo(() => {
+    const components = pipelineData?.components ?? pipelineData?.services ?? {};
+    const base: SyncItem[] = [
+      { id: "agri", domain: "Agriculture", icon: "leaf", items: "Market prices, crop data", kb: 14, synced: true, ago: "2 min" },
+      { id: "econ", domain: "Economics", icon: "business", items: "Savings, schemes", kb: 8, synced: true, ago: "5 min" },
+      { id: "health", domain: "Health", icon: "heart-circle", items: "Symptom data, providers", kb: 22, synced: false, ago: "Pending" },
+      { id: "knowledge", domain: "Knowledge", icon: "bulb", items: "Courses, credentials", kb: 18, synced: true, ago: "10 min" },
+      { id: "weather", domain: "Weather", icon: "cloud", items: "7-day forecast, alerts", kb: 6, synced: true, ago: "1 min" },
+    ];
+    // Override sync state from pipeline health if available
+    if (components && typeof components === "object") {
+      const keys = Object.keys(components);
+      keys.forEach((k) => {
+        const item = base.find((b) => b.id === k || b.domain.toLowerCase() === k.toLowerCase());
+        if (item) {
+          item.synced = components[k]?.healthy !== false;
+          item.ago = components[k]?.latency ? `${components[k].latency}ms` : item.ago;
+        }
+      });
+    }
+    return base.map((s) => ({ ...s, synced: isOnline ? s.synced : false }));
+  }, [pipelineData, isOnline]);
 
   const filtered = filter === "All" ? SYNC_ITEMS : SYNC_ITEMS.filter((s) => s.domain === filter);
   const totalKb = SYNC_ITEMS.reduce((s, i) => s + i.kb, 0);

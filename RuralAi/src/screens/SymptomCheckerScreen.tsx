@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { requestMicPermission, startRecording, stopRecording, chatWithText } from "../services/voice";
+import { chatWithText } from "../services/voice";
 import { logger } from "../utils/logger";
 
 type Sym = { key: string; label: string; icon: any };
@@ -23,9 +23,7 @@ type Risk = "LOW" | "MEDIUM" | "HIGH";
 export default function SymptomCheckerScreen() {
   const nav = useNavigation<any>();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [listening, setListening] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [voiceResult, setVoiceResult] = useState<string | null>(null);
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
 
   const picked = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
@@ -44,32 +42,6 @@ export default function SymptomCheckerScreen() {
   }, [risk]);
 
   const toggle = (key: string) => setSelected((p) => ({ ...p, [key]: !p[key] }));
-
-  const handleVoiceStart = useCallback(async () => {
-    const ok = await requestMicPermission();
-    if (!ok) return;
-    setListening(true);
-    await startRecording();
-  }, []);
-
-  const handleVoiceStop = useCallback(async () => {
-    setListening(false);
-    setProcessing(true);
-    try {
-      const uri = await stopRecording();
-      if (!uri) throw new Error("No recording");
-      // Use the voice chat to describe symptoms
-      const prompt = `I described health symptoms via voice. Based on selected symptoms: ${picked.join(", ") || "none yet"}. Please analyze and provide health guidance for a rural user. Keep it simple and actionable.`;
-      const res = await chatWithText(prompt, { language: "en" });
-      setVoiceResult(res.transcript ?? "Voice processed");
-      setAiAdvice(res.response_text);
-    } catch {
-      setVoiceResult(null);
-      setAiAdvice("Could not process voice. Please try again or select symptoms manually.");
-    } finally {
-      setProcessing(false);
-    }
-  }, [picked]);
 
   const handleGetAdvice = useCallback(async () => {
     if (picked.length === 0) return;
@@ -90,7 +62,7 @@ export default function SymptomCheckerScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
+          <Pressable style={styles.backBtn} onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))}>
             <Ionicons name="chevron-back" size={22} color={colors.ink} />
           </Pressable>
           <View style={{ flex: 1 }}>
@@ -112,21 +84,13 @@ export default function SymptomCheckerScreen() {
             </Text>
           </View>
 
-          {/* Voice card */}
+          {/* Voice hint */}
           <View style={styles.voiceCard}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="mic" size={18} color={colors.primary} />
               <Text style={styles.sectionTitle}>Describe by voice</Text>
-              <Pressable style={styles.voiceBtn} onPress={handleVoiceStart}>
-                <Ionicons name="mic" size={18} color={colors.ink} />
-                <Text style={styles.voiceBtnText}>Tap</Text>
-              </Pressable>
             </View>
-            <Text style={styles.helper}>Example: "I have fever and cough for 2 days."</Text>
-            {voiceResult && (
-              <View style={{ marginTop: 8, padding: 10, backgroundColor: "rgba(74,144,217,0.08)", borderRadius: 12 }}>
-                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.ink }}>You said: {voiceResult}</Text>
-              </View>
-            )}
+            <Text style={styles.helper}>Use the floating mic button to describe your symptoms by speaking naturally.</Text>
           </View>
 
           {/* Symptom chips */}
@@ -221,23 +185,6 @@ export default function SymptomCheckerScreen() {
 
           <View style={{ height: 18 }} />
         </ScrollView>
-
-        {/* Real Recording / Processing overlay */}
-        {(listening || processing) ? (
-          <View style={styles.overlay}>
-            <View style={styles.listenCard}>
-              <Ionicons name={listening ? "mic" : "hourglass-outline"} size={32} color={colors.primary} />
-              <Text style={styles.listenTitle}>{listening ? "Listening…" : "Processing…"}</Text>
-              <Text style={styles.listenSub}>{listening ? "Speak your symptoms clearly" : "Analyzing with AI…"}</Text>
-              {listening && (
-                <Pressable style={styles.cancelBtn} onPress={handleVoiceStop}>
-                  <Text style={styles.cancelText}>Stop & Analyze</Text>
-                </Pressable>
-              )}
-              {processing && <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />}
-            </View>
-          </View>
-        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -305,19 +252,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: "900", color: colors.ink },
   helper: { fontSize: 11, fontWeight: "700", color: colors.muted, lineHeight: 16 },
 
-  voiceBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.35)",
-  },
-  voiceBtnText: { fontSize: 12, fontWeight: "900", color: colors.ink },
-
   chipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   chip: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 999, borderWidth: 1 },
   chipActive: { backgroundColor: "rgba(19,236,91,0.18)", borderColor: "rgba(19,236,91,0.28)" },
@@ -380,27 +314,4 @@ const styles = StyleSheet.create({
     borderColor: "rgba(139,94,60,0.22)",
   },
   secondaryText: { fontSize: 11, fontWeight: "900", color: colors.earth },
-
-  overlay: {
-    position: "absolute",
-    left: 0, right: 0, top: 0, bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 18,
-  },
-  listenCard: {
-    width: "100%",
-    backgroundColor: colors.bg,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 18,
-    alignItems: "center",
-    gap: 8,
-  },
-  listenTitle: { fontSize: 20, fontWeight: "900", color: colors.ink },
-  listenSub: { fontSize: 12, fontWeight: "700", color: colors.muted },
-  cancelBtn: { marginTop: 10, width: "100%", backgroundColor: colors.surface, borderRadius: 14, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: colors.border },
-  cancelText: { fontSize: 13, fontWeight: "900", color: colors.ink },
 });

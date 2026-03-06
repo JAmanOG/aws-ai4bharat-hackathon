@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Alert, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
@@ -28,24 +28,8 @@ type Post = {
 export default function CommunityScreen() {
   const nav = useNavigation<any>();
   const peerGroups = usePeerGroups();
-  const [newPostText, setNewPostText] = useState("");
 
   logger.debug("CommunityScreen", "render", { groupCount: ((peerGroups.data as any)?.groups ?? []).length, loading: peerGroups.loading });
-
-  const openVoice = () => {
-    logger.info("CommunityScreen", "Navigate → Ask");
-    nav.navigate("Main", { screen: "Ask" });
-  };
-
-  const handleNewPost = () => {
-    if (newPostText.trim()) {
-      logger.info("CommunityScreen", "New post submitted", { text: newPostText.substring(0, 50) });
-      Alert.alert("Post Shared", "Your post has been shared with the community.");
-      setNewPostText("");
-    } else {
-      Alert.alert("Empty Post", "Write something or use voice to create a post.");
-    }
-  };
 
   const handleReport = () => {
     logger.info("CommunityScreen", "Report tapped");
@@ -74,7 +58,7 @@ export default function CommunityScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.iconBtn} onPress={() => nav.goBack()}>
+          <Pressable style={styles.iconBtn} onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("Main", { screen: "Ask" }))}>
             <Ionicons name="chevron-back" size={20} color={colors.ink} />
           </Pressable>
 
@@ -86,15 +70,10 @@ export default function CommunityScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Quick actions */}
           <View style={styles.quickRow}>
-            <Pressable style={styles.quickCardPrimary} onPress={openVoice}>
+            <View style={styles.quickCardPrimary}>
               <Ionicons name="mic" size={18} color={colors.ink} />
-              <Text style={styles.quickPrimaryText}>Post by Voice</Text>
-            </Pressable>
-
-            <Pressable style={styles.quickCard} onPress={handleNewPost}>
-              <Ionicons name="add-circle-outline" size={18} color={colors.earth} />
-              <Text style={styles.quickText}>New Post</Text>
-            </Pressable>
+              <Text style={styles.quickPrimaryText}>Use mic to post</Text>
+            </View>
 
             <Pressable style={styles.quickCard} onPress={handleReport}>
               <Ionicons name="alert-circle-outline" size={18} color={colors.earth} />
@@ -140,34 +119,12 @@ export default function CommunityScreen() {
           {/* Forum Feed */}
           <SectionHeader title="Forum" right="Filter" />
 
-          {/* Post input */}
-          <View style={{ backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 12 }}>
-            <TextInput
-              style={{ fontSize: 13, fontWeight: "600", color: colors.ink, minHeight: 40 }}
-              placeholder="Share something with your community…"
-              placeholderTextColor={colors.muted}
-              value={newPostText}
-              onChangeText={setNewPostText}
-              multiline
-              onSubmitEditing={handleNewPost}
-              returnKeyType="send"
-            />
-            {newPostText.trim().length > 0 && (
-              <Pressable
-                style={{ alignSelf: "flex-end", backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6, marginTop: 6 }}
-                onPress={handleNewPost}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "900", color: "#FFF" }}>Post</Text>
-              </Pressable>
-            )}
-          </View>
-
-          {/* Empty state when no posts */}
+          {/* Voice post hint + empty state */}
           <View style={{ alignItems: "center", paddingVertical: 30 }}>
             <Ionicons name="chatbubbles-outline" size={40} color={colors.muted} />
             <Text style={{ fontSize: 14, fontWeight: "800", color: colors.ink, marginTop: 10 }}>No posts yet</Text>
             <Text style={{ fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center", marginTop: 4 }}>
-              Be the first to share in your community!{"\n"}Use voice or type above.
+              Tap the mic to share with your community by voice.
             </Text>
           </View>
 

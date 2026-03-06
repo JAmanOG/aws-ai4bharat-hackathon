@@ -3,19 +3,21 @@
  * Hindi nudge text, "Save Now" CTA.
  */
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { useNudges, useHealthCheck } from "../hooks/useData";
+import { economicsApi } from "../services/api";
 
 /* ── Donut chart (pure RN) ── */
 function DonutChart({ percent, size = 140 }: { percent: number; size?: number }) {
@@ -53,15 +55,28 @@ export default function SavingsNudgeScreen() {
   const nudges = useNudges(5);
   const isOnline = health.data?.status === "ok";
 
-  const expectedHarvest = 45000;
-  const currentSavings = 12500;
-  const pct = Math.round((currentSavings / expectedHarvest) * 100);
+  const [savingsPlan, setSavingsPlan] = useState<any>(null);
+  const [planLoading, setPlanLoading] = useState(true);
+
+  useEffect(() => {
+    economicsApi.getSavingsPlan({ monthly_income: 15000, crop_type: "wheat" })
+      .then((res: any) => setSavingsPlan(res))
+      .catch(() => {})
+      .finally(() => setPlanLoading(false));
+  }, []);
+
+  const expectedHarvest = savingsPlan?.expected_harvest ?? savingsPlan?.target_amount ?? 45000;
+  const currentSavings = savingsPlan?.current_savings ?? savingsPlan?.saved_amount ?? 12500;
+  const tips = savingsPlan?.recommendations ?? savingsPlan?.tips ?? [];
+  const pct = expectedHarvest > 0 ? Math.round((currentSavings / expectedHarvest) * 100) : 0;
+
+  const nudgeList = (nudges.data as any)?.nudges ?? [];
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
         <Text style={styles.headerTitle}>AI Savings Nudge</Text>
@@ -102,22 +117,49 @@ export default function SavingsNudgeScreen() {
           </View>
         </View>
 
-        {/* Hindi nudge */}
-        <View style={styles.nudgeCard}>
-          <View style={styles.nudgeIcon}>
-            <Ionicons name="bulb" size={20} color={colors.warn} />
+        {/* Hindi nudge — show first nudge from API if available */}
+        {nudgeList.length > 0 ? (
+          <View style={styles.nudgeCard}>
+            <View style={styles.nudgeIcon}>
+              <Ionicons name="bulb" size={20} color={colors.warn} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.nudgeTitle}>{nudgeList[0].title ?? "Smart Savings Tip"}</Text>
+              <Text style={styles.nudgeHindi}>{nudgeList[0].message_hi ?? nudgeList[0].message ?? ""}</Text>
+              <Text style={styles.nudgeEn}>{nudgeList[0].message_en ?? nudgeList[0].description ?? ""}</Text>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.nudgeTitle}>Smart Savings Tip</Text>
-            <Text style={styles.nudgeHindi}>समय पर बचत! फसल के बाद 10% बीज कोष में जोड़ें?</Text>
-            <Text style={styles.nudgeEn}>Save on time! Add 10% to seed fund after harvest?</Text>
+        ) : (
+          <View style={styles.nudgeCard}>
+            <View style={styles.nudgeIcon}>
+              <Ionicons name="bulb" size={20} color={colors.warn} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.nudgeTitle}>Smart Savings Tip</Text>
+              <Text style={styles.nudgeHindi}>समय पर बचत! फसल के बाद 10% बीज कोष में जोड़ें?</Text>
+              <Text style={styles.nudgeEn}>Save on time! Add 10% to seed fund after harvest?</Text>
+            </View>
           </View>
-        </View>
+        )}
 
-        {/* AI insights */}
+        {/* AI insights — show from savings plan or nudges */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>AI Recommendations</Text>
-          {[
+          {tips.length > 0 ? tips.slice(0, 3).map((tip: any, i: number) => (
+            <View key={i} style={styles.tipRow}>
+              <View style={[styles.tipIcon, { backgroundColor: colors.primary + "18" }]}>
+                <Ionicons name="bulb" size={14} color={colors.primary} />
+              </View>
+              <Text style={styles.tipText}>{typeof tip === "string" ? tip : tip.text ?? tip.message ?? ""}</Text>
+            </View>
+          )) : nudgeList.slice(1, 4).length > 0 ? nudgeList.slice(1, 4).map((n: any, i: number) => (
+            <View key={i} style={styles.tipRow}>
+              <View style={[styles.tipIcon, { backgroundColor: [colors.success, colors.primary, colors.warn][i] + "18" }]}>
+                <Ionicons name={["trending-up", "shield-checkmark", "warning"][i] as any} size={14} color={[colors.success, colors.primary, colors.warn][i]} />
+              </View>
+              <Text style={styles.tipText}>{n.message_en ?? n.message ?? n.title ?? ""}</Text>
+            </View>
+          )) : [
             { icon: "trending-up", text: "Wheat prices expected to rise 8% next month", color: colors.success },
             { icon: "shield-checkmark", text: "PM-KISAN installment due in 15 days", color: colors.primary },
             { icon: "warning", text: "Set aside ₹3,000 for Rabi fertilizer", color: colors.warn },

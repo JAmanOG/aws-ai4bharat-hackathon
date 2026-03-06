@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import React, { useMemo, useState, useCallback } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { chatWithText } from "../services/voice";
 
 const DATA: Record<string, { title: string; body: string; tags: string[] }> = {
   "1": { title: "PM-Kisan Application Steps", body: "1) Aadhaar + land records ready\n2) Apply via portal/CSC\n3) Verify details\n4) Track status", tags: ["Scheme", "Offline"] },
@@ -19,6 +20,29 @@ export default function SavedDetailScreen() {
 
   const item = useMemo(() => DATA[itemId] ?? DATA["1"], [itemId]);
   const [saved, setSaved] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
+
+  const handleReadAloud = useCallback(async () => {
+    if (speaking) return;
+    setSpeaking(true);
+    try {
+      const res = await chatWithText(
+        `Please read this aloud clearly in simple language: ${item.title}. ${item.body}`,
+        { language: "en" }
+      );
+      if (res.audio_base64) {
+        /* Audio was returned — in a full implementation this plays via expo-audio.
+           For now, show a brief confirmation that TTS was generated. */
+        Alert.alert("Read Aloud", "Audio generated. Playback will use the voice overlay.");
+      } else {
+        Alert.alert("Read Aloud", item.body.substring(0, 200));
+      }
+    } catch {
+      Alert.alert("Error", "Could not read aloud. Please try again.");
+    } finally {
+      setSpeaking(false);
+    }
+  }, [item, speaking]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -48,9 +72,9 @@ export default function SavedDetailScreen() {
             <Text style={styles.body}>{item.body}</Text>
 
             <View style={styles.actionsRow}>
-              <Pressable style={styles.primaryBtn}>
-                <Ionicons name="volume-high-outline" size={18} color={colors.ink} />
-                <Text style={styles.primaryText}>Read aloud</Text>
+              <Pressable style={[styles.primaryBtn, speaking && { opacity: 0.6 }]} onPress={handleReadAloud} disabled={speaking}>
+                <Ionicons name={speaking ? "volume-medium" : "volume-high-outline"} size={18} color={colors.ink} />
+                <Text style={styles.primaryText}>{speaking ? "Speaking…" : "Read aloud"}</Text>
               </Pressable>
 
               <Pressable style={styles.secondaryBtn}>

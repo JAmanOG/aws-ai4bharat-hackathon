@@ -154,3 +154,63 @@ jobs:
           else
             echo "✅ Health check passed"
           fi
+
+  # ─────────────────────────────────────
+  #  4. Integration tests against live API
+  # ─────────────────────────────────────
+  integration-tests:
+    name: Integration Tests
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get ALB URL
+        id: url
+        run: |
+          STAGE="${{ inputs.stage || 'dev' }}"
+          ALB=$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}-${STAGE}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`AlbUrl`].OutputValue' \
+            --output text)
+          echo "base_url=${ALB}" >> "$GITHUB_OUTPUT"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Run integration tests
+        run: node backend/tests/integration/run.js
+        env:
+          BASE_URL: ${{ steps.url.outputs.base_url }}
+          VERBOSE: 'false'
+          REPORT_PATH: integration-report.json
+
+      - name: Upload integration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-report
+          path: integration-report.json
+          retention-days: 30
+
+      - name: Post summary
+        if: always()
+        run: |
+          if [ -f integration-report.json ]; then
+            TOTAL=$(jq '.summary.total' integration-report.json)
+            PASSED=$(jq '.summary.passed' integration-report.json)
+            FAILED=$(jq '.summary.failed' integration-report.json)
+            RATE=$(jq -r '.summary.pass_rate' integration-report.json)
+            echo "## 🧪 Integration Test Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Total  | ${TOTAL} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Passed | ${PASSED} ✅ |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Failed | ${FAILED} ❌ |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Pass Rate | ${RATE} |" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -4,7 +4,7 @@
  * Fixed: facts is an object (Record<string,string>), not an array.
  */
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -17,7 +17,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useMemoryFacts, useHealthCheck } from "../hooks/useData";
+import { useMemoryFacts, useHealthCheck, useSchemes } from "../hooks/useData";
+import { economicsApi } from "../services/api";
 
 /* ── Score circle ── */
 function ScoreCircle({ score, size = 100 }: { score: number; size?: number }) {
@@ -48,7 +49,12 @@ export default function EligibilityScreen() {
   const nav = useNavigation<any>();
   const health = useHealthCheck();
   const { data: factsRaw, loading: isLoading } = useMemoryFacts();
+  const schemesHook = useSchemes();
   const isOnline = health.data?.status === "ok";
+
+  const [score, setScore] = useState<number | null>(null);
+  const [eligibleSchemes, setEligibleSchemes] = useState<any[]>([]);
+  const [assessing, setAssessing] = useState(false);
 
   /* Normalize facts — could be object or array */
   const factsMap: Record<string, string> = {};
@@ -65,7 +71,29 @@ export default function EligibilityScreen() {
   const land = factsMap.land_size || factsMap.land || "2 acres";
   const state = factsMap.state || "Madhya Pradesh";
   const experience = factsMap.farming_experience || "5 years";
-  const score = 7.0;
+
+  /* Auto-assess eligibility when facts load */
+  useEffect(() => {
+    if (isLoading || assessing || score !== null) return;
+    setAssessing(true);
+    economicsApi.assessEligibility({
+      farmer_name: name,
+      crop_type: crop,
+      land_size: land,
+      state,
+      experience,
+    })
+      .then((res: any) => {
+        setScore(res?.score ?? res?.eligibility_score ?? 7.0);
+        if (res?.eligible_schemes) setEligibleSchemes(res.eligible_schemes);
+      })
+      .catch(() => setScore(7.0))
+      .finally(() => setAssessing(false));
+  }, [isLoading]);
+
+  /* Use schemes from API when eligible_schemes from assessment not available */
+  const schemesData = (schemesHook.data as any)?.schemes ?? [];
+  const displaySchemes = eligibleSchemes.length > 0 ? eligibleSchemes.slice(0, 5) : schemesData.slice(0, 5);
 
   const DATA_ROWS = [
     { label: "Farmer Name", value: name, icon: "person" },
@@ -75,11 +103,14 @@ export default function EligibilityScreen() {
     { label: "Experience", value: experience, icon: "time" },
   ];
 
+  const displayScore = score ?? 7.0;
+  const isGoodScore = displayScore >= 6;
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
         <Text style={styles.headerTitle}>Loan Eligibility</Text>
@@ -111,11 +142,17 @@ export default function EligibilityScreen() {
             {/* AI Score card */}
             <View style={styles.scoreCard}>
               <Text style={styles.cardTitle}>AI Eligibility Score</Text>
-              <ScoreCircle score={score} />
-              <View style={styles.preApproval}>
-                <Ionicons name="shield-checkmark" size={16} color="#FFF" />
-                <Text style={styles.preApprovalText}>Pre-Approved</Text>
-              </View>
+              {assessing ? (
+                <ActivityIndicator size="large" color={colors.primary} />
+              ) : (
+                <ScoreCircle score={displayScore} />
+              )}
+              {isGoodScore && (
+                <View style={styles.preApproval}>
+                  <Ionicons name="shield-checkmark" size={16} color="#FFF" />
+                  <Text style={styles.preApprovalText}>Pre-Approved</Text>
+                </View>
+              )}
               <Text style={styles.scoreExplain}>
                 Based on your land record, crop history, and government schemes eligibility.
               </Text>
@@ -124,24 +161,30 @@ export default function EligibilityScreen() {
             {/* Eligible schemes */}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Matching Schemes</Text>
-              {[
-                { name: "PM-KISAN", amt: "₹6,000/yr", match: "95%", color: colors.success },
-                { name: "KCC Loan", amt: "Up to ₹3L", match: "88%", color: colors.primary },
-                { name: "Crop Insurance", amt: "Premium ₹800", match: "72%", color: colors.warn },
-              ].map((scheme) => (
-                <View key={scheme.name} style={styles.schemeRow}>
-                  <View style={[styles.schemeIcon, { backgroundColor: scheme.color + "18" }]}>
-                    <Ionicons name="flag" size={14} color={scheme.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.schemeName}>{scheme.name}</Text>
-                    <Text style={styles.schemeAmt}>{scheme.amt}</Text>
-                  </View>
-                  <View style={[styles.matchBadge, { backgroundColor: scheme.color + "18" }]}>
-                    <Text style={[styles.matchText, { color: scheme.color }]}>{scheme.match}</Text>
-                  </View>
-                </View>
-              ))}
+              {displaySchemes.length > 0 ? displaySchemes.map((scheme: any, idx: number) => {
+                const matchPct = scheme.match ?? scheme.eligibility_pct ?? (95 - idx * 10);
+                const schemeColor = matchPct >= 80 ? colors.success : matchPct >= 60 ? colors.primary : colors.warn;
+                return (
+                  <Pressable
+                    key={scheme.id ?? scheme.name ?? idx}
+                    style={styles.schemeRow}
+                    onPress={() => scheme.id && nav.navigate("SchemeDetail", { schemeId: scheme.id })}
+                  >
+                    <View style={[styles.schemeIcon, { backgroundColor: schemeColor + "18" }]}>
+                      <Ionicons name="flag" size={14} color={schemeColor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.schemeName}>{scheme.name}</Text>
+                      <Text style={styles.schemeAmt}>{scheme.benefit_summary ?? scheme.amt ?? ""}</Text>
+                    </View>
+                    <View style={[styles.matchBadge, { backgroundColor: schemeColor + "18" }]}>
+                      <Text style={[styles.matchText, { color: schemeColor }]}>{matchPct}%</Text>
+                    </View>
+                  </Pressable>
+                );
+              }) : (
+                <Text style={{ fontSize: 12, color: colors.muted, fontWeight: "600" }}>Loading schemes…</Text>
+              )}
             </View>
 
             {/* CTA */}

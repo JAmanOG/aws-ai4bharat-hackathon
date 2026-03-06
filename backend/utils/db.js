@@ -7,9 +7,13 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const { Pool } = require('pg');
 
 // ── DynamoDB ──
-const ddbClient = new DynamoDBClient({
+const ddbOpts = {
     region: process.env.AWS_REGION || 'ap-south-1',
-});
+};
+if (process.env.DYNAMODB_ENDPOINT) {
+    ddbOpts.endpoint = process.env.DYNAMODB_ENDPOINT;
+}
+const ddbClient = new DynamoDBClient(ddbOpts);
 
 const dynamoDB = DynamoDBDocumentClient.from(ddbClient, {
     marshallOptions: { removeUndefinedValues: true },
@@ -21,11 +25,11 @@ let pgPool = null;
 function getPostgresPool() {
     if (!pgPool) {
         pgPool = new Pool({
-            host: process.env.PG_HOST,
+            host: process.env.PG_HOST || 'localhost',
             port: parseInt(process.env.PG_PORT || '5432', 10),
             database: process.env.PG_DATABASE || 'rural_platform',
-            user: process.env.PG_USER,
-            password: process.env.PG_PASSWORD,
+            user: process.env.PG_USER || 'admin',
+            password: String(process.env.PG_PASSWORD ?? 'localdev123'),
             max: 5,
             idleTimeoutMillis: 30000,
             connectionTimeoutMillis: 5000,

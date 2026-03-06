@@ -8,7 +8,7 @@
     "dev": "node --watch server.js",
     "test": "jest --coverage",
     "test:unit": "jest --testPathPattern=tests/unit",
-    "test:integration": "jest --testPathPattern=tests/integration",
+    "test:integration": "node tests/integration/run.js",
     "lint": "eslint .",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

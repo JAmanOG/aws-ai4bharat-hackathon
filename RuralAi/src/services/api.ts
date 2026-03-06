@@ -233,8 +233,35 @@ export const supplyChainApi = {
   getListing: (id: string) =>
     api.get(`/agriculture/listings/${id}`),
 
+  updateListingStatus: (id: string, status: string) =>
+    api.put(`/agriculture/listings/${id}/status`, { status }),
+
   searchBuyers: (params?: Record<string, string | number | boolean | undefined>) =>
     api.get('/agriculture/buyers', params),
+
+  registerBuyer: (body: { business_name: string; buyer_type: string; [k: string]: unknown }) =>
+    api.post('/agriculture/buyers/register', body),
+
+  getBuyer: (id: string) =>
+    api.get(`/agriculture/buyers/${id}`),
+
+  verifyBuyer: (id: string) =>
+    api.post(`/agriculture/buyers/${id}/verify`),
+
+  createOrder: (listingId: string, body: { quantity_kg: number; offered_price: number; [k: string]: unknown }) =>
+    api.post(`/agriculture/listings/${listingId}/order`, body),
+
+  getOrders: (params?: { role?: string; status?: string }) =>
+    api.get('/agriculture/orders', params),
+
+  updateOrder: (id: string, body: Record<string, unknown>) =>
+    api.put(`/agriculture/orders/${id}`, body),
+
+  ingestPrices: (body: { records: Array<Record<string, unknown>> }) =>
+    api.post('/agriculture/prices/ingest', body),
+
+  checkAlerts: () =>
+    api.post('/agriculture/alerts/check'),
 };
 
 // ═══════════ Logistics (Req 5) ═══════════
@@ -243,11 +270,35 @@ export const logisticsApi = {
   getBargainingGroups: (cropType?: string) =>
     api.get('/agriculture/bargaining/groups', { crop_type: cropType }),
 
-  getLogisticsQuote: (body: { origin: object; destination: object; quantity_kg: number }) =>
-    api.post('/agriculture/logistics/quote', body),
+  createBargainingGroup: (body: { crop_type: string; target_quantity_kg: number; [k: string]: unknown }) =>
+    api.post('/agriculture/bargaining/groups', body),
 
-  getTransportOptions: (origin?: string, destination?: string) =>
-    api.get('/agriculture/logistics/options', { origin, destination }),
+  getBargainingGroup: (id: string) =>
+    api.get(`/agriculture/bargaining/groups/${id}`),
+
+  joinBargainingGroup: (id: string) =>
+    api.post(`/agriculture/bargaining/groups/${id}/join`),
+
+  suggestBargaining: () =>
+    api.get('/agriculture/bargaining/suggest'),
+
+  createTransport: (body: { origin: object; destination: object; quantity_kg: number; [k: string]: unknown }) =>
+    api.post('/agriculture/logistics', body),
+
+  getTransportRequests: () =>
+    api.get('/agriculture/logistics'),
+
+  getVehicleTypes: () =>
+    api.get('/agriculture/logistics/vehicles'),
+
+  getTransportById: (id: string) =>
+    api.get(`/agriculture/logistics/${id}`),
+
+  updateTransport: (id: string, body: Record<string, unknown>) =>
+    api.put(`/agriculture/logistics/${id}`, body),
+
+  estimateTransport: (body: { origin: object; destination: object; quantity_kg: number }) =>
+    api.post('/agriculture/logistics/estimate', body),
 };
 
 // ═══════════ Precision Agriculture (Req 6) ═══════════
@@ -259,17 +310,20 @@ export const precisionApi = {
   analyzePestDisease: (body: { crop_type: string; symptoms: string[]; image_url?: string }) =>
     api.post('/agriculture/precision/pest-disease/analyze', body),
 
-  calculateCarbon: (body: { land_size_acres: number; crop_type: string; practices: string[] }) =>
+  calculateCarbon: (body: { land_size_acres: number; crop_type: string; practices: Array<{ practice_type: string; frequency?: string }> }) =>
     api.post('/agriculture/precision/carbon/calculate', body),
 
-  getWeatherAdvisory: (lat: number, lon: number, cropType?: string) =>
-    api.get('/agriculture/precision/weather/advisory', { lat, lon, crop_type: cropType }),
+  getWeatherAdvisory: (body: { lat: number; lon: number; crop_type?: string }) =>
+    api.post('/agriculture/precision/weather/advisory', body),
 
-  getPractices: () =>
-    api.get('/agriculture/precision/practices'),
+  analyzePractices: (body: { crop_type: string; practices: string[] }) =>
+    api.post('/agriculture/precision/practices/analyze', body),
 
-  logPractice: (body: { practice_type: string; crop_type: string }) =>
-    api.post('/agriculture/precision/practices', body),
+  logPractice: (body: { practice_type: string; crop_type: string; [k: string]: unknown }) =>
+    api.post('/agriculture/precision/practices/log', body),
+
+  getPracticeLogs: () =>
+    api.get('/agriculture/precision/practices/logs'),
 };
 
 // ═══════════ Knowledge (Req 7) ═══════════
@@ -288,20 +342,71 @@ export const knowledgeApi = {
   getCourses: (language?: string, difficulty?: string) =>
     api.get<{ courses: Course[] }>('/knowledge/courses', { language, difficulty }),
 
+  getCourse: (id: string) =>
+    api.get('/knowledge/courses/' + id),
+
+  createCourse: (body: { title: string; description: string; difficulty: string; language: string; [k: string]: unknown }) =>
+    api.post('/knowledge/courses', body),
+
+  enrollCourse: (courseId: string) =>
+    api.post(`/knowledge/courses/${courseId}/enroll`),
+
   getMyCourses: () =>
     api.get('/knowledge/my-courses'),
+
+  completeModule: (courseId: string, moduleId: string) =>
+    api.post(`/knowledge/courses/${courseId}/modules/${moduleId}/complete`),
+
+  getCourseContent: (courseId: string) =>
+    api.get(`/knowledge/courses/${courseId}/content`),
+
+  getGovtCourses: () =>
+    api.get('/knowledge/govt-courses'),
+
+  getGovtPortals: () =>
+    api.get('/knowledge/govt-courses/portals'),
+
+  syncGovtCourses: (body: { portal: string }) =>
+    api.post('/knowledge/govt-courses/sync', body),
+
+  autoJoinPeerGroup: () =>
+    api.post('/knowledge/peer-groups/join'),
+
+  getMyPeerGroups: () =>
+    api.get('/knowledge/peer-groups/my-groups'),
 
   getPeerGroups: () =>
     api.get('/knowledge/peer-groups'),
 
+  getPeerGroup: (id: string) =>
+    api.get(`/knowledge/peer-groups/${id}`),
+
+  joinPeerGroup: (id: string) =>
+    api.post(`/knowledge/peer-groups/${id}/join`),
+
+  leavePeerGroup: (id: string) =>
+    api.post(`/knowledge/peer-groups/${id}/leave`),
+
+  createPeerGroup: (body: { group_name: string; crop_type?: string; [k: string]: unknown }) =>
+    api.post('/knowledge/peer-groups', body),
+
+  startVerification: () =>
+    api.post('/knowledge/peer-groups/verify/start'),
+
+  completeVerification: (body: Record<string, unknown>) =>
+    api.post('/knowledge/peer-groups/verify/complete', body),
+
   getRecommendations: () =>
     api.get('/knowledge/recommendations'),
+
+  getRecommendationStatus: () =>
+    api.get('/knowledge/recommendations/status'),
 
   getLearningProfile: () =>
     api.get('/knowledge/learning-profile'),
 
-  getGovtCourses: () =>
-    api.get('/knowledge/govt-courses'),
+  updateLearningProfile: (body: Record<string, unknown>) =>
+    api.post('/knowledge/learning-profile', body),
 
   getProgressSummary: () =>
     api.get('/knowledge/progress-summary'),
@@ -353,6 +458,9 @@ export const economicsApi = {
 
   getNudges: (limit = 20) =>
     api.get('/economics/nudges', { limit }),
+
+  generateNudge: (body?: Record<string, unknown>) =>
+    api.post('/economics/nudges/generate', body),
 };
 
 // ═══════════ Voice (Req 2) ═══════════
@@ -378,6 +486,21 @@ export const voiceApi = {
 
   getMemoryFacts: () =>
     api.get<{ facts: Record<string, string> }>('/voice/memory/facts'),
+
+  deleteMemoryFact: (key: string) =>
+    api.delete(`/voice/memory/facts/${encodeURIComponent(key)}`),
+
+  getAgents: () =>
+    api.get('/voice/agents'),
+
+  getPipelineHealth: () =>
+    api.get('/voice/pipeline/health'),
+
+  transcribe: (body: { audio_base64: string; language_code?: string }) =>
+    api.post('/voice/transcribe', body),
+
+  chatAudio: (body: { audio_base64: string; language_code?: string; session_id?: string }) =>
+    api.postVoice('/voice/chat/audio', body),
 };
 
 // ═══════════ Auth (Req 13) ═══════════
@@ -413,6 +536,10 @@ export const authApi = {
   /** Submit feedback on a recommendation */
   submitFeedback: (body: { interactionId?: string; domain?: string; rating: number; action?: string }) =>
     api.post('/auth/recommendations/feedback', body),
+
+  /** Track action on a recommendation */
+  trackRecommendationAction: (id: string, body: { action: string }) =>
+    api.post(`/auth/recommendations/${id}/action`, body),
 
   /** Get engagement analytics */
   getEngagement: () =>

@@ -4,65 +4,67 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { logger } from "../utils/logger";
+import { useVoice } from "../voice/VoiceContext";
+import { VisualizationCardRenderer } from "../voice/VoiceVisualizationCards";
 
-type Action = { title: string; hint: string; icon: any; wide?: boolean };
-type ModuleConfig = { subtitle: string; topCardTitle: string; topCardLines: string[]; actions: Action[] };
+type ModuleConfig = {
+  subtitle: string;
+  topCardTitle: string;
+  topCardLines: string[];
+  voicePrompts: string[];
+};
 
 const MODULES: Record<string, ModuleConfig> = {
   AGRICULTURE: {
-    subtitle: "Krishi • Prices • Crop help",
-    topCardTitle: "Today’s Quick Info",
-    topCardLines: ["Weather: Clear • 27°C", "Market: Wheat ↑", "Tip: Ask by voice for crop advice"],
-    actions: [
-      { title: "Market Prices", hint: "Live mandi rates", icon: "stats-chart-outline" },
-      { title: "Crop Health Scan", hint: "Upload photo", icon: "camera-outline" },
-      { title: "Expert Consultation", hint: "Voice Q&A", icon: "chatbubble-ellipses-outline" },
-      { title: "Government Schemes", hint: "Eligibility & steps", icon: "document-text-outline", wide: true },
+    subtitle: "Krishi \u2022 Prices \u2022 Crop help",
+    topCardTitle: "Today's Quick Info",
+    topCardLines: ["Weather: Clear \u2022 27\u00B0C", "Market: Wheat \u2191", "Tip: Ask by voice for crop advice"],
+    voicePrompts: [
+      "\"\u0906\u091C \u0917\u0947\u0939\u0942\u0902 \u0915\u093E \u092D\u093E\u0935 \u0915\u094D\u092F\u093E \u0939\u0948?\" \u2014 Market Prices",
+      "\"\u092B\u0938\u0932 \u092E\u0947\u0902 \u0915\u0940\u091F \u0932\u0917\u093E \u0939\u0948\" \u2014 Pest Advisory",
+      "\"PM-Kisan \u0915\u0940 \u091C\u093E\u0928\u0915\u093E\u0930\u0940 \u0926\u094B\" \u2014 Government Schemes",
+      "\"\u092E\u094C\u0938\u092E \u0915\u0948\u0938\u093E \u0930\u0939\u0947\u0917\u093E?\" \u2014 Weather Forecast",
     ],
   },
   EDUCATION: {
-    subtitle: "Shiksha • Skills • Learning",
+    subtitle: "Shiksha \u2022 Skills \u2022 Learning",
     topCardTitle: "Learn Faster",
     topCardLines: ["Skill lessons in your language", "Download offline content", "Use voice to navigate"],
-    actions: [
-      { title: "Skill Development", hint: "Vocational + videos", icon: "briefcase-outline" },
-      { title: "K-12 Support", hint: "Content + help", icon: "school-outline" },
-      { title: "Digital Literacy", hint: "Basics + safety", icon: "shield-checkmark-outline" },
-      { title: "Exam Prep", hint: "Tests + practice", icon: "clipboard-outline", wide: true },
+    voicePrompts: [
+      "\"\u0915\u094B\u0908 skill course \u092C\u0924\u093E\u0913\" \u2014 Courses",
+      "\"Digital literacy \u0938\u093F\u0916\u093E\u0913\" \u2014 Digital Skills",
+      "\"Exam prep help\" \u2014 Study Support",
     ],
   },
   FINANCE: {
-    subtitle: "Artha • Loans • Benefits",
+    subtitle: "Artha \u2022 Loans \u2022 Benefits",
     topCardTitle: "Finance Snapshot",
-    topCardLines: ["Check schemes & benefits", "Track applications", "Ask: “loan eligibility”"],
-    actions: [
-      { title: "Micro-credit & Loans", hint: "Apply + status", icon: "cash-outline" },
-      { title: "Insurance", hint: "Crop/Health/Life", icon: "heart-outline" },
-      { title: "Financial Literacy", hint: "Guidance + tips", icon: "book-outline" },
-      { title: "Govt Benefits", hint: "Direct transfer", icon: "card-outline", wide: true },
+    topCardLines: ["Check schemes & benefits", "Track applications", "Ask about loan eligibility"],
+    voicePrompts: [
+      "\"\u092E\u0947\u0930\u0947 \u0932\u093F\u090F \u0915\u094C\u0928 \u0938\u0940 \u092F\u094B\u091C\u0928\u093E \u0939\u0948?\" \u2014 Scheme Eligibility",
+      "\"\u092B\u0938\u0932 \u092C\u0940\u092E\u093E \u0915\u093E status\" \u2014 Insurance",
+      "\"\u092C\u091A\u0924 \u0915\u0948\u0938\u0947 \u0915\u0930\u0947\u0902?\" \u2014 Savings Plan",
+      "\"Loan \u0915\u0947 \u0932\u093F\u090F \u0915\u094D\u092F\u093E \u091A\u093E\u0939\u093F\u090F?\" \u2014 Micro-credit",
     ],
   },
   HEALTH: {
-    subtitle: "Swasthya • Care • Records",
+    subtitle: "Swasthya \u2022 Care \u2022 Records",
     topCardTitle: "Health Quick Help",
-    topCardLines: ["Symptom check (voice)", "Nearby clinics (later)", "Emergency guidance"],
-    actions: [
-      { title: "Symptom Checker", hint: "Voice-first", icon: "pulse-outline" },
-      { title: "Telemedicine", hint: "Consult", icon: "videocam-outline" },
-      { title: "Health Records", hint: "Secure access", icon: "folder-open-outline" },
-      { title: "Wellness & Nutrition", hint: "Tips + alerts", icon: "nutrition-outline", wide: true },
+    topCardLines: ["Symptom check (voice)", "Nearby clinics", "Emergency guidance"],
+    voicePrompts: [
+      "\"\u092C\u0941\u0916\u093E\u0930 \u0914\u0930 \u0916\u093E\u0902\u0938\u0940 \u0939\u0948\" \u2014 Symptom Check",
+      "\"Nearest clinic \u092C\u0924\u093E\u0913\" \u2014 Health Services",
+      "\"\u091F\u0940\u0915\u093E\u0915\u0930\u0923 schedule\" \u2014 Vaccination",
     ],
   },
   INFRASTRUCTURE: {
-    subtitle: "Suvidha • Civic • Utilities",
+    subtitle: "Suvidha \u2022 Civic \u2022 Utilities",
     topCardTitle: "Civic Actions",
     topCardLines: ["Report issues", "Use official portals", "Emergency services quick access"],
-    actions: [
-      { title: "Report Issue", hint: "Road/Water/Power", icon: "warning-outline" },
-      { title: "Utility Services", hint: "Bills + complaints", icon: "build-outline" },
-      { title: "Local Governance", hint: "Announcements", icon: "business-outline" },
-      { title: "Emergency Services", hint: "One tap help", icon: "call-outline", wide: true },
+    voicePrompts: [
+      "\"\u0938\u095C\u0915 \u0916\u0930\u093E\u092C \u0939\u0948\" \u2014 Report Issue",
+      "\"\u092C\u093F\u091C\u0932\u0940 \u0915\u091F\u0940 \u0939\u0948\" \u2014 Utility Services",
+      "\"Emergency number \u091A\u093E\u0939\u093F\u090F\" \u2014 Emergency",
     ],
   },
 };
@@ -72,11 +74,17 @@ export default function ModuleScreen() {
   const route = useRoute<any>();
   const titleRaw = (route?.params?.title ?? "AGRICULTURE").toString().toUpperCase();
   const config = useMemo(() => MODULES[titleRaw] ?? MODULES.AGRICULTURE, [titleRaw]);
+  const { currentVisualization, history } = useVoice();
+
+  /* Filter history for this domain */
+  const domainHistory = useMemo(() => {
+    return history.filter((h) => h.domain?.toUpperCase() === titleRaw).slice(0, 5);
+  }, [history, titleRaw]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
+        <Pressable style={styles.backBtn} onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))}>
           <Ionicons name="chevron-back" size={22} color={colors.ink} />
         </Pressable>
 
@@ -111,62 +119,42 @@ export default function ModuleScreen() {
           </View>
         </View>
 
-        {/* Actions grid */}
-        <View style={styles.grid}>
-          {config.actions.map((a) => (
-            <Pressable
-              key={a.title}
-              style={[styles.tile, a.wide ? styles.tileWide : styles.tileHalf]}
-              onPress={() => {
-                logger.info("ModuleScreen", `Action tapped: ${a.title}`, { module: titleRaw });
-                if (a.title === "Market Prices") {
-                  nav.navigate("MarketPrices", { moduleTitle: titleRaw });
-                  return;
-                }
-                if (a.title === "Government Schemes" || a.title === "Govt Benefits") {
-                  nav.navigate("SchemesList", { moduleTitle: titleRaw });
-                  return;
-                }
-                if (a.title === "Symptom Checker") {
-                  nav.navigate("SymptomChecker");
-                  return;
-                }
-                if (a.title === "Micro-credit & Loans" || a.title === "Insurance") {
-                  nav.navigate("Eligibility");
-                  return;
-                }
-                if (a.title === "Financial Literacy") {
-                  nav.navigate("SavingsNudge");
-                  return;
-                }
-                if (a.title === "Skill Development" || a.title === "K-12 Support" || a.title === "Digital Literacy") {
-                  nav.navigate("KnowledgeDashboard");
-                  return;
-                }
-                if (a.title === "Emergency Services") {
-                  nav.navigate("Alerts");
-                  return;
-                }
-                nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: a.title });
-              }}
-            >
-              <View style={styles.tileIcon}>
-                <Ionicons name={a.icon} size={18} color={colors.earth} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tileTitle}>{a.title}</Text>
-                <Text style={styles.tileHint}>{a.hint}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-            </Pressable>
+        {/* Voice prompts for this domain */}
+        <View style={styles.promptSection}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Ionicons name="mic" size={16} color={colors.primary} />
+            <Text style={styles.promptTitle}>Try saying</Text>
+          </View>
+          {config.voicePrompts.map((prompt, idx) => (
+            <View key={idx} style={styles.promptRow}>
+              <Text style={styles.promptText}>{prompt}</Text>
+            </View>
           ))}
         </View>
 
-        {/* Voice CTA */}
-        <Pressable style={styles.voiceCta} onPress={() => nav.navigate("Ask")}>
-          <Ionicons name="mic" size={18} color={colors.ink} />
-          <Text style={styles.voiceText}>VOICE SEARCH</Text>
-        </Pressable>
+        {/* Current visualization if available */}
+        {currentVisualization && (
+          <View style={{ marginTop: 12 }}>
+            <Text style={styles.sectionLabel}>LATEST RESULT</Text>
+            <VisualizationCardRenderer card={currentVisualization} />
+          </View>
+        )}
+
+        {/* Domain voice history */}
+        {domainHistory.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={styles.sectionLabel}>RECENT IN {titleRaw}</Text>
+            {domainHistory.map((entry, idx) => (
+              <View key={idx} style={styles.historyRow}>
+                <View style={styles.historyDot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historyTranscript} numberOfLines={1}>{entry.text}</Text>
+                  {entry.domain && <Text style={styles.historyResponse} numberOfLines={1}>{entry.domain} • {entry.intent ?? ""}</Text>}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={{ height: 18 }} />
       </ScrollView>
@@ -212,43 +200,37 @@ const styles = StyleSheet.create({
   bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, marginTop: 6 },
   topLine: { flex: 1, fontSize: 12, fontWeight: "700", color: colors.muted, lineHeight: 16 },
 
-  grid: { marginTop: 12, flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "space-between" },
-  tile: {
+  promptSection: {
+    marginTop: 14,
     backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
     gap: 10,
   },
-  tileHalf: { width: "48%" },
-  tileWide: { width: "100%" },
-  tileIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "rgba(139,94,60,0.10)",
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: "rgba(139,94,60,0.18)",
+  promptTitle: { fontSize: 13, fontWeight: "900", color: colors.ink },
+  promptRow: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(19,236,91,0.06)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(19,236,91,0.12)",
   },
-  tileTitle: { fontSize: 12, fontWeight: "900", color: colors.ink },
-  tileHint: { marginTop: 3, fontSize: 11, fontWeight: "700", color: colors.muted },
+  promptText: { fontSize: 12, fontWeight: "700", color: colors.muted, lineHeight: 17 },
 
-  voiceCta: {
-    marginTop: 14,
-    backgroundColor: colors.primary,
-    borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+  sectionLabel: { fontSize: 10, fontWeight: "900", color: colors.muted, letterSpacing: 1, marginBottom: 8 },
+
+  historyRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "flex-start",
     gap: 10,
-    shadowColor: colors.primary,
-    shadowOpacity: 0.25,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  voiceText: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2, color: colors.ink },
+  historyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 4 },
+  historyTranscript: { fontSize: 12, fontWeight: "900", color: colors.ink },
+  historyResponse: { marginTop: 2, fontSize: 11, fontWeight: "700", color: colors.muted, lineHeight: 15 },
 });

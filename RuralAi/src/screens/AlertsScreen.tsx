@@ -42,7 +42,7 @@ export default function AlertsScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
+          <Pressable style={styles.backBtn} onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))}>
             <Ionicons name="chevron-back" size={22} color={colors.ink} />
           </Pressable>
           <Text style={styles.title}>Price Alerts</Text>
