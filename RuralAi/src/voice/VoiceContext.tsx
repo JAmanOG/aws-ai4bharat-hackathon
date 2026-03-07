@@ -127,15 +127,29 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const processResult = useCallback(
     (result: ChatResult): CommandAction | null => {
+      const metadataEntities =
+        result.metadata?.entities && typeof result.metadata.entities === "object"
+          ? (result.metadata.entities as Record<string, string>)
+          : {};
+
       // Build VoiceCommand from ChatResult
       const cmd: VoiceCommand = {
         domain: result.domain ?? "general",
         intent: result.intent ?? "general_question",
-        entities: result.entities ?? {},
+        entities: {
+          ...(result.entities ?? {}),
+          ...metadataEntities,
+          ...(result.metadata?.roomId ? { roomId: String(result.metadata.roomId) } : {}),
+        },
         complexity: result.complexity ?? "simple",
+        transcript: result.transcript,
         responseText: result.response_text,
         responseTextEnglish: result.response_text_english,
         audioBase64: result.audio_base64,
+        metadata: {
+          ...(result.metadata ?? {}),
+          languageCode: result.language_code,
+        },
       };
 
       setLastCommand(cmd);

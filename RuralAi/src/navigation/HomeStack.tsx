@@ -24,17 +24,24 @@ import InsuranceClaimsScreen from "../screens/InsuranceClaimsScreen";
 import PracticeLogScreen from "../screens/PracticeLogScreen";
 import CreateListingScreen from "../screens/CreateListingScreen";
 import VoiceDrivenScreen from "../screens/VoiceDrivenScreen";
+import BusinessDirectoryScreen from "../screens/BusinessDirectoryScreen";
+import GovtPortalsScreen from "../screens/GovtPortalsScreen";
+import HealthDashboardScreen from "../screens/HealthDashboardScreen";
+import LivelihoodScreen from "../screens/LivelihoodScreen";
+import VoiceRoomsScreen from "../screens/VoiceRoomsScreen";
+import VoiceRoomScreen from "../screens/VoiceRoomScreen";
+import KnowledgeResourcesScreen from "../screens/KnowledgeResourcesScreen";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
   Module: { title: string };
-  MarketPrices: { moduleTitle?: string } | undefined;
+  MarketPrices: { moduleTitle?: string; crop?: string; location?: string } | undefined;
   SchemesList: { moduleTitle?: string } | undefined;
   SchemeDetail: { schemeId: string };
   SymptomChecker: undefined;
   Alerts: undefined;
   Action: { moduleTitle: string; actionTitle: string };
-  AgriMarket: undefined;
+  AgriMarket: { crop?: string; tab?: "crops" | "historical"; compareCrop?: string; location?: string } | undefined;
   KnowledgeDashboard: undefined;
   SavingsNudge: undefined;
   Eligibility: undefined;
@@ -50,6 +57,13 @@ export type HomeStackParamList = {
   PracticeLog: undefined;
   CreateListing: undefined;
   VoiceDriven: undefined;
+  BusinessDirectory: undefined;
+  GovtPortals: undefined;
+  HealthDashboard: undefined;
+  Livelihood: undefined;
+  KnowledgeResources: { initialTab?: "all" | "videos" | "articles"; query?: string; language?: string } | undefined;
+  VoiceRooms: undefined;
+  VoiceRoom: { roomId: string };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -81,6 +95,13 @@ export default function HomeStack() {
       <Stack.Screen name="PracticeLog" component={PracticeLogScreen} />
       <Stack.Screen name="CreateListing" component={CreateListingScreen} />
       <Stack.Screen name="VoiceDriven" component={VoiceDrivenScreen} />
+      <Stack.Screen name="BusinessDirectory" component={BusinessDirectoryScreen} />
+      <Stack.Screen name="GovtPortals" component={GovtPortalsScreen} />
+      <Stack.Screen name="HealthDashboard" component={HealthDashboardScreen} />
+      <Stack.Screen name="Livelihood" component={LivelihoodScreen} />
+      <Stack.Screen name="KnowledgeResources" component={KnowledgeResourcesScreen} />
+      <Stack.Screen name="VoiceRooms" component={VoiceRoomsScreen} />
+      <Stack.Screen name="VoiceRoom" component={VoiceRoomScreen} />
     </Stack.Navigator>
   );
 }

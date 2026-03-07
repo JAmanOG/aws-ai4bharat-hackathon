@@ -1,0 +1,20 @@
+                               Table "public.health_portals"
+        Column        |           Type           | Collation | Nullable |      Default      
+----------------------+--------------------------+-----------+----------+-------------------
+ id                   | uuid                     |           | not null | gen_random_uuid()
+ name                 | character varying(200)   |           | not null | 
+ description          | text                     |           |          | 
+ category             | character varying(50)    |           | not null | 
+ url                  | character varying(500)   |           | not null | 
+ eligibility_criteria | jsonb                    |           |          | '{}'::jsonb
+ services_offered     | text[]                   |           |          | 
+ coverage_regions     | text[]                   |           |          | 
+ is_free              | boolean                  |           |          | true
+ contact_info         | jsonb                    |           |          | '{}'::jsonb
+ how_to_access        | text                     |           |          | 
+ created_at           | timestamp with time zone |           |          | now()
+ updated_at           | timestamp with time zone |           |          | now()
+Indexes:
+    "health_portals_pkey" PRIMARY KEY, btree (id)
+    "idx_health_portals_category" btree (category)
+

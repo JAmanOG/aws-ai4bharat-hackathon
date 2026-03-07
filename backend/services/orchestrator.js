@@ -39,6 +39,34 @@ function log(level, stage, msg, data = {}) {
     else console.log(`${prefix} ${msg}${extras}`);
 }
 
+function shouldForceAgentRouting(analysis, originalText = '') {
+    const intent = String(analysis?.intent || '').toLowerCase();
+    const englishText = String(analysis?.english_text || '').toLowerCase();
+    const rawText = String(originalText || '').toLowerCase();
+    const combined = `${intent} ${englishText} ${rawText}`;
+
+    // Voice room commands
+    if (/request_voice_call_room|create_voice|join_voice|voice room|twitter\s*space|create\s+(a\s+)?room|join\s+(the\s+)?room|रूम|स्पेस|जॉइन|बनाओ/.test(combined)) {
+        return true;
+    }
+
+    // Knowledge / resource requests — must always go through knowledge agent
+    if (/request_video|request_article|request_course|knowledge_query|learning_content|show_resources|training_resources/.test(intent)) {
+        return true;
+    }
+    if (/show\s+(me\s+)?(a\s+)?video|find\s+(me\s+)?video|play\s+(a\s+)?video|watch\s+(a\s+)?video|दिखा.*वीडियो|वीडियो\s*दिखा/.test(combined)) {
+        return true;
+    }
+    if (/show\s+(me\s+)?(an?\s+)?article|find\s+(me\s+)?article|read\s+(an?\s+)?article|लेख|आर्टिकल/.test(combined)) {
+        return true;
+    }
+    if (/show\s+(me\s+)?courses?|find\s+(me\s+)?courses?|training|कोर्स|प्रशिक्षण/.test(combined)) {
+        return true;
+    }
+
+    return false;
+}
+
 /* ═══════════════════════════════════════════════════════ */
 /*  Full Audio Pipeline                                    */
 /*  Audio → STT → Nova → MCP/Agent → Sarvam → Out         */
@@ -63,6 +91,7 @@ async function processAudio(params) {
         sessionId = uuid(),
         languageCode = 'unknown',
         generateAudio = true,
+        screenContext = '',
     } = params;
 
     const pipeline = { stages: {} };
@@ -149,6 +178,7 @@ async function processAudio(params) {
         generateAudio,
         startTime,
         pipeline,
+        screenContext,
     });
 
     const totalMs = Date.now() - startTime;
@@ -188,6 +218,7 @@ async function processText(params) {
         sessionId = uuid(),
         languageCode = 'hi',
         generateAudio = true,
+        screenContext = '',
     } = params;
 
     const pipeline = { stages: {} };
@@ -198,6 +229,7 @@ async function processText(params) {
         textPreview: text.substring(0, 80),
         language: languageCode,
         generateAudio,
+        hasScreenContext: !!screenContext,
     });
 
     const result = await _processFromText({
@@ -208,6 +240,7 @@ async function processText(params) {
         generateAudio,
         startTime,
         pipeline,
+        screenContext,
     });
 
     const totalMs = Date.now() - startTime;
@@ -224,7 +257,7 @@ async function processText(params) {
 /*  Internal shared pipeline (stages 2-5)                  */
 /* ═══════════════════════════════════════════════════════ */
 
-async function _processFromText({ text, userId, sessionId, detectedLang, generateAudio, startTime, pipeline }) {
+async function _processFromText({ text, userId, sessionId, detectedLang, generateAudio, startTime, pipeline, screenContext }) {
 
     // ──────────────────────────────────────────────
     // Stage 2: AWS Nova (Translate + Understand + Route + Direct Answer)
@@ -279,6 +312,25 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
     // ──────────────────────────────────────────────
     let agentResult;
 
+    if (shouldForceAgentRouting(analysis, text)) {
+        analysis.can_answer_directly = false;
+        analysis.direct_response = null;
+
+        // Re-route knowledge intents to the knowledge domain even if Nova said "general"
+        const knowledgeIntent = /request_video|request_article|request_course|knowledge_query|learning_content|show_resources|training_resources/.test(String(analysis.intent || ''));
+        const knowledgeText = /show\s+(me\s+)?(a\s+)?video|find\s+video|watch\s+video|play\s+video|article|course|training|वीडियो|लेख|कोर्स|प्रशिक्षण/.test(String(analysis.english_text || '').toLowerCase() + ' ' + String(text || '').toLowerCase());
+        if ((knowledgeIntent || knowledgeText) && analysis.domain !== 'knowledge') {
+            log('info', 'Agent', `↺ Re-routing domain ${analysis.domain} → knowledge`, { intent: analysis.intent });
+            analysis.domain = 'knowledge';
+        }
+
+        log('info', 'Agent', '↺ Forcing MCP/agent route for actionable command', {
+            intent: analysis.intent,
+            domain: analysis.domain,
+            english: (analysis.english_text || '').substring(0, 80),
+        });
+    }
+
     if (analysis.can_answer_directly && analysis.direct_response) {
         // ⚡ Nova can answer directly — skip the full Agent/MCP pipeline
         log('info', 'Agent', `⚡ Nova direct answer (skipping agent pipeline)`, {
@@ -314,7 +366,16 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
                 systemPrompt: true,
                 historyTurns,
                 currentQuery: analysis.english_text.substring(0, 60),
+                hasScreenContext: !!screenContext,
             });
+
+            // Inject screen context into the system prompt if available
+            if (screenContext && contextMessages.length > 0 && contextMessages[0].role === 'system') {
+                contextMessages[0].content += `\n\n--- Current App Screen Context ---\n${screenContext}\n\nUse this context to provide RELEVANT answers about what the user is currently viewing. If they ask about prices, refer to the crop they are viewing. If they mention "this crop" or "current crop", it refers to the crop shown on screen.`;
+                log('info', 'Context', `✓ Injected screen context into system prompt`, {
+                    screenContext: screenContext.substring(0, 100),
+                });
+            }
 
             // Step 2: Route through MCP → Tool Selection → Agent / Claude / Gemini
             log('info', 'MCP', `→ Routing "${analysis.domain}" (${analysis.complexity}) through MCP`, {
@@ -459,6 +520,7 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
         complexity: analysis.complexity,
         provider: agentResult.provider,
         route: agentResult.route,
+        metadata: agentResult.metadata,
         pipeline,
         response_time_ms: Date.now() - startTime,
     };

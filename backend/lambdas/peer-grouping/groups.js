@@ -7,6 +7,10 @@ const { dynamoDB, TABLE_NAMES } = require('../../utils/db');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { v4: uuidv4 } = require('uuid');
 
+function isMissingTableError(err) {
+    return err?.name === 'ResourceNotFoundException' || /non-existent table|not found/i.test(String(err?.message || ''));
+}
+
 /**
  * Create a new peer group.
  */
@@ -97,30 +101,67 @@ async function createGroupFromClustering(clusterData, creatorUserId) {
  * Get group by ID.
  */
 async function getGroupById(groupId) {
-    const result = await dynamoDB.send(new GetCommand({
-        TableName: TABLE_NAMES.PEER_GROUPS,
-        Key: { groupId },
-    }));
-    return result.Item || null;
+    try {
+        const result = await dynamoDB.send(new GetCommand({
+            TableName: TABLE_NAMES.PEER_GROUPS,
+            Key: { groupId },
+        }));
+        return result.Item || null;
+    } catch (err) {
+        if (isMissingTableError(err)) return null;
+        throw err;
+    }
 }
 
 /**
  * Get all groups a user belongs to.
  */
 async function getUserGroups(userId) {
-    // Since members is a list attribute, we need to scan
-    // In production, use a separate UserGroups table or GSI
-    const result = await dynamoDB.send(new ScanCommand({
-        TableName: TABLE_NAMES.PEER_GROUPS,
-        FilterExpression: 'isActive = :active',
-        ExpressionAttributeValues: { ':active': true },
-    }));
+    try {
+        // Since members is a list attribute, we need to scan
+        // In production, use a separate UserGroups table or GSI
+        const result = await dynamoDB.send(new ScanCommand({
+            TableName: TABLE_NAMES.PEER_GROUPS,
+            FilterExpression: 'isActive = :active',
+            ExpressionAttributeValues: { ':active': true },
+        }));
 
-    const userGroups = (result.Items || []).filter(group =>
-        group.members?.some(m => m.userId === userId)
-    );
+        const userGroups = (result.Items || []).filter(group =>
+            group.members?.some(m => m.userId === userId)
+        );
 
-    return userGroups;
+        return userGroups;
+    } catch (err) {
+        if (isMissingTableError(err)) return [];
+        throw err;
+    }
+}
+
+/**
+ * List all active groups for discovery.
+ */
+async function listGroups() {
+    try {
+        const result = await dynamoDB.send(new ScanCommand({
+            TableName: TABLE_NAMES.PEER_GROUPS,
+            FilterExpression: 'isActive = :active',
+            ExpressionAttributeValues: { ':active': true },
+        }));
+
+        return (result.Items || [])
+            .map(group => ({
+                ...group,
+                member_count: Array.isArray(group.members) ? group.members.length : Number(group.member_count || 0),
+            }))
+            .sort((a, b) => {
+                const scoreDiff = Number(b.activityScore || 0) - Number(a.activityScore || 0);
+                if (scoreDiff !== 0) return scoreDiff;
+                return Number(b.member_count || 0) - Number(a.member_count || 0);
+            });
+    } catch (err) {
+        if (isMissingTableError(err)) return [];
+        throw err;
+    }
 }
 
 /**
@@ -184,6 +225,7 @@ module.exports = {
     createGroup,
     createGroupFromClustering,
     getGroupById,
+    listGroups,
     getUserGroups,
     joinGroup,
     leaveGroup,

@@ -5,6 +5,7 @@
 const { query } = require('../../utils/db');
 
 async function listPortals({ page = 1, limit = 10, category, region, search }) {
+  console.log(`[ACTION] Listing portals. Filters -> Page: ${page}, Category: ${category}, Region: ${region}, Search: ${search}`);
   const conditions = [];
   const params = [];
   let idx = 1;
@@ -30,6 +31,7 @@ async function listPortals({ page = 1, limit = 10, category, region, search }) {
 }
 
 async function getPortalById(id) {
+  console.log(`[ACTION] Fetching government portal details for ID: ${id}`);
   const result = await query('SELECT * FROM government_portals WHERE id = $1', [id]);
   return result.rows[0] || null;
 }

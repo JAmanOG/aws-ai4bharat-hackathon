@@ -9,11 +9,11 @@ const moderation = require('./moderation');
 const chat = require('./chat');
 
 exports.handler = async (event) => {
-  console.log('Voice Room API event:', JSON.stringify(event, null, 2));
-
   const method = event.httpMethod || event.requestContext?.http?.method;
   const path = event.path || event.rawPath;
   const userId = event.requestContext?.authorizer?.claims?.sub || event.headers?.['x-user-id'] || 'demo-user';
+  console.log(`[API:EVENT] Voice Room Lambda invoked. Method: ${method}, Path: ${path}, UserID: ${userId}`);
+
   const userName = event.requestContext?.authorizer?.claims?.name || event.headers?.['x-user-name'] || 'Demo User';
   const queryParams = event.queryStringParameters || {};
   let body = {};
@@ -151,6 +151,42 @@ exports.handler = async (event) => {
       }
     }
 
+    // ── Request Speak ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/request-speak$/) && method === 'POST') {
+      const roomId = path.match(/\/voice-rooms\/([a-f0-9-]+)\/request-speak$/)[1];
+      try {
+        const result = await moderation.requestToSpeak(roomId, userId);
+        return success(result);
+      } catch (err) {
+        if (err.message === 'USER_NOT_IN_ROOM') return notFound('User not in room');
+        throw err;
+      }
+    }
+
+    // ── Approve Speaker ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/approve-speaker\/([a-f0-9-]+)$/) && method === 'POST') {
+      const [, roomId, targetUserId] = path.match(/\/voice-rooms\/([a-f0-9-]+)\/approve-speaker\/([a-f0-9-]+)$/);
+      try {
+        const result = await moderation.approveSpeaker(roomId, targetUserId, userId);
+        return success(result);
+      } catch (err) {
+        if (err.message === 'NOT_MODERATOR') return error('Only moderators can approve speakers', 403);
+        throw err;
+      }
+    }
+
+    // ── Revoke Speaker ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/revoke-speaker\/([a-f0-9-]+)$/) && method === 'POST') {
+      const [, roomId, targetUserId] = path.match(/\/voice-rooms\/([a-f0-9-]+)\/revoke-speaker\/([a-f0-9-]+)$/);
+      try {
+        const result = await moderation.revokeSpeaker(roomId, targetUserId, userId);
+        return success(result);
+      } catch (err) {
+        if (err.message === 'NOT_MODERATOR') return error('Only moderators can revoke speakers', 403);
+        throw err;
+      }
+    }
+
     // ── Get Chat Messages ──
     if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/chat$/) && method === 'GET') {
       const roomId = path.match(/\/voice-rooms\/([a-f0-9-]+)\/chat$/)[1];
@@ -158,6 +194,48 @@ exports.handler = async (event) => {
         limit: parseInt(queryParams.limit || '50', 10),
         lastKey: queryParams.cursor,
       });
+      return success(result);
+    }
+
+    // ── Send Chat Message ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/chat$/) && method === 'POST') {
+      const roomId = path.match(/\/voice-rooms\/([a-f0-9-]+)\/chat$/)[1];
+      if (!body.message) return badRequest('Message content is required');
+      const result = await chat.sendMessage(roomId, userId, userName, body.message);
+      return success(result, 201);
+    }
+
+    // ── Get Agora Token ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/token$/) && method === 'GET') {
+      const roomId = path.match(/\/voice-rooms\/([a-f0-9-]+)\/token$/)[1];
+      try {
+        const result = await rooms.getRoomToken(roomId, userId);
+        return success(result);
+      } catch (err) {
+        if (err.message === 'ROOM_NOT_FOUND') return notFound('Voice room not found');
+        return error('Failed to generate token', 500, err.message);
+      }
+    }
+
+    // ── Join Room ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/join$/) && method === 'POST') {
+      const roomId = path.match(/\/voice-rooms\/([a-f0-9-]+)\/join$/)[1];
+      try {
+        const result = await rooms.joinRoom(roomId, userId, userName);
+        return success(result);
+      } catch (err) {
+        if (err.message === 'ROOM_NOT_FOUND') return notFound('Voice room not found');
+        if (err.message === 'ROOM_ENDED') return badRequest('Room has ended');
+        if (err.message === 'USER_BLOCKED') return error('You are blocked from this room', 403);
+        if (err.message === 'ROOM_FULL') return badRequest('Room is at maximum capacity');
+        throw err;
+      }
+    }
+
+    // ── Leave Room ──
+    if (path.match(/\/voice-rooms\/([a-f0-9-]+)\/leave$/) && method === 'POST') {
+      const roomId = path.match(/\/voice-rooms\/([a-f0-9-]+)\/leave$/)[1];
+      const result = await rooms.leaveRoom(roomId, userId);
       return success(result);
     }
 

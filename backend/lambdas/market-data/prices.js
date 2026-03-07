@@ -2,80 +2,42 @@
  * Market Data Lambda – prices.js
  * Market price data, trends, and e-NAM integration.
  * Satisfies Req 5.4: Display current market prices and historical price trends.
+ *
+ * Now delegates to live market-data-fetcher for real-time government data.
+ * Falls back to local DB when the live API is unreachable.
  */
 
 const { query } = require('../../utils/db');
+const liveFetcher = require('../../services/market-data-fetcher');
 
 /**
  * Get current prices for a crop across mandis.
+ * Uses live data.gov.in fetch with DB caching.
  */
 async function getCurrentPrices(cropType, filters = {}) {
     const { state, district, limit = 20 } = filters;
-    let sql = `SELECT * FROM market_prices WHERE crop_type = $1 AND trade_date >= CURRENT_DATE - INTERVAL '7 days'`;
-    const params = [cropType];
-    let i = 2;
 
-    if (state) { sql += ` AND state = $${i++}`; params.push(state); }
-    if (district) { sql += ` AND district = $${i++}`; params.push(district); }
-
-    sql += ` ORDER BY trade_date DESC, modal_price DESC LIMIT $${i++}`;
-    params.push(limit);
-
-    const result = await query(sql, params);
-
-    // Calculate summary stats
-    const prices = result.rows;
-    const modalPrices = prices.map(p => parseFloat(p.modal_price)).filter(p => p > 0);
-    const summary = modalPrices.length > 0 ? {
-        avgPrice: (modalPrices.reduce((a, b) => a + b, 0) / modalPrices.length).toFixed(2),
-        minPrice: Math.min(...modalPrices).toFixed(2),
-        maxPrice: Math.max(...modalPrices).toFixed(2),
-        totalMandis: new Set(prices.map(p => p.mandi_name)).size,
-    } : null;
-
-    return { crop_type: cropType, prices, summary };
+    // Use live fetcher (fetches from data.gov.in, caches in DB)
+    const result = await liveFetcher.getOrFetchPrices(cropType, { state, district });
+    const prices = (result.prices || []).slice(0, limit);
+    return {
+        crop_type: cropType,
+        crop: cropType,
+        prices,
+        summary: result.summary,
+        source: result.source,
+        fresh: result.fresh,
+        last_updated: new Date().toISOString(),
+    };
 }
 
 /**
  * Get historical price trend for a crop.
+ * Uses live fetcher to ensure data exists, then aggregates from DB.
  */
 async function getPriceTrend(cropType, options = {}) {
     const { mandi_code, state, days = 30 } = options;
-    let sql = `SELECT trade_date, 
-             AVG(modal_price) as avg_modal, 
-             MIN(min_price) as min_price, 
-             MAX(max_price) as max_price,
-             SUM(arrival_qty) as total_arrival_qty,
-             COUNT(DISTINCT mandi_name) as mandi_count
-             FROM market_prices 
-             WHERE crop_type = $1 AND trade_date >= CURRENT_DATE - $2::int * INTERVAL '1 day'`;
-    const params = [cropType, days];
-    let i = 3;
-
-    if (mandi_code) { sql += ` AND mandi_code = $${i++}`; params.push(mandi_code); }
-    if (state) { sql += ` AND state = $${i++}`; params.push(state); }
-
-    sql += ' GROUP BY trade_date ORDER BY trade_date ASC';
-
-    const result = await query(sql, params);
-
-    // Calculate trend direction
-    const trend = result.rows;
-    let trendDirection = 'stable';
-    if (trend.length >= 2) {
-        const first = parseFloat(trend[0].avg_modal);
-        const last = parseFloat(trend[trend.length - 1].avg_modal);
-        const change = ((last - first) / first) * 100;
-        if (change > 5) trendDirection = 'rising';
-        else if (change < -5) trendDirection = 'falling';
-    }
-
-    return {
-        crop_type: cropType,
-        period_days: days,
-        trend: trendDirection,
-        data_points: trend,
-    };
+    return liveFetcher.getOrFetchTrend(cropType, { days, state });
 }
 
 /**

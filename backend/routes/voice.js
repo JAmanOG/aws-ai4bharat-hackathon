@@ -150,6 +150,7 @@ async function voiceRoutes(fastify) {
                     language_code: { type: 'string' },
                     session_id: { type: 'string' },
                     generate_audio: { type: 'boolean' },
+                    screen_context: { type: 'string' },
                 },
             },
         },
@@ -161,6 +162,7 @@ async function voiceRoutes(fastify) {
             language_code = 'hi',
             session_id = uuid(),
             generate_audio = true,
+            screen_context = '',
         } = req.body;
 
         req.log.info({
@@ -169,6 +171,7 @@ async function voiceRoutes(fastify) {
             textLength: text.length,
             textPreview: text.substring(0, 80),
             language: language_code,
+            screenContext: (screen_context || '').substring(0, 100),
         }, '▶ Voice text request received');
 
         try {
@@ -178,6 +181,7 @@ async function voiceRoutes(fastify) {
                 sessionId: session_id,
                 languageCode: language_code,
                 generateAudio: generate_audio,
+                screenContext: screen_context,
             });
 
             req.log.info({
@@ -212,6 +216,7 @@ async function voiceRoutes(fastify) {
         let audioBuffer;
         let languageCode = 'unknown';
         let sessionId = uuid();
+        let screenContext = '';
 
         if (req.isMultipart && req.isMultipart()) {
             const data = await req.file();
@@ -222,10 +227,12 @@ async function voiceRoutes(fastify) {
             const fields = data.fields;
             if (fields?.language_code?.value) languageCode = fields.language_code.value;
             if (fields?.session_id?.value) sessionId = fields.session_id.value;
+            if (fields?.screen_context?.value) screenContext = fields.screen_context.value;
         } else if (req.body?.audio_base64) {
             audioBuffer = Buffer.from(req.body.audio_base64, 'base64');
             languageCode = req.body.language_code || 'unknown';
             sessionId = req.body.session_id || sessionId;
+            screenContext = req.body.screen_context || '';
         } else {
             return reply.status(400).send({ error: 'No audio data provided' });
         }
@@ -236,6 +243,7 @@ async function voiceRoutes(fastify) {
             audioBytes: audioBuffer.length,
             languageCode,
             sessionId: sessionId.slice(0, 8),
+            screenContext: (screenContext || '').substring(0, 80),
         }, '▶ Voice audio request received');
 
         try {
@@ -245,6 +253,7 @@ async function voiceRoutes(fastify) {
                 sessionId,
                 languageCode,
                 generateAudio: true,
+                screenContext,
             });
 
             req.log.info({

@@ -92,6 +92,14 @@ export interface ChatResult {
   entities?: Record<string, string>;
   complexity?: string;
   route?: string;
+  metadata?: {
+    action?: string;
+    roomId?: string;
+    roomTitle?: string;
+    topic?: string;
+    entities?: Record<string, string>;
+    [key: string]: unknown;
+  };
   pipeline?: PipelineInfo;
   error?: string;
 }
@@ -273,6 +281,7 @@ export async function chatWithText(
     language?: string;
     session_id?: string;
     generate_audio?: boolean;
+    screen_context?: string;
   } = {}
 ): Promise<ChatResult> {
   const start = Date.now();
@@ -282,6 +291,7 @@ export async function chatWithText(
     textLength: text.length,
     textPreview: text.substring(0, 60),
     language: langCode,
+    screenContext: opts.screen_context?.substring(0, 80),
   });
 
   const result = await api.postVoice<ChatResult>("/voice/chat", {
@@ -289,6 +299,7 @@ export async function chatWithText(
     language_code: langCode,
     session_id: opts.session_id,
     generate_audio: opts.generate_audio ?? true,
+    screen_context: opts.screen_context,
   });
 
   const elapsed = Date.now() - start;
@@ -314,6 +325,7 @@ export async function chatWithAudio(
   opts: {
     language_code?: string;
     session_id?: string;
+    screen_context?: string;
   } = {}
 ): Promise<ChatResult> {
   const start = Date.now();
@@ -322,12 +334,14 @@ export async function chatWithAudio(
     audioBytes: audioBase64.length,
     language: langCode,
     sessionId: opts.session_id?.substring(0, 8),
+    screenContext: opts.screen_context?.substring(0, 80),
   });
 
   const result = await api.postVoice<ChatResult>("/voice/chat/audio", {
     audio_base64: audioBase64,
     language_code: langCode,
     session_id: opts.session_id,
+    screen_context: opts.screen_context,
   });
 
   const elapsed = Date.now() - start;

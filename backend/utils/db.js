@@ -12,6 +12,11 @@ const ddbOpts = {
 };
 if (process.env.DYNAMODB_ENDPOINT) {
     ddbOpts.endpoint = process.env.DYNAMODB_ENDPOINT;
+    // Use dummy credentials for local DynamoDB
+    ddbOpts.credentials = {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'local',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
+    };
 }
 const ddbClient = new DynamoDBClient(ddbOpts);
 
@@ -66,6 +71,16 @@ const TABLE_NAMES = {
     // Voice module
     VOICE_CONVERSATIONS: process.env.VOICE_CONVERSATIONS_TABLE || 'VoiceConversations',
     USER_MEMORY_FACTS: process.env.USER_MEMORY_FACTS_TABLE || 'UserMemoryFacts',
+    // Voice rooms module (community)
+    VOICE_ROOMS: process.env.VOICE_ROOMS_TABLE || 'VoiceRooms',
+    VOICE_ROOM_PARTICIPANTS: process.env.VOICE_ROOM_PARTICIPANTS_TABLE || 'VoiceRoomParticipants',
+    CHAT_MESSAGES: process.env.CHAT_MESSAGES_TABLE || 'ChatMessages',
+    WEBSOCKET_CONNECTIONS: process.env.WEBSOCKET_CONNECTIONS_TABLE || 'WebSocketConnections',
+    // Health module
+    HEALTH_ARTICLES: process.env.HEALTH_ARTICLES_TABLE || 'HealthArticles',
+    SYMPTOM_LOGS: process.env.SYMPTOM_LOGS_TABLE || 'SymptomLogs',
+    // Open Data module
+    EXPORT_AUDIT: process.env.EXPORT_AUDIT_TABLE || 'ExportAudit',
 };
 
 module.exports = { dynamoDB, query, TABLE_NAMES, getPostgresPool };

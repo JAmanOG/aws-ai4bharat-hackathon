@@ -189,6 +189,79 @@ const VOICE_INTENT_DOMAINS = [
     'general',
 ];
 
+// ── Community Platform Constants ──
+
+const BUSINESS_CATEGORIES = [
+    'dairy', 'poultry-livestock', 'apiculture-forest-produce',
+    'agriculture-horticulture', 'textiles-handicrafts', 'food-processing',
+    'rural-services', 'trading-retail',
+];
+
+const KNOWLEDGE_TOPICS = [
+    'agriculture', 'health', 'education', 'finance',
+    'infrastructure', 'general', 'livestock', 'business', 'government',
+];
+
+const GOVT_PORTAL_CATEGORIES = [
+    'infrastructure', 'roads', 'water', 'electricity', 'sanitation', 'general',
+];
+
+const SCHEME_CATEGORIES_LIST = [
+    'housing', 'roads-transport', 'water-sanitation', 'electricity-energy',
+    'agriculture-irrigation', 'rural-development', 'health-nutrition', 'education-skill',
+];
+
+const LIVELIHOOD_CATEGORIES = [
+    'crop_failure', 'livestock_loss', 'business_closure', 'natural_disaster', 'unemployment',
+];
+
+const VOICE_ROOM_ROLES = {
+    MODERATOR: 'moderator',
+    SPEAKER: 'speaker',
+    LISTENER: 'listener',
+};
+
+const VOICE_ROOM_STATUS = {
+    ACTIVE: 'active',
+    ENDED: 'ended',
+};
+
+const MAX_ROOM_PARTICIPANTS = 50;
+const RECONNECT_WINDOW_MS = 30000;
+
+// ── Health AI Constants ──
+
+const BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0';
+
+const METRIPORT = {
+    apiKey: process.env.METRIPORT_API_KEY || '',
+    baseUrl: process.env.METRIPORT_BASE_URL || 'https://api.sandbox.metriport.com',
+    facilityId: process.env.METRIPORT_FACILITY_ID || '',
+};
+
+const HEALTH_RISK_LEVELS = ['Low', 'Medium', 'High', 'Critical'];
+
+const HEALTH_TOPICS = [
+    'diabetes', 'hypertension', 'malaria', 'dengue', 'tuberculosis',
+    'anemia', 'nutrition', 'maternal-health', 'child-health', 'sanitation',
+    'mental-health', 'first-aid', 'vaccination', 'covid-19', 'waterborne-diseases',
+];
+
+const PROVIDER_TYPES = ['hospital', 'pharmacy', 'telemedicine', 'lab', 'clinic', 'govt-hospital'];
+
+const IMAGING_TYPES = ['xray', 'mri', 'ct_scan', 'ultrasound', 'pathology'];
+
+const HEALTH_DISCLAIMER = 'This is not a medical diagnosis. AI-generated observations are for informational purposes only. Please consult a certified healthcare professional for medical advice.';
+
+// ── Open Data Export Constants ──
+
+const EXPORT_FORMATS = ['json', 'csv'];
+
+const RATE_LIMIT_EXPORT = {
+    maxExports: parseInt(process.env.RATE_LIMIT_MAX || '5', 10),
+    windowHours: parseInt(process.env.RATE_LIMIT_WINDOW_HOURS || '1', 10),
+};
+
 module.exports = {
     SUPPORTED_LANGUAGES,
     POLLY_VOICE_MAP,
@@ -217,4 +290,25 @@ module.exports = {
     INSURANCE_CLAIM_STATUS,
     VOICE_LANGUAGES,
     VOICE_INTENT_DOMAINS,
+    // Community
+    BUSINESS_CATEGORIES,
+    KNOWLEDGE_TOPICS,
+    GOVT_PORTAL_CATEGORIES,
+    SCHEME_CATEGORIES_LIST,
+    LIVELIHOOD_CATEGORIES,
+    VOICE_ROOM_ROLES,
+    VOICE_ROOM_STATUS,
+    MAX_ROOM_PARTICIPANTS,
+    RECONNECT_WINDOW_MS,
+    // Health
+    BEDROCK_MODEL_ID,
+    METRIPORT,
+    HEALTH_RISK_LEVELS,
+    HEALTH_TOPICS,
+    PROVIDER_TYPES,
+    IMAGING_TYPES,
+    HEALTH_DISCLAIMER,
+    // Open Data
+    EXPORT_FORMATS,
+    RATE_LIMIT_EXPORT,
 };

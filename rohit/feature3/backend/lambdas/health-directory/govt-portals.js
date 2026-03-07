@@ -13,6 +13,7 @@ const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap
  * List government health portals with optional filters.
  */
 async function listPortals(category, search) {
+  console.log(`[ACTION] Listing health portals. Category: ${category}, Search: ${search}`);
   let sql = `SELECT * FROM health_portals WHERE 1=1`;
   const params = [];
   let idx = 1;
@@ -36,6 +37,7 @@ async function listPortals(category, search) {
  * Get portal by ID.
  */
 async function getPortal(portalId) {
+  console.log(`[ACTION] Fetching health portal by ID: ${portalId}`);
   const result = await query('SELECT * FROM health_portals WHERE id = $1', [portalId]);
   return result.rows[0] || null;
 }
@@ -44,9 +46,11 @@ async function getPortal(portalId) {
  * AI-powered eligibility check for government schemes.
  */
 async function checkEligibility(userInfo) {
+  console.log(`[ACTION] Eligibility check requested. User Context: ${JSON.stringify(userInfo)}`);
   const { age, income, familySize, location, bplCard, aadhaar } = userInfo;
 
   if (!age || !location) {
+    console.log(`[ACTION] Eligibility check rejected: Age and Location required`);
     throw { statusCode: 400, message: 'Age and location are required for eligibility check' };
   }
 
@@ -55,7 +59,9 @@ async function checkEligibility(userInfo) {
 
   let result;
   try {
+    console.log(`[TRACE] Requesting Bedrock eligibility for location ${location}...`);
     result = await getBedrockEligibility(userInfo, portals.rows);
+    console.log(`[TRACE] Eligibility results retrieved: ${result.eligible_schemes?.length} schemes found.`);
   } catch (err) {
     console.warn('[Eligibility] Bedrock unavailable, using rule-based check:', err.message);
     result = getRuleBasedEligibility(userInfo, portals.rows);
@@ -69,6 +75,7 @@ async function checkEligibility(userInfo) {
  * Bedrock-powered eligibility assessment.
  */
 async function getBedrockEligibility(userInfo, portals) {
+  console.log(`[ACTION] Requesting Bedrock eligibility assessment against ${portals.length} portals`);
   const portalSummary = portals.map(p =>
     `${p.name} (${p.category}): ${JSON.stringify(p.eligibility_criteria)}`
   ).join('\n');
@@ -109,6 +116,7 @@ Return ONLY valid JSON:
   const response = await bedrock.send(command);
   const body = JSON.parse(new TextDecoder().decode(response.body));
   const text = body.content?.[0]?.text || '';
+  console.log(`[ACTION] Received eligibility assessment from Bedrock (${text.length} chars)`);
   const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
 
   try {

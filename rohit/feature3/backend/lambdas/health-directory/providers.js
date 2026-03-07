@@ -10,6 +10,8 @@ const { query } = require('../../utils/db');
  */
 async function listProviders(filters = {}) {
   const { city, type, search, limit = 20, page = 1 } = filters;
+  console.log(`[ACTION] Provider search requested. Filters: ${JSON.stringify(filters)}`);
+  console.log(`[TRACE] Extracted params -> city: ${city}, type: ${type}, search: ${search}`);
 
   let sql = `SELECT * FROM health_providers WHERE 1=1`;
   const params = [];
@@ -41,6 +43,8 @@ async function listProviders(filters = {}) {
   params.push(parseInt(limit, 10), offset);
 
   const result = await query(sql, params);
+  console.log(`[TRACE] Provider search SQL generated. Querying Aurora DB...`);
+  console.log(`[ACTION] Provider search returned ${result.rows.length} results.`);
 
   return {
     providers: result.rows,
@@ -57,6 +61,7 @@ async function listProviders(filters = {}) {
  * Get provider by ID.
  */
 async function getProvider(providerId) {
+  console.log(`[ACTION] Fetching health provider by ID: ${providerId}`);
   const result = await query('SELECT * FROM health_providers WHERE id = $1', [providerId]);
   return result.rows[0] || null;
 }

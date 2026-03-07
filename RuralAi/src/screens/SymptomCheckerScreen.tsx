@@ -1,317 +1,678 @@
-import React, { useMemo, useState, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Linking, Alert } from "react-native";
+import React, { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
-import { colors } from "../theme/colors";
-import { chatWithText } from "../services/voice";
-import { logger } from "../utils/logger";
+import { healthApi, type SymptomCheckResult } from "../services/api";
 
-type Sym = { key: string; label: string; icon: any };
+const PALETTE = {
+  screen: "#F7F0E2",
+  paper: "#FEFCF7",
+  card: "#FFFFFF",
+  border: "#CCB267",
+  gold: "#D8AF47",
+  goldDeep: "#C79A2E",
+  goldSoft: "#F2E2AE",
+  ink: "#111111",
+  muted: "#4A3E31",
+  dim: "#786C59",
+  low: "#D8AF47",
+  medium: "#C68E2D",
+  high: "#B54B31",
+  critical: "#952A20",
+  shadow: "rgba(126, 92, 31, 0.18)",
+};
 
-const SYMPTOMS: Sym[] = [
-  { key: "fever", label: "Fever", icon: "thermometer-outline" },
-  { key: "cough", label: "Cough", icon: "cloud-outline" },
-  { key: "headache", label: "Headache", icon: "flash-outline" },
-  { key: "stomach", label: "Stomach pain", icon: "nutrition-outline" },
-  { key: "breath", label: "Breathing issue", icon: "pulse-outline" },
-  { key: "rash", label: "Skin rash", icon: "bandage-outline" },
+const QUICK_SYMPTOMS = [
+  "fever",
+  "cough",
+  "headache",
+  "chest pain",
+  "breathing issue",
+  "vomiting",
 ];
-
-type Risk = "LOW" | "MEDIUM" | "HIGH";
 
 export default function SymptomCheckerScreen() {
   const nav = useNavigation<any>();
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [processing, setProcessing] = useState(false);
-  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
 
-  const picked = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
+  const [symptoms, setSymptoms] = useState("");
+  const [age, setAge] = useState("");
+  const [gender, setGender] = useState<"male" | "female" | "other">("female");
+  const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(true);
+  const [result, setResult] = useState<SymptomCheckResult | null>(null);
 
-  const risk: Risk = useMemo(() => {
-    if (picked.includes("breath")) return "HIGH";
-    if (picked.includes("fever") && picked.includes("cough")) return "MEDIUM";
-    if (picked.length >= 3) return "MEDIUM";
-    return picked.length ? "LOW" : "LOW";
-  }, [picked]);
+  const riskTone = useMemo(() => {
+    const risk = String(result?.risk_level || "").toLowerCase();
+    if (risk === "critical") return PALETTE.critical;
+    if (risk === "high") return PALETTE.high;
+    if (risk === "medium" || risk === "moderate") return PALETTE.medium;
+    return PALETTE.low;
+  }, [result?.risk_level]);
 
-  const riskMeta = useMemo(() => {
-    if (risk === "HIGH") return { bg: "rgba(185,28,28,0.10)", border: "rgba(185,28,28,0.18)", text: "#B91C1C" };
-    if (risk === "MEDIUM") return { bg: "rgba(139,94,60,0.10)", border: "rgba(139,94,60,0.22)", text: colors.earth };
-    return { bg: "rgba(19,236,91,0.12)", border: "rgba(19,236,91,0.22)", text: colors.ink };
-  }, [risk]);
+  const handleToggleQuickSymptom = (label: string) => {
+    const current = symptoms
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
 
-  const toggle = (key: string) => setSelected((p) => ({ ...p, [key]: !p[key] }));
+    const exists = current.some((entry) => entry.toLowerCase() === label.toLowerCase());
+    const next = exists
+      ? current.filter((entry) => entry.toLowerCase() !== label.toLowerCase())
+      : [...current, label];
 
-  const handleGetAdvice = useCallback(async () => {
-    if (picked.length === 0) return;
-    setProcessing(true);
-    try {
-      const prompt = `I'm experiencing these symptoms: ${picked.join(", ")}. Risk level appears: ${risk}. What should I do? Give brief actionable health guidance for someone in a rural area with limited medical access. Keep it under 100 words.`;
-      const res = await chatWithText(prompt, { language: "en" });
-      setAiAdvice(res.response_text);
-    } catch {
-      setAiAdvice("Unable to get AI advice. Based on your symptoms, please consult a local health worker.");
-    } finally {
-      setProcessing(false);
+    setSymptoms(next.join(", "));
+  };
+
+  const handleMicPress = () => {
+    setIsListening((current) => !current);
+  };
+
+  const handleCheckSymptoms = async () => {
+    const symptomList = symptoms
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    const parsedAge = Number(age);
+    if (symptomList.length === 0) {
+      Alert.alert("Symptoms required", "Describe at least one symptom before checking.");
+      return;
     }
-  }, [picked, risk]);
+    if (!parsedAge || parsedAge <= 0) {
+      Alert.alert("Age required", "Enter a valid age so the AI triage can assess risk correctly.");
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+    try {
+      const response = await healthApi.checkSymptoms({
+        symptoms: symptomList,
+        age: parsedAge,
+        gender,
+      });
+      setResult(response);
+      setIsListening(false);
+    } catch (error: any) {
+      Alert.alert("Unable to check symptoms", error?.message ?? "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        {/* Header */}
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))}>
-            <Ionicons name="chevron-back" size={22} color={colors.ink} />
+          <Pressable
+            style={styles.backButton}
+            onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))}
+          >
+            <Ionicons name="chevron-back" size={28} color={PALETTE.ink} />
           </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Symptom Checker</Text>
-            <Text style={styles.sub}>Voice-first • Quick guidance</Text>
+          <Text style={styles.title}>Symptom Checker</Text>
+        </View>
+
+        <Text style={styles.eyebrow}>AI HEALTH SCREENING</Text>
+
+        <Pressable style={styles.micButton} onPress={handleMicPress}>
+          <Ionicons name={isListening ? "mic" : "mic-outline"} size={54} color={PALETTE.card} />
+        </Pressable>
+
+        <Text style={styles.heroCopy}>
+          {isListening
+            ? "AI Assistant is listening. Describe your symptoms, age, and gender."
+            : "Tap the mic again or type your symptoms, age, and gender below."}
+        </Text>
+
+        <View style={styles.visualRow}>
+          <View style={styles.waveCard}>
+            <GoldWave loading={loading} />
           </View>
-          <View style={styles.syncPill}>
-            <View style={styles.syncDot} />
-            <Text style={styles.syncText}>SYNCED</Text>
+
+          <View style={styles.summaryColumn}>
+            <SummaryTile
+              title="Possible Conditions"
+              loading={loading}
+              value={result ? `${(result.possible_conditions || []).length} found` : "Waiting"}
+            />
+            <SummaryTile
+              title="Recommendations"
+              loading={loading}
+              value={result ? `${Math.max((result.home_remedies || []).length, 1)} steps` : "Waiting"}
+            />
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Disclaimer */}
-          <View style={styles.disclaimer}>
-            <Ionicons name="information-circle-outline" size={18} color={colors.earth} />
-            <Text style={styles.disclaimerText}>
-              This is not a medical diagnosis. If it feels urgent or severe, seek medical help immediately.
-            </Text>
-          </View>
+        <View style={styles.progressTrack}>
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width: loading ? "58%" : result ? "100%" : "38%",
+              },
+            ]}
+          />
+        </View>
 
-          {/* Voice hint */}
-          <View style={styles.voiceCard}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="mic" size={18} color={colors.primary} />
-              <Text style={styles.sectionTitle}>Describe by voice</Text>
-            </View>
-            <Text style={styles.helper}>Use the floating mic button to describe your symptoms by speaking naturally.</Text>
-          </View>
+        <View style={styles.formCard}>
+          <Text style={styles.inputLabel}>Symptoms</Text>
+          <TextInput
+            value={symptoms}
+            onChangeText={setSymptoms}
+            placeholder="e.g. fever, cough, body pain"
+            placeholderTextColor={PALETTE.dim}
+            multiline
+            style={styles.symptomInput}
+          />
 
-          {/* Symptom chips */}
-          <Text style={styles.sectionTitle}>Select symptoms</Text>
-          <View style={styles.chipsWrap}>
-            {SYMPTOMS.map((s) => {
-              const active = !!selected[s.key];
+          <View style={styles.quickRow}>
+            {QUICK_SYMPTOMS.map((label) => {
+              const active = symptoms.toLowerCase().includes(label.toLowerCase());
               return (
                 <Pressable
-                  key={s.key}
-                  onPress={() => toggle(s.key)}
-                  style={[
-                    styles.chip,
-                    active ? styles.chipActive : styles.chipInactive,
-                  ]}
+                  key={label}
+                  onPress={() => handleToggleQuickSymptom(label)}
+                  style={[styles.quickChip, active && styles.quickChipActive]}
                 >
-                  <Ionicons name={s.icon} size={14} color={active ? colors.ink : colors.earth} />
-                  <Text style={[styles.chipText, { color: active ? colors.ink : colors.earth }]}>
-                    {s.label}
+                  <Text style={[styles.quickChipText, active && styles.quickChipTextActive]}>
+                    {label}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
 
-          {/* Risk card */}
-          <View style={[styles.riskCard, { backgroundColor: riskMeta.bg, borderColor: riskMeta.border }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Text style={styles.riskTitle}>Risk level</Text>
-              <View style={[styles.riskPill, { borderColor: riskMeta.border, backgroundColor: "#FFFFFFAA" }]}>
-                <Text style={[styles.riskPillText, { color: riskMeta.text }]}>{risk}</Text>
-              </View>
+          <View style={styles.formRow}>
+            <View style={styles.ageWrap}>
+              <Text style={styles.inputLabel}>Age</Text>
+              <TextInput
+                value={age}
+                onChangeText={setAge}
+                keyboardType="number-pad"
+                placeholder="28"
+                placeholderTextColor={PALETTE.dim}
+                style={styles.ageInput}
+              />
             </View>
 
-            <Text style={styles.riskText}>
-              {risk === "HIGH"
-                ? "Breathing issues can be serious. Consider calling emergency/helpline or visiting a clinic."
-                : risk === "MEDIUM"
-                ? "Monitor symptoms. If they worsen or persist, consult a doctor."
-                : picked.length
-                ? "Basic home care may help. If symptoms persist, consult a doctor."
-                : "Select symptoms to get guidance."}
-            </Text>
-          </View>
-
-          {/* AI Advice */}
-          {(aiAdvice || processing) && (
-            <View style={{ backgroundColor: "rgba(74,144,217,0.08)", borderRadius: 18, borderWidth: 1, borderColor: "rgba(74,144,217,0.18)", padding: 14 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <Ionicons name="sparkles" size={16} color={colors.primary} />
-                <Text style={{ fontSize: 13, fontWeight: "900", color: colors.ink }}>AI Health Guidance</Text>
+            <View style={styles.genderWrap}>
+              <Text style={styles.inputLabel}>Gender</Text>
+              <View style={styles.genderRow}>
+                {(["female", "male", "other"] as const).map((option) => {
+                  const active = gender === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setGender(option)}
+                      style={[styles.genderChip, active && styles.genderChipActive]}
+                    >
+                      <Text style={[styles.genderChipText, active && styles.genderChipTextActive]}>
+                        {option.charAt(0).toUpperCase() + option.slice(1)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              {processing ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          </View>
+        </View>
+
+        <Pressable style={styles.ctaButton} onPress={handleCheckSymptoms} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator size="small" color={PALETTE.ink} />
+          ) : (
+            <Text style={styles.ctaText}>CHECK SYMPTOMS</Text>
+          )}
+        </Pressable>
+
+        {result ? (
+          <View style={styles.resultCard}>
+            <View style={styles.resultTopRow}>
+              <View style={[styles.riskBadge, { backgroundColor: riskTone }]}>
+                <Text style={styles.riskBadgeText}>{String(result.risk_level || "low").toUpperCase()} RISK</Text>
+              </View>
+              <Text style={styles.urgencyText}>
+                Urgency: <Text style={styles.urgencyValue}>{String(result.urgency || "routine")}</Text>
+              </Text>
+            </View>
+
+            <ResultSection title="Possible Conditions">
+              {(result.possible_conditions || []).map((condition, index) => (
+                <BulletItem key={`${condition}-${index}`} icon="ellipse" text={condition} />
+              ))}
+            </ResultSection>
+
+            <ResultSection title="Recommended Action">
+              <Text style={styles.resultBody}>{result.recommended_action}</Text>
+            </ResultSection>
+
+            <ResultSection title="Home Remedies">
+              {(result.home_remedies || []).length > 0 ? (
+                (result.home_remedies || []).map((remedy, index) => (
+                  <BulletItem key={`${remedy}-${index}`} icon="leaf" text={remedy} />
+                ))
               ) : (
-                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.ink, lineHeight: 18 }}>{aiAdvice}</Text>
+                <Text style={styles.resultBody}>No home remedies were returned for this risk level.</Text>
               )}
-            </View>
-          )}
+            </ResultSection>
 
-          {picked.length > 0 && !aiAdvice && !processing && (
-            <Pressable style={{ backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 12, alignItems: "center" }} onPress={handleGetAdvice}>
-              <Text style={{ fontSize: 13, fontWeight: "900", color: "#FFF" }}>Get AI Advice</Text>
-            </Pressable>
-          )}
-
-          {/* Next steps */}
-          <Text style={styles.sectionTitle}>Next steps</Text>
-          <View style={{ gap: 10 }}>
-            <StepRow icon="water-outline" title="Hydration + rest" sub="Drink water, take rest" />
-            <StepRow icon="thermometer-outline" title="Monitor temperature" sub="Check every few hours" />
-            <StepRow icon="warning-outline" title="Emergency signs" sub="Severe breathing, chest pain, fainting" danger />
+            <ResultSection title="Warning Signs">
+              {(result.warning_signs || []).map((warning, index) => (
+                <BulletItem key={`${warning}-${index}`} icon="warning" text={warning} warning />
+              ))}
+            </ResultSection>
           </View>
+        ) : null}
 
-          {/* CTAs */}
-          <View style={styles.ctaRow}>
-            <Pressable style={styles.primaryBtn} onPress={() => {
-              logger.info("SymptomChecker", "Call helpline tapped");
-              Linking.openURL("tel:104").catch(() => Alert.alert("Helpline", "Health helpline: 104"));
-            }}>
-              <Ionicons name="call-outline" size={18} color={colors.ink} />
-              <Text style={styles.primaryText}>Call helpline</Text>
-            </Pressable>
-            <Pressable style={styles.secondaryBtn} onPress={() => {
-              logger.info("SymptomChecker", "Find clinic tapped");
-              Linking.openURL("https://www.google.com/maps/search/clinic+near+me").catch(() => Alert.alert("Find Clinic", "Search for clinics near you on Google Maps."));
-            }}>
-              <Ionicons name="navigate-outline" size={18} color={colors.earth} />
-              <Text style={styles.secondaryText}>Find clinic</Text>
-            </Pressable>
-          </View>
-
-          <View style={{ height: 18 }} />
-        </ScrollView>
-      </View>
+        <Text style={styles.disclaimer}>
+          Disclaimer: This result is useful for symptom screening only. It is not a confirmed medical diagnosis. If symptoms worsen, contact a certified healthcare professional immediately.
+        </Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function StepRow({ icon, title, sub, danger }: { icon: any; title: string; sub: string; danger?: boolean }) {
+function GoldWave({ loading }: { loading: boolean }) {
   return (
-    <View style={[styles.stepRow, danger && { borderColor: "rgba(185,28,28,0.18)", backgroundColor: "rgba(185,28,28,0.06)" }]}>
-      <View style={[styles.stepIcon, danger && { backgroundColor: "rgba(185,28,28,0.10)", borderColor: "rgba(185,28,28,0.18)" }]}>
-        <Ionicons name={icon} size={18} color={danger ? "#B91C1C" : colors.primary} />
+    <Svg width="100%" height={150} viewBox="0 0 420 150">
+      <Defs>
+        <LinearGradient id="wave" x1="0%" y1="0%" x2="100%" y2="0%">
+          <Stop offset="0%" stopColor="#D0A43A" />
+          <Stop offset="50%" stopColor="#E4C66B" />
+          <Stop offset="100%" stopColor="#C89A34" />
+        </LinearGradient>
+        <LinearGradient id="glow" x1="0%" y1="0%" x2="0%" y2="100%">
+          <Stop offset="0%" stopColor="#EAD89A" stopOpacity="0.7" />
+          <Stop offset="100%" stopColor="#EAD89A" stopOpacity="0.12" />
+        </LinearGradient>
+      </Defs>
+
+      <Circle cx="80" cy="74" r="22" fill="url(#glow)" />
+      <Circle cx="160" cy="80" r="34" fill="url(#glow)" />
+      <Circle cx="238" cy="62" r="26" fill="url(#glow)" />
+      <Circle cx="322" cy="84" r="30" fill="url(#glow)" />
+
+      <Path
+        d="M 12 84 C 36 84, 40 54, 68 72 C 90 86, 96 118, 120 102 C 136 92, 142 70, 158 78 C 174 86, 178 120, 196 118 C 220 116, 226 22, 248 22 C 266 22, 274 110, 296 110 C 314 110, 326 72, 344 72 C 360 72, 366 96, 386 96 C 400 96, 408 84, 420 84"
+        stroke="url(#wave)"
+        strokeWidth="6"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      <Rect
+        x="0"
+        y="136"
+        width="420"
+        height="10"
+        rx="5"
+        fill="#EBDDB5"
+      />
+      <Rect
+        x="0"
+        y="136"
+        width={loading ? 244 : 160}
+        height="10"
+        rx="5"
+        fill="url(#wave)"
+      />
+    </Svg>
+  );
+}
+
+function SummaryTile({
+  title,
+  loading,
+  value,
+}: {
+  title: string;
+  loading: boolean;
+  value: string;
+}) {
+  return (
+    <View style={styles.summaryTile}>
+      <Text style={styles.summaryTitle}>{title}</Text>
+      <View style={styles.summaryBody}>
+        {loading ? (
+          <ActivityIndicator size="small" color={PALETTE.goldDeep} />
+        ) : (
+          <Text style={styles.summaryValue}>{value}</Text>
+        )}
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.stepTitle, danger && { color: "#B91C1C" }]}>{title}</Text>
-        <Text style={styles.stepSub}>{sub}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+    </View>
+  );
+}
+
+function ResultSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.resultSection}>
+      <Text style={styles.resultHeading}>{title}</Text>
+      <View style={styles.resultSectionBody}>{children}</View>
+    </View>
+  );
+}
+
+function BulletItem({
+  icon,
+  text,
+  warning = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  text: string;
+  warning?: boolean;
+}) {
+  return (
+    <View style={styles.bulletRow}>
+      <Ionicons name={icon} size={16} color={warning ? PALETTE.medium : PALETTE.goldDeep} />
+      <Text style={styles.bulletText}>{text}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  container: { flex: 1, paddingHorizontal: 14, paddingTop: 6 },
-
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 18, fontWeight: "900", color: colors.ink },
-  sub: { marginTop: 2, fontSize: 11, fontWeight: "700", color: colors.muted },
-
-  syncPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(19,236,91,0.14)",
-    borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.35)",
-  },
-  syncDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
-  syncText: { fontSize: 11, fontWeight: "900", color: colors.ink, letterSpacing: 0.6 },
-
-  content: { paddingTop: 12, paddingBottom: 18, gap: 12 },
-
-  disclaimer: {
-    flexDirection: "row",
-    gap: 10,
-    backgroundColor: "rgba(139,94,60,0.10)",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(139,94,60,0.18)",
-    padding: 12,
-  },
-  disclaimerText: { flex: 1, fontSize: 11, fontWeight: "700", color: colors.ink, lineHeight: 16 },
-
-  voiceCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    gap: 8,
-  },
-  sectionTitle: { fontSize: 18, fontWeight: "900", color: colors.ink },
-  helper: { fontSize: 11, fontWeight: "700", color: colors.muted, lineHeight: 16 },
-
-  chipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  chip: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 999, borderWidth: 1 },
-  chipActive: { backgroundColor: "rgba(19,236,91,0.18)", borderColor: "rgba(19,236,91,0.28)" },
-  chipInactive: { backgroundColor: "rgba(139,94,60,0.10)", borderColor: "rgba(139,94,60,0.20)" },
-  chipText: { fontSize: 11, fontWeight: "900" },
-
-  riskCard: { borderRadius: 18, borderWidth: 1, padding: 12, gap: 10 },
-  riskTitle: { fontSize: 13, fontWeight: "900", color: colors.ink },
-  riskPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
-  riskPillText: { fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
-  riskText: { fontSize: 11, fontWeight: "700", color: colors.muted, lineHeight: 16 },
-
-  stepRow: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  stepIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(19,236,91,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.22)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepTitle: { fontSize: 12, fontWeight: "900", color: colors.ink },
-  stepSub: { marginTop: 3, fontSize: 11, fontWeight: "700", color: colors.muted, lineHeight: 16 },
-
-  ctaRow: { marginTop: 6, flexDirection: "row", gap: 10 },
-  primaryBtn: {
+  safe: {
     flex: 1,
-    backgroundColor: colors.primary,
-    borderRadius: 18,
-    paddingVertical: 14,
+    backgroundColor: PALETTE.screen,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 30,
+  },
+  header: {
     flexDirection: "row",
-    gap: 8,
+    alignItems: "center",
+    gap: 12,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.35)",
   },
-  primaryText: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: colors.ink },
-  secondaryBtn: {
-    width: 140,
-    backgroundColor: "rgba(139,94,60,0.10)",
-    borderRadius: 18,
-    paddingVertical: 14,
-    flexDirection: "row",
-    gap: 8,
+  title: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: PALETTE.ink,
+  },
+  eyebrow: {
+    marginTop: 22,
+    textAlign: "center",
+    fontSize: 18,
+    fontWeight: "900",
+    color: PALETTE.ink,
+    letterSpacing: 0.6,
+  },
+  micButton: {
+    width: 138,
+    height: 138,
+    borderRadius: 69,
+    alignSelf: "center",
+    marginTop: 28,
+    backgroundColor: PALETTE.gold,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(139,94,60,0.22)",
+    shadowColor: PALETTE.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
   },
-  secondaryText: { fontSize: 11, fontWeight: "900", color: colors.earth },
+  heroCopy: {
+    marginTop: 26,
+    textAlign: "center",
+    fontSize: 16,
+    lineHeight: 22,
+    color: PALETTE.muted,
+    paddingHorizontal: 18,
+  },
+  visualRow: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 22,
+    alignItems: "flex-end",
+  },
+  waveCard: {
+    flex: 1,
+    minHeight: 160,
+    justifyContent: "flex-end",
+  },
+  summaryColumn: {
+    width: 112,
+    gap: 10,
+  },
+  summaryTile: {
+    backgroundColor: PALETTE.card,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: PALETTE.border,
+    padding: 10,
+    minHeight: 98,
+  },
+  summaryTitle: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: PALETTE.ink,
+    lineHeight: 16,
+  },
+  summaryBody: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summaryValue: {
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
+    color: PALETTE.dim,
+    fontWeight: "700",
+  },
+  progressTrack: {
+    marginTop: 6,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#EADDB9",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: PALETTE.gold,
+  },
+  formCard: {
+    marginTop: 18,
+    backgroundColor: PALETTE.paper,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E4D7B6",
+    padding: 16,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: PALETTE.ink,
+    marginBottom: 8,
+  },
+  symptomInput: {
+    minHeight: 88,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E0D2AD",
+    backgroundColor: PALETTE.card,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: PALETTE.ink,
+    textAlignVertical: "top",
+  },
+  quickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  quickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#F1E4BC",
+  },
+  quickChipActive: {
+    backgroundColor: PALETTE.gold,
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: PALETTE.muted,
+  },
+  quickChipTextActive: {
+    color: PALETTE.ink,
+  },
+  formRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+  },
+  ageWrap: {
+    width: 86,
+  },
+  ageInput: {
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E0D2AD",
+    backgroundColor: PALETTE.card,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: PALETTE.ink,
+  },
+  genderWrap: {
+    flex: 1,
+  },
+  genderRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  genderChip: {
+    flex: 1,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E0D2AD",
+    backgroundColor: PALETTE.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  genderChipActive: {
+    backgroundColor: PALETTE.goldSoft,
+    borderColor: PALETTE.gold,
+  },
+  genderChipText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: PALETTE.dim,
+  },
+  genderChipTextActive: {
+    color: PALETTE.ink,
+  },
+  ctaButton: {
+    marginTop: 18,
+    minHeight: 64,
+    borderRadius: 32,
+    backgroundColor: PALETTE.gold,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: PALETTE.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  ctaText: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: PALETTE.ink,
+    letterSpacing: 0.4,
+  },
+  resultCard: {
+    marginTop: 20,
+    backgroundColor: PALETTE.card,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: PALETTE.border,
+    padding: 18,
+  },
+  resultTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 12,
+  },
+  riskBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  riskBadgeText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: PALETTE.card,
+  },
+  urgencyText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: PALETTE.ink,
+  },
+  urgencyValue: {
+    fontWeight: "500",
+  },
+  resultSection: {
+    marginTop: 14,
+  },
+  resultHeading: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: PALETTE.ink,
+    marginBottom: 6,
+  },
+  resultSectionBody: {
+    gap: 6,
+  },
+  resultBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: PALETTE.muted,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
+    color: PALETTE.muted,
+  },
+  disclaimer: {
+    marginTop: 20,
+    fontSize: 13,
+    lineHeight: 20,
+    color: PALETTE.muted,
+  },
 });

@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (storedToken && storedUser) {
           const user: User = JSON.parse(storedUser);
-          setAuthCredentials(storedToken, user.userId);
+          setAuthCredentials(storedToken, user.userId, user.name);
           setState({ user, token: storedToken, isAuthenticated: true, isLoading: false });
           logger.info('Auth', 'Restored session', { userId: user.userId });
         } else {
@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)),
     ]);
 
-    setAuthCredentials(token, user.userId);
+    setAuthCredentials(token, user.userId, user.name);
     setState({ user, token, isAuthenticated: true, isLoading: false });
     logger.info('Auth', 'Login successful', { userId: user.userId });
   }, []);
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       SecureStore.setItemAsync(USER_KEY, JSON.stringify(regUser)),
     ]);
 
-    setAuthCredentials(regToken, regUser.userId);
+    setAuthCredentials(regToken, regUser.userId, regUser.name);
     setState({ user: regUser, token: regToken, isAuthenticated: true, isLoading: false });
     logger.info('Auth', 'Registration successful', { userId: regUser.userId });
   }, []);
@@ -152,7 +152,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Update user locally (e.g., after profile edit) ──
   const updateUser = useCallback((user: User) => {
-    setState(prev => ({ ...prev, user }));
+    setState(prev => {
+      setAuthCredentials(prev.token, user.userId, user.name);
+      return { ...prev, user };
+    });
     SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)).catch(() => {});
   }, []);
 
@@ -170,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onboardingDone: false,
       createdAt: new Date().toISOString(),
     };
-    setAuthCredentials(null, ENV.DEMO_USER_ID);
+    setAuthCredentials(null, ENV.DEMO_USER_ID, demoUser.name);
     setState({ user: demoUser, token: null, isAuthenticated: true, isLoading: false });
     logger.info('Auth', 'Demo mode activated');
   }, []);

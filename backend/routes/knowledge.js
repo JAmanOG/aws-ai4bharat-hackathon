@@ -13,6 +13,7 @@ const digilocker = require('../lambdas/peer-grouping/digilocker');
 const recommendations = require('../lambdas/learning-path/recommendations');
 const learningProfile = require('../lambdas/learning-path/learning-profile');
 const analytics = require('../lambdas/learning-path/analytics');
+const { searchKnowledgeResources } = require('../services/knowledge-search');
 
 async function knowledgeRoutes(fastify) {
     // ═══════════════════════════════════════
@@ -95,12 +96,26 @@ async function knowledgeRoutes(fastify) {
         return govtIntegration.syncGovtCourses(req.body.portal);
     });
 
+    fastify.get('/knowledge/resources/search', async (req) => {
+        const { q, language = 'en', limit = 4 } = req.query;
+        return searchKnowledgeResources({
+            query: q,
+            language,
+            limit: +limit,
+        });
+    });
+
     // ═══════════════════════════════════════
     //  Peer Groups
     // ═══════════════════════════════════════
 
     fastify.post('/knowledge/peer-groups/join', async (req) => {
         return clustering.findPeersForUser(req.userId);
+    });
+
+    fastify.get('/knowledge/peer-groups', async () => {
+        const result = await groups.listGroups();
+        return { groups: result };
     });
 
     fastify.get('/knowledge/peer-groups/my-groups', async (req) => {

@@ -29,6 +29,7 @@ import { colors } from "../theme/colors";
 import { useVoice } from "./VoiceContext";
 import { useVoiceService, type ChatResult } from "../services/voice";
 import { VisualizationCardRenderer } from "./VoiceVisualizationCards";
+import { useScreenContext } from "../context/ScreenContext";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 
@@ -87,10 +88,11 @@ const DOMAIN_COLORS: Record<string, string> = {
 
 /* ── Main component ── */
 
-export default function VoiceOverlay() {
+export default function VoiceOverlay({ hidden = false }: { hidden?: boolean }) {
   const insets = useSafeAreaInsets();
   const voice = useVoiceService();
   const ctx = useVoice();
+  const screenCtx = useScreenContext();
   const {
     state,
     setState,
@@ -118,6 +120,21 @@ export default function VoiceOverlay() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    if (!hidden) {
+      return;
+    }
+
+    if (stateRef.current === "listening") {
+      voice.cancelRecording();
+    }
+
+    voice.stopPlayback();
+    setState("idle");
+    setExpanded(false);
+    clearVisualization();
+  }, [hidden, voice, setState, clearVisualization]);
 
   /* Request mic permission on mount */
   useEffect(() => {
@@ -222,6 +239,7 @@ export default function VoiceOverlay() {
         const result = await voice.chatWithAudio(base64, {
           language_code: language,
           session_id: sessionId ?? undefined,
+          screen_context: screenCtx.toPromptContext(),
         });
         handleResult(result);
       } catch (err: any) {
@@ -329,6 +347,10 @@ export default function VoiceOverlay() {
     outputRange: [0, 0.5, 1],
   });
 
+  if (hidden) {
+    return null;
+  }
+
   return (
     <View style={styles.container} pointerEvents="box-none">
       {/* Backdrop when expanded */}
@@ -341,12 +363,13 @@ export default function VoiceOverlay() {
 
       {/* Expanded sheet */}
       <Animated.View
+        pointerEvents={expanded ? "auto" : "none"}
         style={[
           styles.sheet,
           {
             height: sheetHeight,
             opacity: sheetOpacity,
-            paddingBottom: insets.bottom + 80,
+            paddingBottom: expanded ? insets.bottom + 80 : 0,
           },
         ]}
       >

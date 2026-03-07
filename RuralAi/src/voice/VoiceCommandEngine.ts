@@ -1,3 +1,5 @@
+import { normalizeMarketCropName, normalizeMarketStateName } from "../utils/market";
+
 /**
  * Voice Command Engine — maps AI pipeline output (domain/intent/entities)
  * to concrete app actions: navigation, data fetching, UI visualization.
@@ -13,9 +15,17 @@ export interface VoiceCommand {
   intent: string;
   entities: Record<string, string>;
   complexity: string;
+  transcript?: string;
   responseText: string;
   responseTextEnglish?: string;
   audioBase64?: string;
+  metadata?: {
+    action?: string;
+    roomId?: string;
+    roomTitle?: string;
+    topic?: string;
+    [key: string]: unknown;
+  };
 }
 
 export type CommandAction =
@@ -166,20 +176,22 @@ const VISUALIZATION_MAP: Record<string, Record<string, string>> = {
  * Resolve a voice command to one or more app actions.
  */
 export function resolveCommand(cmd: VoiceCommand): CommandAction {
-  const { domain, intent, entities, responseText, responseTextEnglish, audioBase64 } = cmd;
+  const { domain, intent, entities, responseText, responseTextEnglish, audioBase64, metadata } = cmd;
 
   const domainNav = NAVIGATION_MAP[domain];
   const domainViz = VISUALIZATION_MAP[domain];
+  const knowledgeResourceTarget = getKnowledgeResourceTarget(cmd);
 
   // Find the best matching intent key
   const intentKey = intent?.toLowerCase().replace(/\s+/g, "_") ?? "default";
 
   // Determine target screen
-  const screen =
-    domainNav?.[intentKey] ??
-    domainNav?.["default"] ??
-    NAVIGATION_MAP.general?.["default"] ??
-    null;
+  const screen = knowledgeResourceTarget?.screen
+    ?? getVoiceRoomScreen(cmd)
+    ?? domainNav?.[intentKey]
+    ?? domainNav?.["default"]
+    ?? NAVIGATION_MAP.general?.["default"]
+    ?? null;
 
   // Determine visualization kind
   const vizKind =
@@ -199,6 +211,7 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
       entities,
       domain,
       intent,
+      metadata,
     },
     entities,
   };
@@ -211,7 +224,7 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
 
   // If we have a screen target, also navigate
   if (screen) {
-    const params = buildNavParams(screen, entities);
+    const params = knowledgeResourceTarget?.params ?? buildNavParams(screen, entities, intentKey);
     actions.push({ type: "navigate", screen, params });
   }
 
@@ -222,6 +235,8 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
  * Check if a command should auto-navigate (vs just showing inline viz)
  */
 export function shouldAutoNavigate(cmd: VoiceCommand): boolean {
+  if (getKnowledgeResourceTarget(cmd)) return true;
+  if (cmd.metadata?.action === "create_room" || cmd.metadata?.action === "join_room") return true;
   // Complex queries or explicit "show me" / "take me to" should navigate
   if (cmd.complexity === "complex") return true;
   // Market/scheme queries with specific entities should navigate
@@ -276,14 +291,32 @@ function buildTitle(domain: string, intent: string, entities: Record<string, str
   }
 }
 
-function buildNavParams(screen: string, entities: Record<string, string>): Record<string, any> {
+function buildNavParams(screen: string, entities: Record<string, string>, intent?: string): Record<string, any> {
   const params: Record<string, any> = {};
-  if (entities?.crop) params.crop = entities.crop;
-  if (entities?.location) params.location = entities.location;
+  if (entities?.crop) {
+    params.crop = normalizeMarketCropName(entities.crop, entities.crop);
+  }
+  if (entities?.location) {
+    params.location = normalizeMarketStateName(entities.location) ?? entities.location;
+  }
   if (entities?.scheme_name) params.schemeName = entities.scheme_name;
+  if (entities?.roomId) params.roomId = entities.roomId;
+  if (entities?.room_id) params.roomId = entities.room_id;
 
   // Screen-specific param mapping
   switch (screen) {
+    case "AgriMarket":
+      // Pass tab + compareCrop so the screen can react
+      if (entities?.tab) params.tab = entities.tab;
+      if (entities?.compare_crop || entities?.compareCrop) {
+        const compareCrop = entities.compare_crop ?? entities.compareCrop;
+        params.compareCrop = normalizeMarketCropName(compareCrop, compareCrop);
+      }
+      // Infer tab from intent
+      if (!params.tab && intent) {
+        if (/trend|history|historical/.test(intent)) params.tab = "historical";
+      }
+      break;
     case "MarketPrices":
       params.moduleTitle = "AGRICULTURE";
       break;
@@ -293,9 +326,60 @@ function buildNavParams(screen: string, entities: Record<string, string>): Recor
     case "CourseDetail":
       if (entities?.course_id) params.courseId = entities.course_id;
       break;
+    case "VoiceRoom":
+      if (entities?.roomId) params.roomId = entities.roomId;
+      if (entities?.room_id) params.roomId = entities.room_id;
+      break;
   }
 
   return params;
+}
+
+function getVoiceRoomScreen(cmd: VoiceCommand): string | null {
+  const action = cmd.metadata?.action;
+  if (action === "create_room" || action === "join_room") {
+    return cmd.metadata?.roomId ? "VoiceRoom" : "VoiceRooms";
+  }
+  return null;
+}
+
+function getKnowledgeResourceTarget(cmd: VoiceCommand): { screen: "KnowledgeResources"; params?: Record<string, any> } | null {
+  const transcript = String(cmd.transcript ?? "").toLowerCase();
+  const combined = `${cmd.domain} ${cmd.intent} ${transcript}`;
+  const asksForKnowledge =
+    /knowledge|learn|learning|course|courses|training|article|articles|video|videos|youtube|live|stream|streams/.test(combined);
+  const asksForResourceScreen =
+    /article|articles|video|videos|youtube|resources|live|stream|streams|course.*article|article.*course/.test(combined);
+
+  if (!asksForKnowledge || !asksForResourceScreen) return null;
+
+  let initialTab: "all" | "videos" | "articles" = "all";
+  if (/video|videos|youtube|live|stream|streams/.test(combined) && !/article|articles/.test(combined)) initialTab = "videos";
+  if (/article|articles/.test(combined) && !/video|videos|youtube/.test(combined)) initialTab = "articles";
+
+  const query = extractKnowledgeQuery(transcript, initialTab);
+  const language = String((cmd.metadata as any)?.languageCode ?? "").trim();
+
+  return {
+    screen: "KnowledgeResources",
+    params: {
+      initialTab,
+      ...(query ? { query } : {}),
+      ...(language ? { language } : {}),
+    },
+  };
+}
+
+function extractKnowledgeQuery(transcript: string, tab: "all" | "videos" | "articles") {
+  const cleaned = transcript
+    .replace(/\b(open|show|give|tell|take|find|search|for|me|please|watch|read|learning|knowledge|resources|resource|youtube|videos?|articles?|courses?|live|stream|streams)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return tab === "articles" ? "organic farming articles" : tab === "videos" ? "organic farming videos" : "organic farming";
+  }
+  return cleaned;
 }
 
 function capitalize(s: string): string {

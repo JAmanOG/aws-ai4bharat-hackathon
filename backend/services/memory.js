@@ -13,12 +13,11 @@
 
 const { v4: uuid } = require('uuid');
 const { PutCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
-const { dynamoDB } = require('../utils/db');
+const { dynamoDB, TABLE_NAMES } = require('../utils/db');
 const { generateResponse } = require('./llm');
 
-const STAGE = process.env.STAGE || 'dev';
-const CONVERSATIONS_TABLE = process.env.VOICE_CONVERSATIONS_TABLE || `VoiceConversations-${STAGE}`;
-const FACTS_TABLE = process.env.USER_MEMORY_FACTS_TABLE || `UserMemoryFacts-${STAGE}`;
+const CONVERSATIONS_TABLE = TABLE_NAMES.VOICE_CONVERSATIONS;
+const FACTS_TABLE = TABLE_NAMES.USER_MEMORY_FACTS;
 
 const MAX_HISTORY_TURNS = 20;
 const MAX_FACTS = 30;

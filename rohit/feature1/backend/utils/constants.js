@@ -3,8 +3,10 @@
  */
 
 // ── Service Base URLs (set via SAM template env vars) ──
-const FEATURE1_API_BASE = process.env.FEATURE1_API_BASE || 'http://localhost:3001';
-const FEATURE2_API_BASE = process.env.FEATURE2_API_BASE || 'http://localhost:3002';
+// const FEATURE1_API_BASE = process.env.FEATURE1_API_BASE || 'http://localhost:3001';
+const FEATURE1_API_BASE = process.env.FEATURE1_API_BASE || '';
+// const FEATURE2_API_BASE = process.env.FEATURE2_API_BASE || 'http://localhost:3002';
+const FEATURE2_API_BASE = process.env.FEATURE2_API_BASE || '';
 
 // ── Upstream service endpoints (relative to base) ──
 const SERVICE_ENDPOINTS = {

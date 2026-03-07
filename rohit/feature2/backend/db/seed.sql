@@ -106,7 +106,8 @@ INSERT INTO livelihood_guidance (title, description, steps, helpline_numbers, ca
 ('Disaster Relief (SDRF/NDRF)', 'Apply for disaster relief funds', '["Report damage to gram panchayat or district collector","Document damage with photos","Apply through state disaster portal","Track relief distribution"]', '["112","1078"]', (SELECT id FROM livelihood_categories WHERE name = 'natural_disaster')),
 ('MUDRA Loan for Business Restart', 'MUDRA loans for restarting closed small businesses', '["Prepare business plan","Visit nearest bank or NBFC","Apply under Shishu/Kishore/Tarun category","No collateral required"]', '["1800-180-1111"]', (SELECT id FROM livelihood_categories WHERE name = 'business_closure'));
 
--- ── Demo User ──
-INSERT INTO users (name, phone, email, is_verified, language) VALUES
-('Demo User', '9876543210', 'demo@example.com', TRUE, 'hi')
-ON CONFLICT (phone) DO NOTHING;
+-- ── Demo Users ──
+INSERT INTO users (id, name, phone, email, is_verified, language) VALUES
+('4edbc9c5-ebc5-421f-8ea5-c75ce0904baa', 'Rural User', '9876543210', 'demo@example.com', TRUE, 'hi'),
+('550e8400-e29b-41d4-a716-446655440000', 'Farmer Joe', '9123456789', 'joe@example.com', TRUE, 'en')
+ON CONFLICT (phone) DO UPDATE SET id = EXCLUDED.id, name = EXCLUDED.name;

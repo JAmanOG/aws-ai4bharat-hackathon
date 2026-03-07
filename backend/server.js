@@ -13,6 +13,13 @@ const precisionAgricultureRoutes = require('./routes/precision-agriculture');
 const economicServicesRoutes = require('./routes/economic-services');
 const voiceRoutes = require('./routes/voice');
 const authRoutes = require('./routes/auth');
+const communityRoutes = require('./routes/community');
+const businessRoutes = require('./routes/business');
+const governmentRoutes = require('./routes/government');
+const livelihoodRoutes = require('./routes/livelihood');
+const healthRoutes = require('./routes/health');
+const openDataRoutes = require('./routes/open-data');
+const voiceRoomRoutes = require('./routes/voice-room');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -78,7 +85,7 @@ async function buildServer() {
         return {
             name: 'Rural Ecosystem Platform API',
             version: '2.0.0',
-            modules: ['auth', 'knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice'],
+            modules: ['auth', 'knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice', 'community', 'business', 'government', 'livelihood', 'health', 'open-data', 'voice-rooms'],
             docs: '/health',
         };
     });
@@ -90,6 +97,13 @@ async function buildServer() {
     await app.register(precisionAgricultureRoutes);
     await app.register(economicServicesRoutes);
     await app.register(voiceRoutes);
+    await app.register(communityRoutes);
+    await app.register(businessRoutes);
+    await app.register(governmentRoutes);
+    await app.register(livelihoodRoutes);
+    await app.register(healthRoutes);
+    await app.register(openDataRoutes);
+    await app.register(voiceRoomRoutes);
 
     return app;
 }

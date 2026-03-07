@@ -9,12 +9,21 @@ const { v4: uuidv4 } = require('uuid');
 const { dynamoDB, TABLE_NAMES } = require('../../utils/db');
 const { BEDROCK_MODEL_ID, HEALTH_TOPICS, DISCLAIMER } = require('../../utils/constants');
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+const bedrock = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || 'ap-south-1',
+  endpoint: process.env.BEDROCK_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.BEDROCK_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || 'test',
+    secretAccessKey: process.env.BEDROCK_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || 'test',
+    sessionToken: process.env.BEDROCK_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN
+  }
+});
 
 /**
  * List articles by topic, with pagination.
  */
 async function listArticles(topic, limit = 10) {
+  console.log(`[ACTION] Listing health articles. Topic: ${topic}, Limit: ${limit}`);
   const params = {
     TableName: TABLE_NAMES.HEALTH_ARTICLES,
     Limit: limit,
@@ -38,6 +47,7 @@ async function listArticles(topic, limit = 10) {
  * Get article by ID.
  */
 async function getArticle(articleId) {
+  console.log(`[ACTION] Fetching health article details for ID: ${articleId}`);
   const result = await dynamoDB.send(new GetCommand({
     TableName: TABLE_NAMES.HEALTH_ARTICLES,
     Key: { articleId },
@@ -49,20 +59,26 @@ async function getArticle(articleId) {
  * Generate a health article using Bedrock AI.
  */
 async function generateArticle(topic, language = 'en') {
-  if (!topic) throw { statusCode: 400, message: 'Topic is required' };
+  console.log(`[ACTION] User requested article generation for topic: "${topic}" (${language})`);
+  if (!topic) {
+    console.log(`[ACTION] Rejected: Topic missing`);
+    throw { statusCode: 400, message: 'Topic is required' };
+  }
 
   // Check if article already exists for this topic
   const existing = await listArticles(topic.toLowerCase(), 1);
   if (existing.length > 0) {
+    console.log(`[ACTION] Returning cached article for topic "${topic}"`);
     return { article: existing[0], cached: true };
   }
 
-  let content;
   try {
+    console.log(`[TRACE] Calling Bedrock to generate article for topic: "${topic}"...`);
     content = await getBedrockArticle(topic, language);
+    console.log(`[TRACE] Bedrock article generation successful. Title: "${content.title}"`);
   } catch (err) {
-    console.warn('[KnowledgeBase] Bedrock unavailable, using fallback:', err.message);
-    content = getFallbackArticle(topic);
+    console.error('[KnowledgeBase] Bedrock generation failed:', err.message);
+    throw { statusCode: 503, message: `AI Content Generation unavailable: ${err.message}` };
   }
 
   // Store in DynamoDB
@@ -89,6 +105,7 @@ async function generateArticle(topic, language = 'en') {
  * Call Bedrock for article generation.
  */
 async function getBedrockArticle(topic, language) {
+  console.log(`[ACTION] Using Bedrock to generate health article for topic "${topic}" in ${language}`);
   const langName = language === 'hi' ? 'Hindi' : language === 'bn' ? 'Bengali' : 'English';
 
   const prompt = `You are a health educator for rural India. Generate a structured health article about "${topic}" in ${langName}.
@@ -126,28 +143,10 @@ Rules:
   const response = await bedrock.send(command);
   const body = JSON.parse(new TextDecoder().decode(response.body));
   const text = body.content?.[0]?.text || '';
+  console.log(`[ACTION] Received Bedrock generated article (${text.length} chars). Parsing...`);
   const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    return getFallbackArticle(topic);
-  }
+  return JSON.parse(cleaned);
 }
 
-/**
- * Fallback article template.
- */
-function getFallbackArticle(topic) {
-  return {
-    title: `Understanding ${topic.charAt(0).toUpperCase() + topic.slice(1)}`,
-    sections: [
-      { heading: 'What is it?', content: `${topic} is a common health condition. Please consult a healthcare professional for detailed information.` },
-      { heading: 'Common Symptoms', content: 'Symptoms vary by individual. Monitor your health and note any changes.' },
-      { heading: 'Prevention', content: 'Maintain good hygiene, eat nutritious food, exercise regularly, and get adequate sleep.' },
-      { heading: 'When to See a Doctor', content: 'If symptoms persist for more than 3 days, worsen suddenly, or include fever above 103°F, seek medical attention immediately. Visit your nearest PHC or CHC.' },
-    ],
-  };
-}
 
-module.exports = { listArticles, getArticle, generateArticle, getFallbackArticle };
+module.exports = { listArticles, getArticle, generateArticle };

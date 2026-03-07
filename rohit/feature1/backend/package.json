@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.500.0",
+    "@aws-sdk/credential-providers": "^3.1002.0",
     "@aws-sdk/lib-dynamodb": "^3.500.0",
     "axios": "^1.7.0",
+    "dotenv": "^17.3.1",
     "uuid": "^9.0.0"
   },
   "devDependencies": {

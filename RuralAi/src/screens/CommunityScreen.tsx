@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { SyncPill } from "../components/ui";
-import { usePeerGroups } from "../hooks/useData";
+import { usePeerGroups, useVoiceRooms } from "../hooks/useData";
 import { useNavigation } from "@react-navigation/native";
 import { logger } from "../utils/logger";
 
@@ -28,6 +28,7 @@ type Post = {
 export default function CommunityScreen() {
   const nav = useNavigation<any>();
   const peerGroups = usePeerGroups();
+  const voiceRooms = useVoiceRooms({ status: "active", limit: 6 });
 
   logger.debug("CommunityScreen", "render", { groupCount: ((peerGroups.data as any)?.groups ?? []).length, loading: peerGroups.loading });
 
@@ -42,16 +43,16 @@ export default function CommunityScreen() {
 
   /* Map backend peer groups to Space cards when available */
   const spaces: Space[] = React.useMemo(() => {
-    const raw = (peerGroups.data as any)?.groups;
+    const raw = (voiceRooms.data as any)?.rooms;
     if (!Array.isArray(raw) || raw.length === 0) return [];
-    return raw.map((g: any, i: number) => ({
-      id: g.group_id ?? `g${i}`,
-      title: g.group_name ?? g.crop_type ?? "Peer group",
+    return raw.map((room: any, i: number) => ({
+      id: room.roomId ?? `r${i}`,
+      title: room.title ?? "Voice room",
       status: "LIVE" as const,
-      meta: `${g.member_count ?? 0} members • ${g.crop_type ?? "general"}`,
-      listeners: g.member_count,
+      meta: `${room.participantCount ?? 0} listening • ${(room.topics || []).join(" • ") || "general"}`,
+      listeners: room.participantCount ?? 0,
     }));
-  }, [peerGroups.data]);
+  }, [voiceRooms.data]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -82,9 +83,13 @@ export default function CommunityScreen() {
           </View>
 
           {/* Community Spaces */}
-          <SectionHeader title="Community Spaces" right={peerGroups.loading ? "Loading…" : spaces.length > 0 ? "See all" : undefined} />
+          <SectionHeader
+            title="Community Spaces"
+            right={voiceRooms.loading ? "Loading…" : spaces.length > 0 ? "See all" : undefined}
+            onRight={() => nav.navigate("VoiceRooms")}
+          />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 14 }}>
-            {peerGroups.loading ? (
+            {voiceRooms.loading ? (
               <View style={{ width: 220, height: 130, alignItems: "center", justifyContent: "center" }}>
                 <ActivityIndicator color={colors.primary} />
               </View>
@@ -95,7 +100,7 @@ export default function CommunityScreen() {
               </View>
             ) : (
               spaces.map((s) => (
-                <SpaceCard key={s.id} space={s} />
+                <SpaceCard key={s.id} space={s} onPress={() => nav.navigate("VoiceRoom", { roomId: s.id })} />
               ))
             )}
           </ScrollView>
@@ -148,14 +153,10 @@ function SectionHeader({ title, right, onRight }: { title: string; right?: strin
   );
 }
 
-function SpaceCard({ space }: { space: Space }) {
+function SpaceCard({ space, onPress }: { space: Space; onPress: () => void }) {
   const live = space.status === "LIVE";
-  const handleJoin = () => {
-    logger.info("CommunityScreen", `SpaceCard ${live ? "Join" : "Remind"}: ${space.title}`);
-    Alert.alert(live ? "Joined!" : "Reminder Set", live ? `You joined "${space.title}"` : `We'll remind you when "${space.title}" goes live.`);
-  };
   return (
-    <Pressable style={styles.spaceCard}>
+    <Pressable style={styles.spaceCard} onPress={onPress}>
       <View style={styles.spaceTop}>
         <View style={[styles.badge, live ? styles.badgeLive : styles.badgeSch]}>
           <Text style={[styles.badgeText, live ? { color: colors.ink } : { color: colors.earth }]}>
@@ -173,7 +174,7 @@ function SpaceCard({ space }: { space: Space }) {
       <Text style={styles.spaceTitle} numberOfLines={2}>{space.title}</Text>
       <Text style={styles.spaceMeta} numberOfLines={1}>{space.meta}</Text>
 
-      <Pressable style={[styles.joinBtn, live ? styles.joinBtnLive : styles.joinBtnSch]} onPress={handleJoin}>
+      <Pressable style={[styles.joinBtn, live ? styles.joinBtnLive : styles.joinBtnSch]} onPress={onPress}>
         <Text style={[styles.joinText, live ? { color: colors.ink } : { color: colors.earth }]}>
           {live ? "Join" : "Remind me"}
         </Text>

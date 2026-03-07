@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { query } = require('../../utils/db');
 
 async function listSchemes({ page = 1, limit = 10, categoryId, search }) {
+  console.log(`[ACTION] Listing government schemes. Page: ${page}, Category: ${categoryId}, Search: ${search}`);
   const conditions = ['gs.is_active = TRUE'];
   const params = [];
   let idx = 1;
@@ -33,6 +34,7 @@ async function listSchemes({ page = 1, limit = 10, categoryId, search }) {
 }
 
 async function getSchemeById(id) {
+  console.log(`[ACTION] Fetching scheme details for ID: ${id}`);
   const result = await query(
     `SELECT gs.*, sc.name as category_name, sc.icon as category_icon
          FROM government_schemes gs
@@ -43,6 +45,7 @@ async function getSchemeById(id) {
 }
 
 async function listSchemeCategories() {
+  console.log(`[ACTION] Fetching all scheme categories`);
   const result = await query(
     `SELECT sc.*, COUNT(gs.id) as scheme_count
          FROM scheme_categories sc
@@ -54,6 +57,7 @@ async function listSchemeCategories() {
 
 async function saveComplaint(data, userId) {
   const id = uuidv4();
+  console.log(`[ACTION] Saving new complaint ${id} to ${data.portalName || '(unknown portal)'} for user ${userId}`);
   const result = await query(
     `INSERT INTO saved_complaints (id, portal_name, reference_no, description, status, user_id)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -63,6 +67,7 @@ async function saveComplaint(data, userId) {
 }
 
 async function listComplaints(userId, { page = 1, limit = 10 }) {
+  console.log(`[ACTION] Fetching saved complaints for user ${userId}. Page: ${page}`);
   const countResult = await query('SELECT COUNT(*) as total FROM saved_complaints WHERE user_id = $1', [userId]);
   const total = parseInt(countResult.rows[0].total);
 

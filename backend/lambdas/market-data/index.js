@@ -6,6 +6,7 @@
 const { success, error, badRequest, notFound } = require('../../utils/response');
 const prices = require('./prices');
 const alerts = require('./alerts');
+const liveFetcher = require('../../services/market-data-fetcher');
 
 exports.handler = async (event) => {
     console.log('Market Data event:', JSON.stringify(event, null, 2));
@@ -21,7 +22,7 @@ exports.handler = async (event) => {
 
         // GET /agriculture/prices/:crop – Current prices for a crop
         if (path.match(/\/agriculture\/prices\/([a-z-]+)$/) && method === 'GET') {
-            const crop = path.match(/\/agriculture\/prices\/([a-z-]+)$/)[1];
+            const crop = liveFetcher.normalizeCropName(path.match(/\/agriculture\/prices\/([a-z-]+)$/)[1]);
             const result = await prices.getCurrentPrices(crop, {
                 state: qp.state, district: qp.district, limit: parseInt(qp.limit || '20'),
             });
@@ -30,7 +31,7 @@ exports.handler = async (event) => {
 
         // GET /agriculture/prices/:crop/trend – Historical price trend
         if (path.match(/\/agriculture\/prices\/([a-z-]+)\/trend$/) && method === 'GET') {
-            const crop = path.match(/\/agriculture\/prices\/([a-z-]+)\/trend$/)[1];
+            const crop = liveFetcher.normalizeCropName(path.match(/\/agriculture\/prices\/([a-z-]+)\/trend$/)[1]);
             const result = await prices.getPriceTrend(crop, {
                 mandi_code: qp.mandi_code, state: qp.state,
                 days: parseInt(qp.days || '30'),

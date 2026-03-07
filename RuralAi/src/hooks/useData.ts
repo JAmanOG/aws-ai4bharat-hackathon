@@ -15,10 +15,30 @@ import {
   supplyChainApi,
   authApi,
   healthCheck,
+  communityApi,
+  businessApi,
+  governmentApi,
+  livelihoodApi,
+  healthApi,
+  voiceRoomApi,
   type PricesResult,
   type PriceAlert,
   type Scheme,
   type Course,
+  type CommunityPost,
+  type BusinessCategory,
+  type Business,
+  type GovtPortal,
+  type GovtScheme,
+  type LivelihoodCategory,
+  type LivelihoodGuidance,
+  type HealthArticle,
+  type HealthPortal,
+  type HealthProvider,
+  type VoiceRoom,
+  type VoiceRoomPagination,
+  type VoiceRoomChatMessage,
+  type KnowledgeExternalSearchResult,
 } from '../services/api';
 
 /* ─── Market Data ─── */
@@ -31,10 +51,10 @@ export function useMarketPrices(crop: string, state?: string, district?: string)
   );
 }
 
-export function usePriceTrend(crop: string, mandiCode?: string, days = 30) {
+export function usePriceTrend(crop: string, mandiCode?: string, days = 30, state?: string) {
   return useApi(
-    () => marketApi.getPriceTrend(crop, mandiCode, days),
-    [crop, mandiCode, days],
+    () => marketApi.getPriceTrend(crop, mandiCode, days, state),
+    [crop, mandiCode, days, state],
     !crop,
   );
 }
@@ -220,6 +240,14 @@ export function useGovtCourses() {
   );
 }
 
+export function useKnowledgeResourceSearch(q?: string, language?: string, limit = 4) {
+  return useApi<KnowledgeExternalSearchResult>(
+    () => knowledgeApi.searchResources({ q, language, limit }),
+    [q, language, limit],
+    !q,
+  );
+}
+
 /* ─── Precision Agriculture ─── */
 
 export function useWeatherAdvisory(lat: number, lon: number, crop?: string) {
@@ -332,5 +360,178 @@ export function useAuthGroups() {
   return useApi(
     () => authApi.getGroups(),
     [],
+  );
+}
+
+/* ─── Community ─── */
+
+export function useCommunityPosts(params?: { page?: number; limit?: number; topic?: string; search?: string }) {
+  return useApi<{ posts: CommunityPost[]; total: number }>(
+    () => communityApi.listPosts(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useCommunityPost(id: string) {
+  return useApi<CommunityPost>(
+    () => communityApi.getPost(id),
+    [id],
+    !id,
+  );
+}
+
+export function useCommunityBookmarks() {
+  return useApi(
+    () => communityApi.listBookmarks(),
+    [],
+  );
+}
+
+export function useCommunityFollowing() {
+  return useApi(
+    () => communityApi.listFollowing(),
+    [],
+  );
+}
+
+/* ─── Business Directory ─── */
+
+export function useBusinessCategories() {
+  return useApi<BusinessCategory[]>(
+    () => businessApi.listCategories(),
+    [],
+  );
+}
+
+export function useBusinessListings(params?: { page?: number; limit?: number; search?: string; categoryId?: string }) {
+  return useApi<{ businesses: Business[]; total: number }>(
+    () => businessApi.listBusinesses(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useBusinessDetail(id: string) {
+  return useApi<Business>(
+    () => businessApi.getBusiness(id),
+    [id],
+    !id,
+  );
+}
+
+/* ─── Government ─── */
+
+export function useGovtPortals(params?: { category?: string; region?: string; search?: string }) {
+  return useApi<{ portals: GovtPortal[]; total: number }>(
+    () => governmentApi.listPortals(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useGovtSchemes(params?: { category?: string; state?: string; search?: string; page?: number; limit?: number }) {
+  return useApi(
+    () => governmentApi.listSchemes(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useGovtSchemeDetail(id: string) {
+  return useApi<GovtScheme>(
+    () => governmentApi.getScheme(id),
+    [id],
+    !id,
+  );
+}
+
+export function useGovtSchemeCategories() {
+  return useApi(
+    () => governmentApi.listSchemeCategories(),
+    [],
+  );
+}
+
+export function useGovtComplaints() {
+  return useApi(
+    () => governmentApi.listComplaints(),
+    [],
+  );
+}
+
+/* ─── Livelihood ─── */
+
+export function useLivelihoodCategories() {
+  return useApi<LivelihoodCategory[]>(
+    () => livelihoodApi.listCategories(),
+    [],
+  );
+}
+
+export function useLivelihoodGuidance(params?: { categoryId?: string; search?: string }) {
+  return useApi<LivelihoodGuidance[]>(
+    () => livelihoodApi.listGuidance(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useLivelihoodGuidanceDetail(id: string) {
+  return useApi<LivelihoodGuidance>(
+    () => livelihoodApi.getGuidance(id),
+    [id],
+    !id,
+  );
+}
+
+/* ─── Health (New) ─── */
+
+export function useHealthArticles(params?: { topic?: string; language?: string; page?: number; limit?: number }) {
+  return useApi<{ articles: HealthArticle[]; total: number }>(
+    () => healthApi.listArticles(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useHealthArticle(id: string) {
+  return useApi<HealthArticle>(
+    () => healthApi.getArticle(id),
+    [id],
+    !id,
+  );
+}
+
+export function useHealthPortals(params?: { category?: string; search?: string }) {
+  return useApi<HealthPortal[]>(
+    () => healthApi.listHealthPortals(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useHealthProviders(params?: { city?: string; type?: string; search?: string; page?: number; limit?: number }) {
+  return useApi<{ providers: HealthProvider[]; total: number }>(
+    () => healthApi.listProviders(params),
+    [JSON.stringify(params)],
+  );
+}
+
+/* ─── Voice Rooms (Twitter Spaces) ─── */
+
+export function useVoiceRooms(params?: { page?: number; limit?: number; status?: string; topic?: string; search?: string }) {
+  return useApi<{ rooms: VoiceRoom[]; pagination: VoiceRoomPagination }>(
+    () => voiceRoomApi.listRooms(params),
+    [JSON.stringify(params)],
+  );
+}
+
+export function useVoiceRoom(roomId: string) {
+  return useApi<VoiceRoom>(
+    () => voiceRoomApi.getRoom(roomId),
+    [roomId],
+    !roomId,
+  );
+}
+
+export function useVoiceRoomChat(roomId: string, params?: { limit?: number }) {
+  return useApi<{ messages: VoiceRoomChatMessage[]; nextKey: string | null }>(
+    () => voiceRoomApi.getChatMessages(roomId, params),
+    [roomId, JSON.stringify(params)],
+    !roomId,
   );
 }

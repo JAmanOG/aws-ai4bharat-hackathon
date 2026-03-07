@@ -8,11 +8,11 @@ const { listPortals, getPortal, checkEligibility } = require('./govt-portals');
 const { listProviders, getProvider } = require('./providers');
 
 exports.handler = async (event) => {
-  console.log('Health Directory event:', JSON.stringify(event, null, 2));
-
   const method = event.httpMethod;
   const path = event.path;
+  const userId = event.headers?.['x-user-id'] || 'anonymous';
   const qs = event.queryStringParameters || {};
+  console.log(`[API:EVENT] Health Directory Lambda invoked. Method: ${method}, Path: ${path}, UserID: ${userId}`);
 
   try {
     // ── Government Portals ──

@@ -43,13 +43,16 @@ Available domains:
 - market: crop prices, mandi info, price trends, sell timing, MSP, buyers
 - schemes: government schemes, subsidies, loans, insurance, eligibility, documents
 - health: symptoms, nutrition, maternal health, first aid, facility referral
+- knowledge: requests for videos, articles, courses, training content, learning resources, educational material, "show me a video", "find articles about", "courses on"
 - general: greetings, general questions, app help, digital literacy
+
+IMPORTANT: When a user asks to see, watch, or find videos, articles, courses, or learning content, ALWAYS use domain="knowledge" and NEVER set can_answer_directly=true. These requests require fetching actual resources.
 
 Respond ONLY with valid JSON (no markdown, no explanation):
 {
   "english_text": "the input translated to English",
   "original_language": "hi-IN or en-IN or ta-IN etc.",
-  "domain": "agriculture|market|schemes|health|general",
+  "domain": "agriculture|market|schemes|health|knowledge|general",
   "intent": "specific_intent_name",
   "entities": {
     "crop": "wheat",
@@ -85,6 +88,10 @@ async function analyzeAndRoute(text, detectedLang = 'unknown') {
         return { ...result, provider: 'nova' };
     } catch (novaErr) {
         console.warn(`[Nova] Nova analysis failed: ${novaErr.message}. Falling back to Claude Haiku...`);
+        if (isCredentialExpiryError(novaErr)) {
+            console.warn('[Nova] Credential/session issue detected. Skipping fallback model and using basic routing.');
+            return basicRoute(text, detectedLang);
+        }
         try {
             const result = await invokeFallback(userMessage);
             return { ...result, provider: 'bedrock-claude' };
@@ -93,6 +100,15 @@ async function analyzeAndRoute(text, detectedLang = 'unknown') {
             return basicRoute(text, detectedLang);
         }
     }
+}
+
+function isCredentialExpiryError(err) {
+    const msg = String(err?.message || '').toLowerCase();
+    return msg.includes('session has expired')
+        || msg.includes('expiredtoken')
+        || msg.includes('security token included in the request is expired')
+        || msg.includes('unable to locate credentials')
+        || msg.includes('unrecognizedclientexception');
 }
 
 /* ─── Nova InvokeModel ─── */
@@ -241,7 +257,7 @@ function basicRoute(text, detectedLang) {
 
 /* ─── Validation helpers ─── */
 
-const VALID_DOMAINS = ['agriculture', 'market', 'schemes', 'health', 'general'];
+const VALID_DOMAINS = ['agriculture', 'market', 'schemes', 'health', 'knowledge', 'general'];
 const VALID_COMPLEXITIES = ['simple', 'moderate', 'complex'];
 
 function validDomain(d) {

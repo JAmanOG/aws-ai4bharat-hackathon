@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,25 +10,47 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { useMarketPrices } from "../hooks/useData";
 import { LoadingView, ErrorView, SyncPill } from "../components/ui";
+import type { HomeStackParamList } from "../navigation/HomeStack";
+import {
+  formatMarketCropLabel,
+  normalizeMarketCropName,
+  normalizeMarketStateName,
+} from "../utils/market";
 
 export default function MarketPricesScreen() {
   const nav = useNavigation<any>();
+  const route = useRoute<RouteProp<HomeStackParamList, "MarketPrices">>();
+  const routeCrop = normalizeMarketCropName(route.params?.crop);
+  const routeState = normalizeMarketStateName(route.params?.location);
 
-  const [searchText, setSearchText] = useState("Wheat");
-  const [crop, setCrop] = useState("Wheat");
-  const [mandi, setMandi] = useState("All mandis");
+  const [searchText, setSearchText] = useState(formatMarketCropLabel(routeCrop));
+  const [crop, setCrop] = useState(routeCrop);
+  const [stateFilter, setStateFilter] = useState<string | undefined>(routeState);
+  const [mandi, setMandi] = useState(routeState ?? "All mandis");
+
+  useEffect(() => {
+    const normalizedCrop = normalizeMarketCropName(route.params?.crop);
+    const normalizedState = normalizeMarketStateName(route.params?.location);
+    setCrop(normalizedCrop);
+    setSearchText(formatMarketCropLabel(normalizedCrop));
+    setStateFilter(normalizedState);
+    setMandi(normalizedState ?? "All mandis");
+  }, [route.params?.crop, route.params?.location]);
 
   // Debounced search — user types, hits Enter / blurs to search
   const handleSearch = useCallback(() => {
     const trimmed = searchText.trim();
-    if (trimmed && trimmed !== crop) setCrop(trimmed);
+    if (!trimmed) return;
+    const normalizedCrop = normalizeMarketCropName(trimmed, crop);
+    setCrop(normalizedCrop);
+    setSearchText(formatMarketCropLabel(normalizedCrop));
   }, [searchText, crop]);
 
-  const { data, loading, error, refresh } = useMarketPrices(crop);
+  const { data, loading, error, refresh } = useMarketPrices(crop, stateFilter);
 
   const avgPrice = data?.summary?.average_price ?? 0;
   const lastUpdated = data?.last_updated
@@ -71,8 +93,20 @@ export default function MarketPricesScreen() {
 
               <Pressable style={styles.locBtn} onPress={() => {
                 Alert.alert("Select Mandi", "Choose a location", [
-                  { text: "All mandis", onPress: () => setMandi("All mandis") },
-                  { text: "Nearest mandi", onPress: () => setMandi("Nearest") },
+                  {
+                    text: "All mandis",
+                    onPress: () => {
+                      setMandi("All mandis");
+                      setStateFilter(undefined);
+                    },
+                  },
+                  {
+                    text: "Nearest mandi",
+                    onPress: () => {
+                      setMandi("Nearest");
+                      setStateFilter(undefined);
+                    },
+                  },
                   { text: "Cancel", style: "cancel" },
                 ]);
               }}>
@@ -95,7 +129,7 @@ export default function MarketPricesScreen() {
 
               <Text style={styles.price}>₹ {Math.round(avgPrice)}</Text>
               <Text style={styles.priceSub}>
-                per quintal • {data?.crop ?? crop} • {data?.summary?.mandi_count ?? 0} mandis
+                per quintal • {formatMarketCropLabel(data?.crop ?? crop)}{stateFilter ? ` • ${stateFilter}` : ""} • {data?.summary?.mandi_count ?? 0} mandis
               </Text>
 
               {/* Trend summary */}
@@ -118,20 +152,30 @@ export default function MarketPricesScreen() {
             </View>
 
             <View style={{ gap: 10 }}>
-              {(data?.prices ?? []).map((p, idx) => (
-                <View key={`${p.mandi_name}-${idx}`} style={styles.marketRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.marketName}>{p.mandi_name}</Text>
-                    <Text style={styles.marketMeta}>
-                      {p.district ? `${p.district}, ${p.state}` : p.state}
-                    </Text>
+              {(data?.prices?.length ?? 0) > 0 ? (
+                (data?.prices ?? []).map((p, idx) => (
+                  <View key={`${p.mandi_name}-${idx}`} style={styles.marketRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.marketName}>{p.mandi_name}</Text>
+                      <Text style={styles.marketMeta}>
+                        {p.district ? `${p.district}, ${p.state}` : p.state}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={styles.marketPrice}>₹ {Math.round(p.price_per_quintal)}</Text>
+                      <ChangePill change={p.change ?? "same"} />
+                    </View>
                   </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text style={styles.marketPrice}>₹ {p.price_per_quintal}</Text>
-                    <ChangePill change={p.change ?? "same"} />
-                  </View>
+                ))
+              ) : (
+                <View style={styles.emptyCard}>
+                  <Ionicons name="analytics-outline" size={20} color={colors.earth} />
+                  <Text style={styles.emptyTitle}>No market rows available</Text>
+                  <Text style={styles.emptyText}>
+                    {data?.message ?? `No live mandi prices were returned for ${formatMarketCropLabel(crop)}${stateFilter ? ` in ${stateFilter}` : ""}.`}
+                  </Text>
                 </View>
-              ))}
+              )}
             </View>
 
             {/* CTA buttons */}
@@ -227,6 +271,17 @@ const styles = StyleSheet.create({
   offlineSub: { marginTop: 2, fontSize: 11, color: colors.muted, fontWeight: "700" },
   retryBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   retryText: { fontSize: 12, fontWeight: "900", color: colors.ink },
+  emptyCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 16,
+    alignItems: "center",
+    gap: 8,
+  },
+  emptyTitle: { fontSize: 13, fontWeight: "900", color: colors.ink },
+  emptyText: { fontSize: 12, lineHeight: 18, textAlign: "center", color: colors.muted, fontWeight: "700" },
 
   content: { paddingTop: 12, paddingBottom: 18 },
 

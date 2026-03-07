@@ -10,15 +10,33 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const { METRIPORT, BEDROCK_MODEL_ID, DISCLAIMER, IMAGING_TYPES } = require('../../utils/constants');
 
-const s3 = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || 'ap-south-1',
+  endpoint: process.env.S3_ENDPOINT,
+  forcePathStyle: !!process.env.S3_ENDPOINT, // Required for LocalStack
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test',
+  }
+});
+const bedrock = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || 'ap-south-1',
+  endpoint: process.env.BEDROCK_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.BEDROCK_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || 'test',
+    secretAccessKey: process.env.BEDROCK_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || 'test',
+    sessionToken: process.env.BEDROCK_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN
+  }
+});
 const BUCKET = process.env.IMAGING_BUCKET || 'rural-health-imaging';
 
 /**
  * Generate presigned upload URL + register with Metriport if available.
  */
-async function initiateUpload(userId, imagingType, description) {
+async function initiateUpload(userId, imagingType, description, contentType = 'application/dicom') {
+  console.log(`[ACTION] User ${userId} requested medical image upload. Type: ${imagingType}, ContentType: ${contentType}`);
   if (!IMAGING_TYPES.includes(imagingType)) {
+    console.log(`[ACTION] Upload rejected: Invalid imaging type ${imagingType}`);
     throw { statusCode: 400, message: `Invalid imaging type. Supported: ${IMAGING_TYPES.join(', ')}` };
   }
 
@@ -29,19 +47,21 @@ async function initiateUpload(userId, imagingType, description) {
   const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
     Bucket: BUCKET,
     Key: s3Key,
-    ContentType: 'application/dicom',
+    ContentType: contentType,
     Metadata: { userId, imagingType, description: description || '' },
   }), { expiresIn: 3600 });
 
-  // Register document with Metriport (if API key available)
   let metriportDocId = null;
-  if (METRIPORT.apiKey) {
-    try {
+  try {
+    if (METRIPORT.apiKey) {
       metriportDocId = await registerWithMetriport(userId, imagingType, description);
-    } catch (err) {
-      console.warn('[Imaging] Metriport registration skipped:', err.message);
     }
+  } catch (err) {
+    console.warn('[ACTION] Failed to register with Metriport, continuing without it:', err.message);
   }
+
+  console.log(`[TRACE] Generated S3 Key: ${s3Key} | Document ID: ${documentId}`);
+  if (metriportDocId) console.log(`[TRACE] Registered with Metriport. MetriportDocID: ${metriportDocId}`);
 
   return {
     documentId,
@@ -63,6 +83,7 @@ async function initiateUpload(userId, imagingType, description) {
  * Register document with Metriport FHIR API.
  */
 async function registerWithMetriport(userId, imagingType, description) {
+  console.log(`[ACTION] Registering ${imagingType} document with Metriport FHIR for user ${userId}`);
   const response = await axios.post(
     `${METRIPORT.baseUrl}/medical/v1/document/upload?patientId=${userId}`,
     {
@@ -90,6 +111,7 @@ async function registerWithMetriport(userId, imagingType, description) {
  * Get document status.
  */
 async function getDocumentStatus(documentId) {
+  console.log(`[ACTION] Fetching imaging document status for ID: ${documentId}`);
   // In production, we'd query Metriport + S3 metadata
   // For demo, return synthesized status
   return {
@@ -104,20 +126,21 @@ async function getDocumentStatus(documentId) {
  * Analyze uploaded medical image with AI.
  * Uses Bedrock for general observations (NOT diagnosis).
  */
-async function analyzeImage(documentId, imagingType) {
-  let observations;
-
+async function analyzeImage(documentId, imagingType, userId) {
+  console.log(`[ACTION] Starting AI analysis for imaging document ID: ${documentId} (${imagingType})`);
+  let analysis;
   try {
-    observations = await getBedrockAnalysis(imagingType);
+    console.log(`[TRACE] Invoking Bedrock Vision for image analysis...`);
+    analysis = await getBedrockAnalysis(imagingType, documentId, userId);
   } catch (err) {
-    console.warn('[Imaging] Bedrock analysis unavailable, using fallback:', err.message);
-    observations = getFallbackAnalysis(imagingType);
+    console.error('[Imaging] Bedrock analysis failed:', err.message);
+    throw { statusCode: 503, message: `AI Image Analysis unavailable: ${err.message}` };
   }
 
   return {
     documentId,
     imagingType,
-    analysis: observations,
+    analysis: analysis,
     disclaimer: DISCLAIMER,
     analyzedAt: new Date().toISOString(),
     recommendation: 'Please share these observations with your doctor for proper interpretation.',
@@ -125,34 +148,96 @@ async function analyzeImage(documentId, imagingType) {
 }
 
 /**
- * Bedrock AI analysis prompt for medical imaging.
+ * Convert S3 stream to base64 string
  */
-async function getBedrockAnalysis(imagingType) {
-  const prompt = `You are a medical imaging assistant. A ${imagingType} scan has been uploaded.
+async function streamToString(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
+  });
+}
 
-Since you cannot actually see the image in this request, provide:
-1. A general explanation of what a ${imagingType} shows
-2. Common findings doctors look for in a ${imagingType}
-3. What patients should discuss with their doctor
+/**
+ * Bedrock AI analysis prompt for medical imaging using Claude 3 Vision.
+ */
+async function getBedrockAnalysis(imagingType, documentId, userId) {
+  console.log(`[ACTION] Requesting Bedrock vision analysis for imaging type: ${imagingType}, docId: ${documentId}, user: ${userId}`);
+
+  let base64Image = null;
+  const s3Key = `uploads/${userId}/${documentId}`;
+
+  try {
+    const s3Response = await s3.send(new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: s3Key,
+    }));
+    base64Image = await streamToString(s3Response.Body);
+    console.log(`[TRACE] Successfully retrieved image from S3: ${s3Key}`);
+  } catch (err) {
+    console.warn(`[WARN] Failed to retrieve image from S3 (${s3Key}):`, err.message);
+    // If the image doesn't exist (e.g., using simulated UI), we fallback so UI doesn't crash
+    throw new Error(`Failed to retrieve image from S3: ${err.message}`);
+  }
+
+  let prompt = `You are a medical imaging assistant analyzing a ${imagingType} scan. `;
+
+  if (base64Image) {
+    prompt += `Review the provided image carefully and provide your observations based ONLY on the visual evidence.`;
+  } else {
+    // This branch should ideally not be hit if the S3 retrieval throws an error
+    prompt += `Since you cannot actually see the image in this request (file missing from S3), provide general information about this scan type.`;
+  }
+
+  prompt += `
+
+Provide:
+1. A general explanation of what this scan shows
+2. Specific common findings or abnormalities you observe (or typically look for)
+3. What the patient should discuss with their doctor
 
 Return ONLY valid JSON:
 {
-  "general_info": "What this imaging type shows",
-  "common_findings": ["finding1", "finding2", "finding3"],
-  "next_steps": "What to discuss with your doctor",
+  "general_info": "What this shows...",
+  "common_findings": ["finding1", "finding2"],
+  "next_steps": "What to discuss",
   "important_note": "Why professional interpretation is essential"
 }
 
-Do NOT provide any specific diagnosis or interpretation.`;
+Do NOT provide any binding medical diagnosis.`;
+
+  const messages = [{
+    role: 'user',
+    content: []
+  }];
+
+  if (base64Image) {
+    messages[0].content.push({
+      type: "image",
+      source: {
+        // Assume jpeg for demo, robust implementation would check content type from S3
+        type: "base64",
+        media_type: "image/jpeg",
+        data: base64Image
+      }
+    });
+  }
+
+  messages[0].content.push({
+    type: "text",
+    text: prompt
+  });
 
   const command = new InvokeModelCommand({
-    modelId: BEDROCK_MODEL_ID,
+    // Upgraded to Claude 3 Haiku for vision capabilities
+    modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
     contentType: 'application/json',
     accept: 'application/json',
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
+      messages: messages,
     }),
   });
 
@@ -163,33 +248,11 @@ Do NOT provide any specific diagnosis or interpretation.`;
 
   try {
     return JSON.parse(cleaned);
-  } catch {
-    return getFallbackAnalysis(imagingType);
+  } catch (parseError) {
+    console.error(`[ERROR] Failed to parse Bedrock response for ${documentId}: ${parseError.message}. Raw text: ${cleaned}`);
+    throw new Error(`Failed to parse AI analysis response: ${parseError.message}`);
   }
 }
 
-/**
- * Fallback analysis when Bedrock is unavailable.
- */
-function getFallbackAnalysis(imagingType) {
-  const typeInfo = {
-    xray: { name: 'X-Ray', info: 'X-rays use electromagnetic radiation to create images of bones, chest, and other dense structures.' },
-    mri: { name: 'MRI', info: 'MRI uses magnetic fields and radio waves to create detailed images of soft tissues, organs, and structures.' },
-    'ct-scan': { name: 'CT Scan', info: 'CT scans combine X-ray images from different angles to create cross-sectional views of the body.' },
-    ultrasound: { name: 'Ultrasound', info: 'Ultrasound uses high-frequency sound waves to create images of internal organs and structures.' },
-  };
 
-  const info = typeInfo[imagingType] || typeInfo.xray;
-  return {
-    general_info: info.info,
-    common_findings: [
-      'Normal anatomy and structures',
-      'Any abnormalities would need professional interpretation',
-      'Comparison with previous scans if available',
-    ],
-    next_steps: 'Please take this report to a qualified radiologist or your consulting doctor for interpretation.',
-    important_note: 'Medical imaging requires professional interpretation by a qualified radiologist. AI observations are general information only and should not be used for diagnosis.',
-  };
-}
-
-module.exports = { initiateUpload, getDocumentStatus, analyzeImage, getFallbackAnalysis };
+module.exports = { initiateUpload, getDocumentStatus, analyzeImage };

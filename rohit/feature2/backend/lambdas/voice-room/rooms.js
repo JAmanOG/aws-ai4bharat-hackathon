@@ -6,8 +6,10 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { dynamoDB, TABLE_NAMES } = require('../../utils/db');
 const { VOICE_ROOM_STATUS, VOICE_ROOM_ROLES, MAX_ROOM_PARTICIPANTS } = require('../../utils/constants');
+const { generateRtcToken } = require('../../utils/agora');
 
 async function createRoom({ title, description, topics, isPrivate, maxParticipants }, userId, userName) {
+  console.log(`[ACTION] User ${userId} (${userName}) creating Voice Room. Params: title="${title}", private=${!!isPrivate}, maxPart=${maxParticipants || 'default'}`);
   const roomId = uuidv4();
   const now = new Date().toISOString();
 
@@ -27,6 +29,8 @@ async function createRoom({ title, description, topics, isPrivate, maxParticipan
     updatedAt: now,
     endedAt: null,
   };
+
+  console.log(`[TRACE] Prepared VoiceRoom object: ${JSON.stringify(room)}`);
 
   await dynamoDB.send(new PutCommand({
     TableName: TABLE_NAMES.VOICE_ROOMS,
@@ -48,25 +52,29 @@ async function createRoom({ title, description, topics, isPrivate, maxParticipan
     },
   }));
 
+  console.log(`[ACTION] Voice Room ${roomId} created successfully with creator as moderator.`);
   return { ...room, participants: [{ userId, userName: userName || 'Unknown', role: VOICE_ROOM_ROLES.MODERATOR }] };
 }
 
 async function listRooms({ page = 1, limit = 10, status = 'active', topic, search }) {
+  console.log(`[ACTION] Listing Voice Rooms. Page: ${page}, Status: ${status}, Topic: ${topic}, Search: ${search}`);
   let items = [];
   let lastKey = undefined;
 
-  // Use GSI ByStatus for active/ended filtering
-  const params = {
-    TableName: TABLE_NAMES.VOICE_ROOMS,
-    IndexName: 'ByStatus',
-    KeyConditionExpression: '#status = :status',
-    ExpressionAttributeNames: { '#status': 'status' },
-    ExpressionAttributeValues: { ':status': status },
-    ScanIndexForward: false,
-  };
+  try {
+    // Use Scan instead of Query GSI to debug
+    const params = {
+      TableName: TABLE_NAMES.VOICE_ROOMS,
+    };
 
-  const result = await dynamoDB.send(new QueryCommand(params));
-  items = result.Items || [];
+    console.log('📤 Attempting DynamoDB Scan with params:', JSON.stringify(params));
+    const result = await dynamoDB.send(new ScanCommand(params));
+    items = result.Items || [];
+    console.log('✅ Scan successful! Got', items.length, 'items');
+  } catch (err) {
+    console.error('❌ Scan error:', err.message, err.code);
+    throw err;
+  }
 
   // Client-side filtering for topic and search (DynamoDB limitations)
   if (topic) {
@@ -76,6 +84,8 @@ async function listRooms({ page = 1, limit = 10, status = 'active', topic, searc
     const s = search.toLowerCase();
     items = items.filter(r => r.title.toLowerCase().includes(s) || (r.description || '').toLowerCase().includes(s));
   }
+
+  console.log(`[TRACE] Filtering complete. Found ${items.length} rooms matching criteria.`);
 
   const total = items.length;
   const start = (page - 1) * limit;
@@ -88,6 +98,7 @@ async function listRooms({ page = 1, limit = 10, status = 'active', topic, searc
 }
 
 async function getRoomById(roomId) {
+  console.log(`[ACTION] Fetching details for Voice Room ID: ${roomId}`);
   const result = await dynamoDB.send(new GetCommand({
     TableName: TABLE_NAMES.VOICE_ROOMS,
     Key: { roomId },
@@ -99,35 +110,66 @@ async function getRoomById(roomId) {
   const participants = await dynamoDB.send(new QueryCommand({
     TableName: TABLE_NAMES.VOICE_ROOM_PARTICIPANTS,
     KeyConditionExpression: 'roomId = :roomId',
-    FilterExpression: 'attribute_not_exists(leftAt) OR leftAt = :null',
-    ExpressionAttributeValues: { ':roomId': roomId, ':null': null },
+    ExpressionAttributeValues: { ':roomId': roomId },
   }));
+
+  const activeParticipants = (participants.Items || []).filter(p => !p.leftAt && !p.isBlocked);
 
   return {
     ...result.Item,
-    participants: (participants.Items || []).filter(p => !p.isBlocked),
+    participants: activeParticipants,
   };
 }
 
 async function endRoom(roomId, userId) {
+  console.log(`[ACTION] User ${userId} attempting to end Voice Room ID: ${roomId}`);
   const room = await getRoomById(roomId);
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (room.status === VOICE_ROOM_STATUS.ENDED) throw new Error('ROOM_ALREADY_ENDED');
-  if (room.creatorId !== userId) throw new Error('NOT_MODERATOR');
+  if (room.creatorId !== userId) {
+    console.log(`[ACTION] End Room rejected: User ${userId} is not the moderator`);
+    throw new Error('NOT_MODERATOR');
+  }
 
   const now = new Date().toISOString();
+
+  // Calculate metrics
+  const createdAt = new Date(room.createdAt);
+  const endedAt = new Date(now);
+  const durationMinutes = Math.floor((endedAt - createdAt) / 60000);
+
+  const metrics = {
+    duration: durationMinutes,
+    peakParticipants: room.participantCount, // Simplified
+    endedAt: now
+  };
+
   await dynamoDB.send(new UpdateCommand({
     TableName: TABLE_NAMES.VOICE_ROOMS,
     Key: { roomId },
-    UpdateExpression: 'SET #status = :ended, endedAt = :now, updatedAt = :now',
-    ExpressionAttributeNames: { '#status': 'status' },
-    ExpressionAttributeValues: { ':ended': VOICE_ROOM_STATUS.ENDED, ':now': now },
+    UpdateExpression: 'SET #status = :ended, endedAt = :now, updatedAt = :now, #metrics = :metrics',
+    ExpressionAttributeNames: { '#status': 'status', '#metrics': 'metrics' },
+    ExpressionAttributeValues: { ':ended': VOICE_ROOM_STATUS.ENDED, ':now': now, ':metrics': metrics },
   }));
 
-  return { roomId, status: VOICE_ROOM_STATUS.ENDED, endedAt: now };
+  return { roomId, status: VOICE_ROOM_STATUS.ENDED, endedAt: now, metrics };
+}
+
+async function getRoomToken(roomId, userId) {
+  console.log(`[ACTION] Generating Agora token for room ${roomId}, user ${userId}`);
+  const room = await getRoomById(roomId);
+  if (!room) throw new Error('ROOM_NOT_FOUND');
+
+  // Find users role
+  const participant = room.participants.find(p => p.userId === userId);
+  const role = participant ? participant.role : VOICE_ROOM_ROLES.LISTENER;
+
+  const token = generateRtcToken(roomId, userId, role);
+  return { roomId, token, role };
 }
 
 async function joinRoom(roomId, userId, userName) {
+  console.log(`[ACTION] User ${userId} (${userName}) attempting to join Voice Room ID: ${roomId}`);
   const room = await getRoomById(roomId);
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (room.status === VOICE_ROOM_STATUS.ENDED) throw new Error('ROOM_ENDED');
@@ -154,7 +196,6 @@ async function joinRoom(roomId, userId, userName) {
       isMuted: true,
       isBlocked: false,
       joinedAt: now,
-      leftAt: null,
     },
   }));
 
@@ -170,6 +211,7 @@ async function joinRoom(roomId, userId, userName) {
 }
 
 async function leaveRoom(roomId, userId) {
+  console.log(`[ACTION] User ${userId} leaving Voice Room ID: ${roomId}`);
   const now = new Date().toISOString();
 
   await dynamoDB.send(new UpdateCommand({
@@ -205,4 +247,4 @@ async function leaveRoom(roomId, userId) {
   return { roomId, userId, leftAt: now };
 }
 
-module.exports = { createRoom, listRooms, getRoomById, endRoom, joinRoom, leaveRoom };
+module.exports = { createRoom, listRooms, getRoomById, endRoom, joinRoom, leaveRoom, getRoomToken };

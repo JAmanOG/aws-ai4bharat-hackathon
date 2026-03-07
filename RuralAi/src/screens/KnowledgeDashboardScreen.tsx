@@ -1,231 +1,813 @@
 /**
- * Knowledge Dashboard — skill progress, peer learning groups,
- * live audio stream, verified credentials (DigiLocker).
+ * Knowledge Dashboard — Requirement 7 hub.
+ * Surfaces official courses, curated videos/articles, live learning, and peer groups.
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  Alert,
+  Image,
+  Linking,
   Pressable,
   ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
-import { useCourses, usePeerGroups, useLearningProfile, useHealthCheck, useMyCourses, useMyPeerGroups } from "../hooks/useData";
-import { knowledgeApi } from "../services/api";
+import {
+  useCourses,
+  useGovtCourses,
+  useHealthCheck,
+  useKnowledgeResourceSearch,
+  useMemoryFacts,
+  useMyCourses,
+  usePeerGroups,
+  useVoiceRooms,
+} from "../hooks/useData";
+import { buildKnowledgeContent } from "../utils/knowledgeResources";
+import { useVoice } from "../voice/VoiceContext";
 
-/* ── Circular progress badge ── */
-function ProgressCircle({ score, size = 56 }: { score: number; size?: number }) {
-  const r = (size - 8) / 2;
-  const circumference = 2 * Math.PI * r;
-  const pct = Math.min(score / 100, 1);
-  return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      {/* Background ring */}
-      <View style={[circStyles.ring, { width: size, height: size, borderRadius: size / 2, borderWidth: 4, borderColor: colors.border }]} />
-      {/* Foreground arc (simulated with border + clip) */}
-      <View style={[circStyles.ring, { width: size, height: size, borderRadius: size / 2, borderWidth: 4, borderColor: colors.primary, borderTopColor: pct > 0.25 ? colors.primary : "transparent", borderRightColor: pct > 0.5 ? colors.primary : "transparent", borderBottomColor: pct > 0.75 ? colors.primary : "transparent", borderLeftColor: pct > 0 ? colors.primary : "transparent" }]} />
-      <Text style={circStyles.text}>{score}</Text>
-    </View>
-  );
-}
-const circStyles = StyleSheet.create({
-  ring: { position: "absolute" },
-  text: { fontSize: 18, fontWeight: "900", color: colors.primary },
-});
+const palette = {
+  bg: "#F5EEDD",
+  paper: "#FFF9EF",
+  ink: "#1E1710",
+  muted: "#6F6457",
+  line: "rgba(116, 88, 50, 0.28)",
+  gold: "#D5AF52",
+  goldDark: "#B78D32",
+  goldSoft: "rgba(213,175,82,0.18)",
+  live: "#7A5628",
+};
 
 export default function KnowledgeDashboardScreen() {
   const nav = useNavigation<any>();
+  const { history, lastCommand, language: voiceLanguage } = useVoice();
   const health = useHealthCheck();
   const courses = useCourses();
   const myCourses = useMyCourses();
   const groups = usePeerGroups();
-  const myGroups = useMyPeerGroups();
-  const profile = useLearningProfile();
-  const isOnline = health.data?.status === "ok";
+  const govtCourses = useGovtCourses();
+  const memoryFacts = useMemoryFacts();
+  const liveRooms = useVoiceRooms({ status: "active", limit: 3 });
 
-  const courseList = (courses.data as any)?.courses ?? [];
-  const myEnrollments = (myCourses.data as any)?.enrollments ?? (myCourses.data as any)?.courses ?? [];
-  const groupList = (myGroups.data as any)?.groups ?? (groups.data as any)?.groups ?? (groups.data as any) ?? [];
-  const skillScore = (profile.data as any)?.score ?? (profile.data as any)?.skill_score ?? 0;
-  const displayCourses = myEnrollments.length > 0 ? myEnrollments : courseList;
+  const discoverGroupList = Array.isArray(groups.data) ? groups.data : (groups.data as any)?.groups ?? [];
+  const allCourses = (myCourses.data as any)?.enrollments ?? (myCourses.data as any)?.courses ?? (courses.data as any)?.courses ?? [];
+  const factsMap = normalizeFacts((memoryFacts.data as any)?.facts);
+  const profileData = useMemo(
+    () => buildVoiceLearningProfile(factsMap, history, lastCommand, voiceLanguage, allCourses),
+    [factsMap, history, lastCommand, voiceLanguage, allCourses],
+  );
+  const profileMatchedCourses = useMemo(
+    () => rankKnowledgeItems(allCourses, profileData),
+    [allCourses, profileData],
+  );
+  const govtList = useMemo(
+    () => rankKnowledgeItems((govtCourses.data as any)?.courses ?? [], profileData),
+    [govtCourses.data, profileData],
+  );
+  const liveRoomList = (liveRooms.data as any)?.rooms ?? [];
+  const peerGroups = useMemo(
+    () => selectRelevantPeerGroups(discoverGroupList, profileData),
+    [discoverGroupList, profileData],
+  );
+  const searchQuery = deriveLearningQuery(profileData, profileMatchedCourses);
+  const preferredLanguage = profileData?.preferredLanguage ?? profileMatchedCourses?.[0]?.language ?? undefined;
+  const externalResources = useKnowledgeResourceSearch(searchQuery, preferredLanguage, 4);
+  const content = useMemo(
+    () =>
+      buildKnowledgeContent({
+        courses: profileMatchedCourses,
+        govtCourses: govtList,
+        learningProfile: profileData,
+        voiceRooms: liveRoomList,
+        externalSearch: externalResources.data,
+        strictRealDataOnly: true,
+      }),
+    [profileMatchedCourses, govtList, profileData, liveRoomList, externalResources.data],
+  );
+
+  const activeLiveRoom = content.liveRooms[0];
+  const fallbackLive = content.liveFallback[0];
+  const isOnline = health.data?.status === "ok";
+  const nextStep = buildKnowledgeBanner(profileData, content.nextSteps[0], searchQuery);
+  const canOpenResources = Boolean(searchQuery);
+
+  const openExternal = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Unable to open source", "Please try again in a moment.");
+    }
+  };
+
+  const openCourseOrSource = (item: any) => {
+    if (item.courseId) {
+      nav.navigate("CourseDetail", { courseId: String(item.courseId), courseName: item.title });
+      return;
+    }
+    openExternal(item.url);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12}>
-          <Ionicons name="arrow-back" size={22} color={colors.ink} />
+        <Pressable style={styles.backBtn} onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))}>
+          <Ionicons name="chevron-back" size={22} color={palette.paper} />
         </Pressable>
         <Text style={styles.headerTitle}>Knowledge Hub</Text>
-        <View style={[styles.onlineDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
+        <View style={[styles.statusDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Skill progress card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Skill Progress</Text>
-              <Text style={styles.cardSub}>{displayCourses.length} courses {myEnrollments.length > 0 ? "enrolled" : "available"}</Text>
-            </View>
-            <ProgressCircle score={skillScore} />
-          </View>
-          {/* Course items */}
-          {displayCourses.length > 0 ? displayCourses.slice(0, 3).map((c: any) => (
-            <Pressable
-              key={c.course_id ?? c.id ?? c.title}
-              style={styles.courseRow}
-              onPress={() => c.course_id && nav.navigate("CourseDetail", { courseId: c.course_id })}
-            >
-              <View style={styles.courseIcon}>
-                <Ionicons name="book" size={14} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.courseName}>{c.title}</Text>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${(c.progress ?? 0) * 100}%` }]} />
-                </View>
-              </View>
-              <Text style={styles.progressPct}>{Math.round((c.progress ?? 0) * 100)}%</Text>
-            </Pressable>
-          )) : (
-            <View style={{ paddingVertical: 12, alignItems: "center" }}>
-              <Text style={{ fontSize: 12, color: colors.muted, fontWeight: "600" }}>
-                {courses.loading ? "Loading courses…" : "No courses available yet"}
-              </Text>
-            </View>
-          )}
+        <View style={styles.nextStepBanner}>
+          <Ionicons name="sparkles" size={16} color={palette.goldDark} />
+          <Text style={styles.nextStepText}>{nextStep}</Text>
         </View>
 
-        {/* Peer learning groups */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Peer Learning Groups</Text>
-          {groupList.length > 0 ? groupList.slice(0, 3).map((g: any) => (
-            <Pressable
-              key={g.group_id ?? g.id ?? g.name}
-              style={styles.groupRow}
-              onPress={() => (g.group_id || g.id) && nav.navigate("PeerGroupDetail", { groupId: g.group_id ?? g.id })}
-            >
-              <View style={[styles.groupIcon, g.verified && { backgroundColor: colors.successTint }]}>
-                <Ionicons name="people" size={16} color={g.verified ? colors.success : colors.primary} />
+        {content.featuredSources.length > 0 ? (
+          content.featuredSources.slice(0, 2).map((item) => (
+            <View key={item.id} style={styles.sourceCard}>
+              <Thumbnail kind={item.kind} label={item.tag ?? "Official"} />
+              <View style={styles.sourceBody}>
+                <Text style={styles.sourceTitle} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.sourceSub} numberOfLines={2}>{item.subtitle}</Text>
+                <Pressable style={styles.sourceBtn} onPress={() => openExternal(item.url)}>
+                  <Text style={styles.sourceBtnText}>{item.ctaLabel}</Text>
+                  <Ionicons name="open-outline" size={16} color={palette.ink} />
+                </Pressable>
               </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Text style={styles.groupName}>{g.group_name ?? g.name}</Text>
-                  {g.verified && <Ionicons name="checkmark-circle" size={13} color={colors.success} />}
-                </View>
-                <Text style={styles.groupMeta}>{g.member_count ?? g.members ?? 0} members • {g.crop_type ?? "Active"}</Text>
-              </View>
-              <View style={styles.avatarStack}>
-                {[0, 1, 2].map((i) => (
-                  <View key={i} style={[styles.avatar, { left: i * 14, backgroundColor: ["#BDD4EE", "#B5E6C5", "#FDE68A"][i] }]}>
-                    <Text style={styles.avatarText}>{["S", "A", "R"][i]}</Text>
+            </View>
+          ))
+        ) : (
+          <EmptySectionCard
+            title="No official learning sources yet"
+            subtitle="Government sources matching this learner profile are not available right now."
+          />
+        )}
+
+        <SectionHeader
+          title="Popular Courses"
+          action={canOpenResources ? "View All" : undefined}
+          onAction={canOpenResources ? () => nav.navigate("KnowledgeResources", { initialTab: "all", query: searchQuery, language: preferredLanguage }) : undefined}
+        />
+        {content.popularCourses.length > 0 ? (
+          <View style={styles.stack}>
+            {content.popularCourses.slice(0, 2).map((item) => (
+              <Pressable key={item.id} style={styles.popularCard} onPress={() => openCourseOrSource(item)}>
+              <Thumbnail kind={item.kind} label={item.tag ?? "Course"} compact thumbnail={item.thumbnail} />
+                <View style={styles.popularBody}>
+                  <View style={styles.tagRow}>
+                    <TagPill text={item.tag ?? "Course"} />
+                    {item.secondaryTag ? <TagPill text={item.secondaryTag} secondary /> : null}
                   </View>
-                ))}
-              </View>
-            </Pressable>
-          )) : (
-            <View style={{ paddingVertical: 12, alignItems: "center" }}>
-              <Text style={{ fontSize: 12, color: colors.muted, fontWeight: "600" }}>
-                {groups.loading ? "Loading groups…" : "No peer groups yet — join one!"}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Audio stream card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={styles.cardTitle}>Audio Streams</Text>
-                <View style={styles.liveBadge}>
-                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                  <Text style={styles.popularTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={styles.popularSub} numberOfLines={2}>{item.subtitle}</Text>
                 </View>
-              </View>
-              <Text style={styles.cardSub}>Expert talks available now</Text>
-            </View>
-            <Pressable style={styles.playBtn}>
-              <Ionicons name="play" size={18} color="#FFF" />
-            </Pressable>
+                <View style={styles.inlineAction}>
+                  <Text style={styles.inlineActionText}>{item.ctaLabel}</Text>
+                  <Ionicons name="arrow-forward" size={15} color={palette.ink} />
+                </View>
+              </Pressable>
+            ))}
           </View>
-          <View style={styles.expertRow}>
-            <View style={styles.expertAvatar}>
-              <Ionicons name="person" size={16} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.expertName}>Dr. Sharma</Text>
-              <Text style={styles.expertTopic}>Soil Health Management</Text>
-            </View>
-            <View style={styles.expertBadge}>
-              <Ionicons name="shield-checkmark" size={11} color={colors.success} />
-              <Text style={styles.expertBadgeText}>Expert</Text>
-            </View>
-          </View>
-        </View>
+        ) : (
+          <EmptySectionCard
+            title="No personalized courses yet"
+            subtitle={profileData ? "Complete a course or refresh recommendations to see profile-based learning picks." : "Add learning goals in your profile to unlock personalized courses."}
+          />
+        )}
 
-        {/* Verified credentials */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Verified Credentials</Text>
-              <Text style={styles.cardSub}>DigiLocker integration</Text>
+        <SectionHeader
+          title="Live Streams"
+          action={canOpenResources ? "View All" : undefined}
+          onAction={canOpenResources ? () => nav.navigate("KnowledgeResources", { initialTab: "videos", query: searchQuery, language: preferredLanguage }) : undefined}
+          live
+        />
+        {activeLiveRoom ? (
+          <Pressable style={styles.liveCard} onPress={() => nav.navigate("VoiceRoom", { roomId: activeLiveRoom.roomId })}>
+            <AvatarBadge name={activeLiveRoom.host} verified={activeLiveRoom.verified} />
+            <View style={styles.liveBody}>
+              <Text style={styles.liveHost}>{activeLiveRoom.host}</Text>
+              <Text style={styles.liveTopic} numberOfLines={2}>{activeLiveRoom.title}</Text>
+              <View style={styles.liveMeta}>
+                <Ionicons name="people" size={13} color={palette.live} />
+                <Text style={styles.liveMetaText}>{activeLiveRoom.listeners}</Text>
+              </View>
             </View>
-            <Ionicons name="shield-checkmark" size={24} color={colors.success} />
-          </View>
-          <View style={styles.credRow}>
-            <Ionicons name="document-text" size={16} color={colors.primary} />
-            <Text style={styles.credText}>Land Record — Verified</Text>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-          </View>
-          <View style={styles.credRow}>
-            <Ionicons name="card" size={16} color={colors.primary} />
-            <Text style={styles.credText}>Aadhaar — Linked</Text>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-          </View>
-        </View>
+            <View style={styles.playCircle}>
+              <Ionicons name="play" size={22} color={palette.ink} />
+            </View>
+          </Pressable>
+        ) : fallbackLive ? (
+          <Pressable style={styles.liveCard} onPress={() => openExternal(fallbackLive.url)}>
+            <AvatarBadge name={fallbackLive.tag ?? "YouTube"} verified />
+            <View style={styles.liveBody}>
+              <Text style={styles.liveHost}>{fallbackLive.tag ?? "YouTube Live"}</Text>
+              <Text style={styles.liveTopic} numberOfLines={2}>{fallbackLive.title}</Text>
+              <View style={styles.liveMeta}>
+                <Ionicons name="radio" size={13} color={palette.live} />
+                <Text style={styles.liveMetaText}>{fallbackLive.meta || "Open live search"}</Text>
+              </View>
+            </View>
+            <View style={styles.playCircle}>
+              <Ionicons name="play" size={22} color={palette.ink} />
+            </View>
+          </Pressable>
+        ) : (
+          <EmptySectionCard
+            title="No live sessions found"
+            subtitle={canOpenResources ? `No active live sessions matched "${searchQuery}".` : "Set a learning topic to discover live sessions."}
+          />
+        )}
+
+        <SectionHeader
+          title="Peer Learning Groups"
+          action="Find More Groups"
+          onAction={() => nav.navigate("Community")}
+        />
+        {peerGroups.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupRail}>
+            {peerGroups.slice(0, 6).map((group: any, index: number) => {
+              const groupId = group.group_id ?? group.groupId ?? group.id;
+              const memberCount = getGroupMemberCount(group);
+              return (
+                <Pressable
+                  key={groupId ?? `${group.group_name ?? group.name}-${index}`}
+                  style={styles.groupCard}
+                  onPress={() => (groupId ? nav.navigate("PeerGroupDetail", { groupId }) : nav.navigate("Community"))}
+                >
+                  <Text style={styles.groupTitle} numberOfLines={2}>{group.group_name ?? group.name}</Text>
+                  <View style={styles.groupAvatarRow}>
+                    {buildInitials(group.group_name ?? group.name ?? "Group").slice(0, 4).map((initial, avatarIndex) => (
+                      <View key={`${initial}-${avatarIndex}`} style={[styles.groupAvatar, { left: avatarIndex * 18 }]}>
+                        <Text style={styles.groupAvatarText}>{initial}</Text>
+                      </View>
+                    ))}
+                    <Text style={styles.groupCount}>{memberCount} Active</Text>
+                  </View>
+                  {group.verified ? (
+                    <View style={styles.groupVerified}>
+                      <Ionicons name="checkmark-circle" size={13} color={colors.success} />
+                      <Text style={styles.groupVerifiedText}>Verified</Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : (
+          <EmptySectionCard
+            title="No real peer groups to show"
+            subtitle={profileData ? "Join or create a peer group to see real learning circles here." : "Set your learning goals to match with peer groups."}
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function SectionHeader({
+  title,
+  action,
+  onAction,
+  live,
+}: {
+  title: string;
+  action?: string;
+  onAction?: () => void;
+  live?: boolean;
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionRight}>
+        {action ? (
+          <Pressable onPress={onAction}>
+            <Text style={styles.sectionAction}>{action}</Text>
+          </Pressable>
+        ) : null}
+        {live ? (
+          <View style={styles.liveIndicator}>
+            <View style={styles.liveIndicatorDot} />
+            <Text style={styles.liveIndicatorText}>LIVE</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function Thumbnail({ kind, label, compact, thumbnail }: { kind: string; label: string; compact?: boolean; thumbnail?: string }) {
+  const iconName =
+    kind === "official"
+      ? "school-outline"
+      : kind === "article"
+        ? "logo-google"
+        : kind === "live"
+          ? "play-circle"
+          : "logo-youtube";
+
+  return (
+    <View style={[styles.thumb, compact && styles.thumbCompact]}>
+      {thumbnail ? (
+        <Image source={{ uri: thumbnail }} style={styles.thumbImage} resizeMode="cover" />
+      ) : null}
+      <View style={styles.thumbOverlay}>
+        <Ionicons name={iconName as any} size={compact ? 24 : 30} color={compact ? palette.goldDark : palette.paper} />
+        <Text style={[styles.thumbLabel, compact && styles.thumbLabelCompact]} numberOfLines={1}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+
+function TagPill({ text, secondary }: { text: string; secondary?: boolean }) {
+  return (
+    <View style={[styles.tagPill, secondary && styles.tagPillSecondary]}>
+      <Text style={[styles.tagPillText, secondary && styles.tagPillTextSecondary]}>{text}</Text>
+    </View>
+  );
+}
+
+function AvatarBadge({ name, verified }: { name: string; verified?: boolean }) {
+  const initial = name.charAt(0).toUpperCase();
+  return (
+    <View style={styles.avatarWrap}>
+      <View style={styles.avatarCircle}>
+        <Text style={styles.avatarInitial}>{initial}</Text>
+      </View>
+      {verified ? (
+        <View style={styles.avatarVerified}>
+          <Ionicons name="checkmark" size={12} color={palette.paper} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function EmptySectionCard({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <View style={styles.emptyCard}>
+      <Ionicons name="sparkles-outline" size={20} color={palette.goldDark} />
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptySubtitle}>{subtitle}</Text>
+    </View>
+  );
+}
+
+function buildInitials(name: string) {
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ["K", "H"];
+  return parts.map((part) => part.charAt(0).toUpperCase());
+}
+
+function normalizeFacts(factsRaw: any): Record<string, string> {
+  if (!factsRaw) return {};
+  if (Array.isArray(factsRaw)) {
+    return factsRaw.reduce((acc: Record<string, string>, fact: any) => {
+      if (fact?.factKey) acc[fact.factKey] = String(fact.factValue ?? "");
+      return acc;
+    }, {});
+  }
+  if (typeof factsRaw === "object") {
+    return Object.entries(factsRaw).reduce((acc: Record<string, string>, [key, value]) => {
+      if (value != null) acc[key] = String(value);
+      return acc;
+    }, {});
+  }
+  return {};
+}
+
+function buildVoiceLearningProfile(
+  factsMap: Record<string, string>,
+  history: Array<{ role: string; text: string }>,
+  lastCommand: any,
+  voiceLanguage: string,
+  courses: any[],
+) {
+  const recentUserTexts = history
+    .filter((entry) => entry.role === "user")
+    .slice(-6)
+    .map((entry) => entry.text);
+  const recentTopics = extractRecentTopics([
+    ...recentUserTexts,
+    lastCommand?.transcript ?? "",
+    lastCommand?.responseTextEnglish ?? "",
+  ]);
+  const goals = uniqueStrings([
+    ...toStringArray((factsMap.crops ?? "").split(",")),
+    ...toStringArray((factsMap.livestock ?? "").split(",")),
+    ...recentTopics,
+  ]).slice(0, 4);
+  const interests = uniqueStrings([
+    factsMap.irrigation_type,
+    factsMap.income_source,
+    factsMap.education_level,
+    ...recentTopics,
+    ...toStringArray(courses.map((course: any) => course?.category)),
+  ]).slice(0, 6);
+
+  return {
+    learningGoals: goals,
+    interests,
+    preferredLanguage: normalizeLanguageCode(factsMap.primary_language || factsMap.preferred_language || voiceLanguage),
+    location: {
+      state: factsMap.location_state || "",
+      district: factsMap.location_district || "",
+    },
+  };
+}
+
+function extractRecentTopics(texts: string[]) {
+  const stopWords = new Set([
+    "show", "tell", "give", "open", "search", "find", "watch", "read", "video", "videos", "article", "articles",
+    "youtube", "live", "stream", "streams", "please", "me", "for", "about", "need", "want", "help", "best",
+  ]);
+
+  return uniqueStrings(
+    texts
+      .join(" ")
+      .toLowerCase()
+      .replace(/[^a-z0-9\u0900-\u097f\s]/g, " ")
+      .split(/\s+/)
+      .filter((word) => isUsableTopic(word) && !stopWords.has(word)),
+  ).slice(0, 6);
+}
+
+function normalizeLanguageCode(value?: string) {
+  const lang = String(value ?? "").trim().toLowerCase();
+  if (!lang) return "hi";
+  return lang.includes("-") ? lang.split("-")[0] : lang;
+}
+
+function deriveLearningQuery(profileData: any, courses: any[]) {
+  const candidates = [
+    ...(toStringArray(profileData?.learningGoals)),
+    ...(toStringArray(profileData?.interests)),
+    ...toStringArray(courses?.map((item: any) => item?.title ?? item?.category)),
+  ];
+
+  return candidates.map((candidate) => normalizeSearchQuery(candidate)).find(Boolean);
+}
+
+function buildKnowledgeBanner(profileData: any, nextStep?: string, query?: string) {
+  if (nextStep) return nextStep;
+  const goal = toStringArray(profileData?.learningGoals)[0] ?? toStringArray(profileData?.interests)[0];
+  if (goal) return `Showing resources and groups aligned to your learning goal: ${goal}.`;
+  if (query) return `Showing real resources for ${query}.`;
+  return "Add learning goals in your profile to unlock personalized resources and peer groups.";
+}
+
+function rankKnowledgeItems(items: any[], profileData: any) {
+  const preferredLanguage = String(profileData?.preferredLanguage ?? "").toLowerCase();
+  const profileTerms = new Set(
+    [
+      ...toStringArray(profileData?.learningGoals),
+      ...toStringArray(profileData?.interests),
+    ].map((value) => value.toLowerCase()),
+  );
+
+  return [...items].sort((a, b) => scoreKnowledgeItem(b, profileTerms, preferredLanguage) - scoreKnowledgeItem(a, profileTerms, preferredLanguage));
+}
+
+function scoreKnowledgeItem(item: any, profileTerms: Set<string>, preferredLanguage: string) {
+  const text = [item?.title, item?.description, item?.reason, item?.category].filter(Boolean).join(" ").toLowerCase();
+  let score = 0;
+
+  for (const term of profileTerms) {
+    if (term && text.includes(term)) score += 3;
+  }
+  if (preferredLanguage && String(item?.language ?? "").toLowerCase() === preferredLanguage) score += 2;
+  return score;
+}
+
+function selectRelevantPeerGroups(allGroups: any[], profileData: any) {
+  const profileTerms = [
+    ...toStringArray(profileData?.learningGoals),
+    ...toStringArray(profileData?.interests),
+  ].map((value) => value.toLowerCase());
+  const preferredLanguage = String(profileData?.preferredLanguage ?? "").toLowerCase();
+  const state = String(profileData?.location?.state ?? "").toLowerCase();
+  const merged = dedupeGroups(allGroups);
+
+  return merged
+    .map((group) => ({ group, score: scorePeerGroup(group, profileTerms, preferredLanguage, state) }))
+    .filter(({ group, score }) => {
+      if (profileTerms.length === 0) return false;
+      return score > 0;
+    })
+    .sort((a, b) => b.score - a.score || getGroupMemberCount(b.group) - getGroupMemberCount(a.group))
+    .map(({ group }) => group);
+}
+
+function scorePeerGroup(group: any, profileTerms: string[], preferredLanguage: string, state: string) {
+  const text = [
+    group?.group_name,
+    group?.name,
+    group?.description,
+    group?.category,
+    ...(Array.isArray(group?.goals) ? group.goals : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  let score = 0;
+  for (const term of profileTerms) {
+    if (text.includes(term)) score += 4;
+  }
+  if (preferredLanguage && String(group?.language ?? "").toLowerCase() === preferredLanguage) score += 2;
+  if (state && String(group?.location?.state ?? "").toLowerCase() === state) score += 2;
+  score += Math.min(getGroupMemberCount(group), 20) * 0.1;
+  return score;
+}
+
+function dedupeGroups(groups: any[]) {
+  const seen = new Set<string>();
+  return groups.filter((group) => {
+    const key = String(group?.group_id ?? group?.groupId ?? group?.id ?? group?.name ?? "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getGroupMemberCount(group: any) {
+  if (typeof group?.member_count === "number") return group.member_count;
+  if (Array.isArray(group?.members)) return group.members.length;
+  return Number(group?.members ?? 0);
+}
+
+function toStringArray(values: any) {
+  const raw = Array.isArray(values) ? values : [];
+  return raw.flatMap((value) => String(value ?? "").split(",")).map((value) => value.trim()).filter(Boolean);
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const normalized = String(value ?? "").trim();
+    if (!normalized) return false;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isUsableTopic(word: string) {
+  if (!word || word.length < 3 || word.length > 40) return false;
+  if (/^(.)\1{5,}$/i.test(word)) return false;
+  return true;
+}
+
+function normalizeSearchQuery(value: string) {
+  const cleaned = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (!cleaned || cleaned.length > 80) return "";
+  if (/^(.)\1{5,}$/i.test(cleaned.replace(/\s/g, ""))) return "";
+  return cleaned;
+}
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: "900", color: colors.ink },
-  onlineDot: { width: 8, height: 8, borderRadius: 4 },
-  content: { padding: 16, paddingBottom: 100 },
-  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: colors.border, gap: 12, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
-  cardHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
-  cardTitle: { fontSize: 15, fontWeight: "900", color: colors.ink },
-  cardSub: { fontSize: 11, fontWeight: "600", color: colors.muted, marginTop: 2 },
-  courseRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  courseIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" },
-  courseName: { fontSize: 12, fontWeight: "700", color: colors.ink, marginBottom: 4 },
-  progressTrack: { height: 4, borderRadius: 2, backgroundColor: colors.border },
-  progressFill: { height: 4, borderRadius: 2, backgroundColor: colors.primary },
-  progressPct: { fontSize: 11, fontWeight: "800", color: colors.primary, width: 34, textAlign: "right" },
-  groupRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  groupIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" },
-  groupName: { fontSize: 12, fontWeight: "800", color: colors.ink },
-  groupMeta: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 1 },
-  avatarStack: { width: 52, height: 24, position: "relative" },
-  avatar: { position: "absolute", width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: "#FFF", alignItems: "center", justifyContent: "center" },
-  avatarText: { fontSize: 8, fontWeight: "900", color: colors.ink },
-  liveBadge: { backgroundColor: colors.danger, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
-  liveBadgeText: { fontSize: 9, fontWeight: "900", color: "#FFF", letterSpacing: 0.4 },
-  playBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
-  expertRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  expertAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" },
-  expertName: { fontSize: 12, fontWeight: "800", color: colors.ink },
-  expertTopic: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 1 },
-  expertBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.successTint, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
-  expertBadgeText: { fontSize: 9, fontWeight: "800", color: colors.success },
-  credRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
-  credText: { flex: 1, fontSize: 12, fontWeight: "700", color: colors.ink },
+  safe: { flex: 1, backgroundColor: palette.bg },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: palette.goldDark,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: palette.goldDark,
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "900", color: palette.ink },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  content: { paddingHorizontal: 18, paddingBottom: 120 },
+  nextStepBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: palette.goldSoft,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "rgba(183,141,50,0.18)",
+  },
+  nextStepText: { flex: 1, fontSize: 12, fontWeight: "700", color: palette.ink, lineHeight: 18 },
+  emptyCard: {
+    alignItems: "center",
+    backgroundColor: palette.paper,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    borderWidth: 1,
+    borderColor: palette.line,
+    marginBottom: 14,
+  },
+  emptyTitle: { marginTop: 8, fontSize: 15, fontWeight: "900", color: palette.ink, textAlign: "center" },
+  emptySubtitle: { marginTop: 6, fontSize: 12, fontWeight: "600", color: palette.muted, lineHeight: 18, textAlign: "center" },
+  sourceCard: {
+    flexDirection: "row",
+    gap: 14,
+    backgroundColor: palette.paper,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: palette.line,
+    shadowColor: "#A78652",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  thumb: {
+    width: 98,
+    height: 98,
+    borderRadius: 22,
+    backgroundColor: palette.goldDark,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+    gap: 8,
+    overflow: "hidden",
+  },
+  thumbCompact: {
+    width: 92,
+    height: 92,
+    backgroundColor: palette.goldSoft,
+  },
+  thumbImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  thumbOverlay: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+    gap: 8,
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
+  thumbLabel: { color: palette.paper, fontSize: 11, fontWeight: "800", textAlign: "center" },
+  thumbLabelCompact: { color: palette.goldDark },
+  sourceBody: { flex: 1, justifyContent: "center" },
+  sourceTitle: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 22 },
+  sourceSub: { marginTop: 4, fontSize: 12, fontWeight: "600", color: palette.muted, lineHeight: 17 },
+  sourceBtn: {
+    marginTop: 14,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#E7C76C",
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    shadowColor: "#D0A841",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
+  sourceBtnText: { fontSize: 14, fontWeight: "900", color: palette.ink },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+    marginBottom: 12,
+  },
+  sectionTitle: { fontSize: 17, fontWeight: "900", color: palette.ink },
+  sectionRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  sectionAction: { fontSize: 13, fontWeight: "700", color: palette.muted },
+  liveIndicator: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveIndicatorDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.live },
+  liveIndicatorText: { fontSize: 12, fontWeight: "900", color: palette.live },
+  stack: { gap: 12 },
+  popularCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: palette.paper,
+    borderRadius: 22,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  popularBody: { flex: 1 },
+  tagRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  tagPill: {
+    backgroundColor: "rgba(192,213,165,0.45)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  tagPillSecondary: { backgroundColor: "rgba(222,205,164,0.34)" },
+  tagPillText: { fontSize: 11, fontWeight: "700", color: "#5D6B3A" },
+  tagPillTextSecondary: { color: palette.live },
+  popularTitle: { fontSize: 15, fontWeight: "900", color: palette.ink, lineHeight: 20 },
+  popularSub: { marginTop: 4, fontSize: 12, fontWeight: "600", color: palette.muted, lineHeight: 16 },
+  inlineAction: {
+    backgroundColor: "#E7C76C",
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  inlineActionText: { fontSize: 11, fontWeight: "900", color: palette.ink },
+  liveCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: palette.paper,
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  avatarWrap: { position: "relative" },
+  avatarCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#E7DED1",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: palette.line,
+  },
+  avatarInitial: { fontSize: 28, fontWeight: "900", color: palette.live },
+  avatarVerified: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: palette.goldDark,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  liveBody: { flex: 1 },
+  liveHost: { fontSize: 18, fontWeight: "900", color: palette.ink },
+  liveTopic: { marginTop: 2, fontSize: 14, fontWeight: "700", color: palette.ink, lineHeight: 19 },
+  liveMeta: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 6 },
+  liveMetaText: { fontSize: 12, fontWeight: "700", color: palette.live },
+  playCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#E7C76C",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#D0A841",
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  groupRail: { gap: 14, paddingRight: 8 },
+  groupCard: {
+    width: 220,
+    minHeight: 142,
+    backgroundColor: palette.paper,
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: palette.line,
+    justifyContent: "space-between",
+  },
+  groupTitle: { fontSize: 16, fontWeight: "900", color: palette.ink, lineHeight: 21 },
+  groupAvatarRow: { marginTop: 18, minHeight: 28, paddingLeft: 56, justifyContent: "center" },
+  groupAvatar: {
+    position: "absolute",
+    top: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#E7DED1",
+    borderWidth: 2,
+    borderColor: palette.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupAvatarText: { fontSize: 11, fontWeight: "900", color: palette.live },
+  groupCount: { fontSize: 13, fontWeight: "700", color: palette.ink },
+  groupVerified: { marginTop: 14, flexDirection: "row", alignItems: "center", gap: 6 },
+  groupVerifiedText: { fontSize: 12, fontWeight: "700", color: colors.success },
 });

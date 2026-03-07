@@ -202,7 +202,21 @@ INSERT INTO market_prices (crop_type, variety, mandi_name, mandi_code, state, di
     ('sugarcane', 'CO-0238', 'Muzaffarnagar', 'UP003', 'Uttar Pradesh', 'Muzaffarnagar', 350, 400, 380, 8000, CURRENT_DATE, 'manual'),
     ('mustard', 'Pusa Bold', 'Jaipur Mandi', 'RJ001', 'Rajasthan', 'Jaipur', 4800, 5500, 5200, 1500, CURRENT_DATE, 'e-NAM'),
     ('chana', 'Kabuli', 'Latur Mandi', 'MH004', 'Maharashtra', 'Latur', 4500, 5200, 4800, 900, CURRENT_DATE, 'e-NAM'),
-    ('maize', 'Hybrid', 'Davangere Mandi', 'KA002', 'Karnataka', 'Davangere', 1600, 2100, 1850, 1800, CURRENT_DATE, 'agmarknet');
+    ('maize', 'Hybrid', 'Davangere Mandi', 'KA002', 'Karnataka', 'Davangere', 1600, 2100, 1850, 1800, CURRENT_DATE, 'agmarknet'),
+    -- Additional crops for 15+ coverage
+    ('sunflower', 'KBSH-44', 'Raichur Mandi', 'KA003', 'Karnataka', 'Raichur', 5200, 5800, 5500, 600, CURRENT_DATE, 'e-NAM'),
+    ('sunflower', 'Morden', 'Latur Mandi', 'MH004', 'Maharashtra', 'Latur', 5000, 5600, 5300, 400, CURRENT_DATE, 'agmarknet'),
+    ('groundnut', 'TG-37A', 'Junagadh Mandi', 'GJ002', 'Gujarat', 'Junagadh', 5500, 6200, 5800, 1200, CURRENT_DATE, 'e-NAM'),
+    ('groundnut', 'TMV-2', 'Anantapur Mandi', 'AP001', 'Andhra Pradesh', 'Anantapur', 5200, 5900, 5600, 900, CURRENT_DATE, 'agmarknet'),
+    ('turmeric', 'Salem', 'Erode Mandi', 'TN001', 'Tamil Nadu', 'Erode', 8000, 12000, 10500, 500, CURRENT_DATE, 'e-NAM'),
+    ('turmeric', 'Nizamabad', 'Nizamabad Mandi', 'TG001', 'Telangana', 'Nizamabad', 7500, 11000, 9800, 700, CURRENT_DATE, 'agmarknet'),
+    ('cumin', 'Gujarat', 'Unjha Mandi', 'GJ003', 'Gujarat', 'Mehsana', 32000, 38000, 35000, 300, CURRENT_DATE, 'e-NAM'),
+    ('cumin', 'Rajasthan', 'Jodhpur Mandi', 'RJ002', 'Rajasthan', 'Jodhpur', 31000, 37000, 34500, 250, CURRENT_DATE, 'agmarknet'),
+    ('jowar', 'Hybrid', 'Solapur Mandi', 'MH005', 'Maharashtra', 'Solapur', 2800, 3400, 3100, 800, CURRENT_DATE, 'e-NAM'),
+    ('bajra', 'Hybrid', 'Jaipur Mandi', 'RJ001', 'Rajasthan', 'Jaipur', 2200, 2800, 2500, 1000, CURRENT_DATE, 'e-NAM'),
+    ('arhar', 'ICPL-87', 'Latur Mandi', 'MH004', 'Maharashtra', 'Latur', 6500, 7500, 7000, 400, CURRENT_DATE, 'e-NAM'),
+    ('urad', 'T9', 'Indore Mandi', 'MP001', 'Madhya Pradesh', 'Indore', 6000, 7000, 6500, 500, CURRENT_DATE, 'e-NAM'),
+    ('moong', 'Virat', 'Jaipur Mandi', 'RJ001', 'Rajasthan', 'Jaipur', 7000, 8000, 7500, 300, CURRENT_DATE, 'e-NAM');
 
 -- Seed some buyers
 INSERT INTO buyers (user_id, business_name, business_type, location_state, location_district, crops_interested, is_verified, trust_score, registered_via) VALUES

@@ -14,11 +14,13 @@ import { logger } from '../utils/logger';
 
 let _authToken: string | null = null;
 let _userId: string = ENV.DEMO_USER_ID;
+let _userName: string = 'Demo User';
 
 /** Call from AuthContext when user logs in / out. */
-export function setAuthCredentials(token: string | null, userId?: string) {
+export function setAuthCredentials(token: string | null, userId?: string, userName?: string) {
   _authToken = token;
   _userId = userId || ENV.DEMO_USER_ID;
+  _userName = userName || 'Demo User';
 }
 
 /* ────────────────────────────────────────────── */
@@ -57,6 +59,7 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
 
 async function request<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params, headers = {}, signal, timeout } = opts;
+  const hasJsonBody = method !== 'GET' && body !== undefined;
 
   const controller = new AbortController();
   const timeoutMs = timeout ?? ENV.REQUEST_TIMEOUT;
@@ -65,17 +68,17 @@ async function request<T = unknown>(path: string, opts: RequestOptions = {}): Pr
   const fetchOpts: RequestInit = {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
       // Auth: prefer Bearer token, fall back to X-User-Id for demo mode
       ...(_authToken
-        ? { 'Authorization': `Bearer ${_authToken}` }
-        : { 'X-User-Id': _userId }),
+        ? { 'Authorization': `Bearer ${_authToken}`, 'X-User-Name': _userName }
+        : { 'X-User-Id': _userId, 'X-User-Name': _userName }),
       ...headers,
     },
     signal: signal ?? controller.signal,
   };
 
-  if (body && method !== 'GET') {
+  if (hasJsonBody) {
     fetchOpts.body = JSON.stringify(body);
   }
 
@@ -177,17 +180,95 @@ export interface PriceEntry {
 
 export interface PricesResult {
   crop: string;
+  crop_type?: string;
   prices: PriceEntry[];
   summary: { average_price: number; min_price: number; max_price: number; mandi_count: number };
   last_updated: string;
+  source?: string;
+  fresh?: boolean;
+  message?: string;
+}
+
+interface RawPriceEntry {
+  mandi_name?: string;
+  market?: string;
+  price_per_quintal?: number | string;
+  modal_price?: number | string;
+  price?: number | string;
+  state?: string;
+  district?: string;
+  date?: string;
+  trade_date?: string;
+  arrival_date?: string;
+  change?: 'up' | 'down' | 'same';
+}
+
+interface RawPricesResult {
+  crop?: string;
+  crop_type?: string;
+  prices?: RawPriceEntry[];
+  summary?: {
+    average_price?: number | string;
+    avgPrice?: number | string;
+    min_price?: number | string;
+    minPrice?: number | string;
+    max_price?: number | string;
+    maxPrice?: number | string;
+    mandi_count?: number | string;
+    totalMandis?: number | string;
+  } | null;
+  last_updated?: string;
+  source?: string;
+  fresh?: boolean;
+  message?: string;
+}
+
+function toNumericValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function normalizePriceEntry(entry: RawPriceEntry): PriceEntry {
+  return {
+    mandi_name: String(entry.mandi_name ?? entry.market ?? 'Unknown mandi'),
+    price_per_quintal: toNumericValue(entry.price_per_quintal ?? entry.modal_price ?? entry.price),
+    state: String(entry.state ?? ''),
+    district: String(entry.district ?? ''),
+    date: String(entry.date ?? entry.trade_date ?? entry.arrival_date ?? ''),
+    change: entry.change,
+  };
+}
+
+function normalizePriceSummary(summary?: RawPricesResult['summary']) {
+  return {
+    average_price: toNumericValue(summary?.average_price ?? summary?.avgPrice),
+    min_price: toNumericValue(summary?.min_price ?? summary?.minPrice),
+    max_price: toNumericValue(summary?.max_price ?? summary?.maxPrice),
+    mandi_count: toNumericValue(summary?.mandi_count ?? summary?.totalMandis),
+  };
 }
 
 export const marketApi = {
-  getPrices: (crop: string, state?: string, district?: string) =>
-    api.get<PricesResult>(`/agriculture/prices/${encodeURIComponent(crop)}`, { state, district }),
+  getPrices: async (crop: string, state?: string, district?: string) => {
+    const result = await api.get<RawPricesResult>(`/agriculture/prices/${encodeURIComponent(crop)}`, { state, district });
+    return {
+      crop: String(result.crop ?? result.crop_type ?? crop),
+      crop_type: result.crop_type,
+      prices: Array.isArray(result.prices) ? result.prices.map(normalizePriceEntry) : [],
+      summary: normalizePriceSummary(result.summary),
+      last_updated: result.last_updated ?? new Date().toISOString(),
+      source: result.source,
+      fresh: result.fresh,
+      message: result.message,
+    } satisfies PricesResult;
+  },
 
-  getPriceTrend: (crop: string, mandiCode?: string, days = 30) =>
-    api.get(`/agriculture/prices/${encodeURIComponent(crop)}/trend`, { mandi_code: mandiCode, days }),
+  getPriceTrend: (crop: string, mandiCode?: string, days = 30, state?: string) =>
+    api.get(`/agriculture/prices/${encodeURIComponent(crop)}/trend`, { mandi_code: mandiCode, days, state }),
 
   getMandis: (state?: string) =>
     api.get<{ mandis: Array<{ name: string; code: string; state: string; district: string }> }>('/agriculture/mandis', { state }),
@@ -338,6 +419,29 @@ export interface Course {
   modules: Array<{ module_id: string; title: string }>;
 }
 
+export interface KnowledgeExternalResource {
+  id: string;
+  kind: "official" | "video" | "article" | "live";
+  title: string;
+  url: string;
+  snippet?: string;
+  thumbnail?: string;
+  source?: string;
+  viewers?: string;
+  published?: string;
+  live?: boolean;
+}
+
+export interface KnowledgeExternalSearchResult {
+  query: string;
+  language: string;
+  videos: KnowledgeExternalResource[];
+  articles: KnowledgeExternalResource[];
+  live_streams: KnowledgeExternalResource[];
+  official_sources: KnowledgeExternalResource[];
+  cached?: boolean;
+}
+
 export const knowledgeApi = {
   getCourses: (language?: string, difficulty?: string) =>
     api.get<{ courses: Course[] }>('/knowledge/courses', { language, difficulty }),
@@ -368,6 +472,9 @@ export const knowledgeApi = {
 
   syncGovtCourses: (body: { portal: string }) =>
     api.post('/knowledge/govt-courses/sync', body),
+
+  searchResources: (params?: { q?: string; language?: string; limit?: number }) =>
+    api.get<KnowledgeExternalSearchResult>('/knowledge/resources/search', params as any),
 
   autoJoinPeerGroup: () =>
     api.post('/knowledge/peer-groups/join'),
@@ -560,4 +667,396 @@ export const authApi = {
   /** Leave a peer group */
   leaveGroup: (groupId: string) =>
     api.post(`/auth/groups/${groupId}/leave`),
+};
+
+// ═══════════ Community (Posts, Bookmarks, Follows) ═══════════
+
+export interface CommunityPost {
+  id: string;
+  title: string;
+  content: string;
+  topic: string;
+  author_id: string;
+  author_name?: string;
+  likes: number;
+  bookmark_count: number;
+  created_at: string;
+}
+
+export const communityApi = {
+  createPost: (body: { title: string; content: string; topic?: string }) =>
+    api.post<CommunityPost>('/community/posts', body),
+
+  listPosts: (params?: { page?: number; limit?: number; topic?: string; search?: string }) =>
+    api.get<{ posts: CommunityPost[]; total: number; page: number; limit: number }>('/community/posts', params as any),
+
+  getPost: (id: string) =>
+    api.get<CommunityPost>(`/community/posts/${id}`),
+
+  toggleBookmark: (postId: string) =>
+    api.post(`/community/bookmarks/${postId}`),
+
+  listBookmarks: () =>
+    api.get<Array<{ post_id: string; created_at: string }>>('/community/bookmarks'),
+
+  toggleFollow: (targetUserId: string) =>
+    api.post(`/community/follow/${targetUserId}`),
+
+  listFollowing: () =>
+    api.get('/community/following'),
+
+  reportPost: (postId: string, body: { reason: string }) =>
+    api.post(`/community/posts/${postId}/report`, body),
+};
+
+// ═══════════ Business Directory ═══════════
+
+export interface BusinessCategory {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  subcategories: Array<{ id: string; name: string; sortOrder: number }>;
+}
+
+export interface Business {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  category_id: string;
+  category_name?: string;
+  description?: string;
+  is_verified: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const businessApi = {
+  listCategories: () =>
+    api.get<BusinessCategory[]>('/business/categories'),
+
+  getCategory: (id: string) =>
+    api.get<BusinessCategory>(`/business/categories/${id}`),
+
+  createBusiness: (body: { name: string; phone: string; address: string; categoryId: string; [k: string]: unknown }) =>
+    api.post<Business>('/business/listings', body),
+
+  listBusinesses: (params?: { page?: number; limit?: number; search?: string; categoryId?: string }) =>
+    api.get<{ businesses: Business[]; total: number; page: number; limit: number }>('/business/listings', params as any),
+
+  getBusiness: (id: string) =>
+    api.get<Business>(`/business/listings/${id}`),
+
+  updateBusiness: (id: string, body: Record<string, unknown>) =>
+    api.put(`/business/listings/${id}`, body),
+
+  deactivateBusiness: (id: string) =>
+    api.delete(`/business/listings/${id}`),
+};
+
+// ═══════════ Government Portals & Schemes ═══════════
+
+export interface GovtPortal {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  category: string;
+  region: string;
+}
+
+export interface GovtScheme {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  benefits: string;
+  eligibility_criteria: Record<string, unknown>;
+  documents_required: string[];
+  application_url?: string;
+  helpline?: string;
+}
+
+export const governmentApi = {
+  listPortals: (params?: { category?: string; region?: string; search?: string }) =>
+    api.get<{ portals: GovtPortal[]; total: number }>('/government/portals', params as any),
+
+  getPortal: (id: string) =>
+    api.get<GovtPortal>(`/government/portals/${id}`),
+
+  listSchemes: (params?: { category?: string; state?: string; search?: string; page?: number; limit?: number }) =>
+    api.get<{ schemes: GovtScheme[]; pagination: Record<string, unknown> }>('/government/schemes', params as any),
+
+  getScheme: (id: string) =>
+    api.get<GovtScheme>(`/government/schemes/${id}`),
+
+  listSchemeCategories: () =>
+    api.get('/government/scheme-categories'),
+
+  createComplaint: (body: { portalId: string; category: string; subject: string; description?: string }) =>
+    api.post('/government/complaints', body),
+
+  listComplaints: () =>
+    api.get('/government/complaints'),
+};
+
+// ═══════════ Livelihood ═══════════
+
+export interface LivelihoodCategory {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export interface LivelihoodGuidance {
+  id: string;
+  category_id: string;
+  title: string;
+  content: string;
+  difficulty: string;
+}
+
+export const livelihoodApi = {
+  listCategories: () =>
+    api.get<LivelihoodCategory[]>('/livelihood/categories'),
+
+  listGuidance: (params?: { categoryId?: string; search?: string }) =>
+    api.get<LivelihoodGuidance[]>('/livelihood/guidance', params as any),
+
+  getGuidance: (id: string) =>
+    api.get<LivelihoodGuidance>(`/livelihood/guidance/${id}`),
+};
+
+// ═══════════ Health AI ═══════════
+
+export interface SymptomCheckResult {
+  risk_level: string;
+  possible_conditions: string[];
+  recommended_action: string;
+  urgency?: string;
+  home_remedies: string[];
+  recommendations?: string[];
+  warning_signs: string[];
+  disclaimer: string;
+  checked_at?: string;
+}
+
+export interface HealthArticle {
+  id: string;
+  topic: string;
+  title: string;
+  content: string;
+  language: string;
+  created_at: string;
+}
+
+export interface HealthPortal {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  category: string;
+  eligibility_criteria?: Record<string, unknown>;
+  services_offered?: string[];
+}
+
+export interface HealthProvider {
+  id: string;
+  name: string;
+  type: string;
+  city: string;
+  state?: string;
+  address: string;
+  phone?: string;
+  website?: string;
+  services?: string[];
+  rating?: number;
+  has_online_booking?: boolean;
+}
+
+export type HealthImagingType = 'xray' | 'mri' | 'ct_scan' | 'ultrasound' | 'pathology';
+
+export interface HealthImagingUploadResponse {
+  documentId: string;
+  uploadUrl: string;
+  s3Key?: string;
+  imagingType: HealthImagingType;
+  status: string;
+  expiresIn?: string;
+  instructions?: string[];
+}
+
+export interface HealthImagingAnalysis {
+  general_info?: string;
+  common_findings?: string[];
+  next_steps?: string;
+  important_note?: string;
+}
+
+export interface HealthImagingAnalysisResponse {
+  documentId: string;
+  imagingType: HealthImagingType;
+  analysis: HealthImagingAnalysis;
+  disclaimer?: string;
+  analyzedAt?: string;
+  recommendation?: string;
+}
+
+export const healthApi = {
+  checkSymptoms: (body: { symptoms: string[]; age: number; gender: string; duration?: string; severity?: string; existingConditions?: string[] }) =>
+    api.post<SymptomCheckResult>('/health/symptoms/check', body),
+
+  listArticles: (params?: { topic?: string; language?: string; page?: number; limit?: number }) =>
+    api.get<{ articles: HealthArticle[]; total: number }>('/health/articles', params as any),
+
+  getArticle: (id: string) =>
+    api.get<HealthArticle>(`/health/articles/${id}`),
+
+  generateArticle: (body: { topic: string; language?: string }) =>
+    api.post<HealthArticle>('/health/articles/generate', body),
+
+  listHealthPortals: (params?: { category?: string; search?: string }) =>
+    api.get<HealthPortal[]>('/health/portals', params as any),
+
+  getHealthPortal: (id: string) =>
+    api.get<HealthPortal>(`/health/portals/${id}`),
+
+  checkEligibility: (body: { age: number; location: string; income?: number; familySize?: number; bplCard?: boolean; aadhaar?: boolean; gender?: string }) =>
+    api.post('/health/eligibility-check', body),
+
+  listProviders: (params?: { city?: string; type?: string; search?: string; page?: number; limit?: number }) =>
+    api.get<{ providers: HealthProvider[]; total: number }>('/health/providers', params as any),
+
+  getProvider: (id: string) =>
+    api.get<HealthProvider>(`/health/providers/${id}`),
+
+  initiateUpload: (body: { fileName: string; fileType: string; imagingType: HealthImagingType; metadata?: Record<string, unknown> }) =>
+    api.post<HealthImagingUploadResponse>('/health/imaging/upload', body),
+
+  getDocumentStatus: (id: string) =>
+    api.get(`/health/imaging/${id}/status`),
+
+  analyzeImage: (id: string, imagingType?: HealthImagingType) =>
+    api.post<HealthImagingAnalysisResponse>(`/health/imaging/${id}/analyze`, imagingType ? { imagingType } : {}),
+};
+
+// ═══════════ Open Data Export ═══════════
+
+export const openDataApi = {
+  exportUserData: (userId: string, format: 'json' | 'csv' = 'json') =>
+    api.get(`/open-data/export/${userId}`, { format }),
+};
+
+// ═══════════ Voice Rooms (Twitter Spaces-like) ═══════════
+
+export interface VoiceRoom {
+  roomId: string;
+  title: string;
+  description?: string | null;
+  topics: string[];
+  status: 'active' | 'ended';
+  isPrivate: boolean;
+  isRecording: boolean;
+  maxParticipants: number;
+  creatorId: string;
+  creatorName: string;
+  participantCount: number;
+  createdAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  participants?: VoiceRoomParticipant[];
+  metrics?: { duration: number; peakParticipants: number; endedAt: string };
+}
+
+export interface VoiceRoomParticipant {
+  roomId: string;
+  userId: string;
+  userName: string;
+  role: 'moderator' | 'speaker' | 'listener';
+  isMuted: boolean;
+  isBlocked: boolean;
+  joinedAt: string;
+  leftAt?: string | null;
+  requestedSpeak?: boolean;
+}
+
+export interface VoiceRoomChatMessage {
+  roomId: string;
+  messageId: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface VoiceRoomPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export const voiceRoomApi = {
+  // Rooms
+  createRoom: (body: { title: string; description?: string; topics?: string[]; isPrivate?: boolean; maxParticipants?: number }) =>
+    api.post<VoiceRoom>('/voice-rooms', body),
+
+  listRooms: (params?: { page?: number; limit?: number; status?: string; topic?: string; search?: string }) =>
+    api.get<{ rooms: VoiceRoom[]; pagination: VoiceRoomPagination }>('/voice-rooms', params as any),
+
+  getRoom: (roomId: string) =>
+    api.get<VoiceRoom>(`/voice-rooms/${roomId}`),
+
+  endRoom: (roomId: string) =>
+    api.post<{ roomId: string; status: string; endedAt: string; metrics: any }>(`/voice-rooms/${roomId}/end`),
+
+  // Join / Leave / Token
+  joinRoom: (roomId: string) =>
+    api.post<{ roomId: string; userId: string; role: string }>(`/voice-rooms/${roomId}/join`),
+
+  leaveRoom: (roomId: string) =>
+    api.post<{ roomId: string; userId: string; leftAt: string }>(`/voice-rooms/${roomId}/leave`),
+
+  getRoomToken: (roomId: string) =>
+    api.get<{ roomId: string; token: string | null; role: string }>(`/voice-rooms/${roomId}/token`),
+
+  // Chat
+  getChatMessages: (roomId: string, params?: { limit?: number; lastKey?: string }) =>
+    api.get<{ messages: VoiceRoomChatMessage[]; nextKey: string | null }>(`/voice-rooms/${roomId}/chat`, params as any),
+
+  sendChatMessage: (roomId: string, content: string) =>
+    api.post<VoiceRoomChatMessage>(`/voice-rooms/${roomId}/chat`, { content }),
+
+  // Moderation
+  muteUser: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/mute/${targetUserId}`),
+
+  unmuteUser: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/unmute/${targetUserId}`),
+
+  kickUser: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/kick/${targetUserId}`),
+
+  banUser: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/ban/${targetUserId}`),
+
+  transferModerator: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/transfer-moderator`, { targetUserId }),
+
+  toggleRecording: (roomId: string) =>
+    api.post(`/voice-rooms/${roomId}/toggle-recording`),
+
+  togglePrivacy: (roomId: string) =>
+    api.post(`/voice-rooms/${roomId}/toggle-privacy`),
+
+  requestToSpeak: (roomId: string) =>
+    api.post(`/voice-rooms/${roomId}/request-speak`),
+
+  approveSpeaker: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/approve-speaker/${targetUserId}`),
+
+  revokeSpeaker: (roomId: string, targetUserId: string) =>
+    api.post(`/voice-rooms/${roomId}/revoke-speaker/${targetUserId}`),
 };

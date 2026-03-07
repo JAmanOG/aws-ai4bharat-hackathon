@@ -3,12 +3,29 @@
  * Run from backend/: node local-server.js
  */
 const express = require('express');
+require('dotenv').config();
 const cors = require('cors');
 const app = express();
-const PORT = 3001;
+const PORT = 3002;
 
 app.use(cors());
 app.use(express.json());
+
+// Global Request Logger
+app.use((req, res, next) => {
+  const start = Date.now();
+  console.log(`\n[API:REQUEST] ${req.method} ${req.url}`);
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (res.statusCode >= 400) {
+      console.log(`[API:ERROR] ${req.method} ${req.url} - Status: ${res.statusCode} (${duration}ms)`);
+    } else {
+      console.log(`[API:SUCCESS] ${req.method} ${req.url} - Status: ${res.statusCode} (${duration}ms)`);
+    }
+  });
+  next();
+});
 
 const communityHandler = require('./lambdas/community/index');
 const governmentHandler = require('./lambdas/government/index');
@@ -32,12 +49,15 @@ function lambdaRoute(handler) {
   return async (req, res) => {
     try {
       const event = toLambdaEvent(req);
+      console.log(`\n[API:REQ_PAYLOAD] ${req.method} ${req.originalUrl} =>\n  Query: ${JSON.stringify(event.queryStringParameters)}\n  Body:  ${JSON.stringify(req.body)}`);
       const result = await handler.handler(event);
       const statusCode = result.statusCode || 200;
       const body = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      const resLog = JSON.stringify(body) || 'empty';
+      console.log(`[API:RES_PAYLOAD] ${req.method} ${req.originalUrl} <= Status: ${statusCode}\n  Body:  ${resLog.substring(0, 1000)}${resLog.length > 1000 ? '...' : ''}`);
       res.status(statusCode).json(body);
     } catch (err) {
-      console.error('Error:', err.message);
+      console.error(`[API:ERR_PAYLOAD] ${req.method} ${req.originalUrl} <=`, err.message);
       res.status(500).json({ error: err.message });
     }
   };
@@ -51,7 +71,7 @@ app.use('/following', lambdaRoute(communityHandler));
 app.use('/government', lambdaRoute(governmentHandler));
 app.use('/voice-rooms', lambdaRoute(voiceRoomHandler));
 
-app.listen(PORT, () => {
-  console.log(`✅ Feature 1 (Community) running at http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Feature 2 (Community) running at http://localhost:${PORT}`);
   console.log(`   Routes: /posts, /bookmarks, /government/*, /voice-rooms/*`);
 });

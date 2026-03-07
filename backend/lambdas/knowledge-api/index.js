@@ -8,6 +8,7 @@ const courses = require('./courses');
 const enrollment = require('./enrollment');
 const content = require('./content');
 const govtIntegration = require('./govt-integration');
+const { searchKnowledgeResources } = require('../../services/knowledge-search');
 
 exports.handler = async (event) => {
     console.log('Knowledge API event:', JSON.stringify(event, null, 2));
@@ -120,6 +121,15 @@ exports.handler = async (event) => {
 
         if (path.match(/\/knowledge\/govt-courses\/sync$/) && method === 'POST') {
             const result = await govtIntegration.syncGovtCourses(body.portal);
+            return success(result);
+        }
+
+        if (path.match(/\/knowledge\/resources\/search$/) && method === 'GET') {
+            const result = await searchKnowledgeResources({
+                query: queryParams.q,
+                language: queryParams.language || 'en',
+                limit: parseInt(queryParams.limit || '4', 10),
+            });
             return success(result);
         }
 

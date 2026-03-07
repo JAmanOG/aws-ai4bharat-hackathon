@@ -7,11 +7,14 @@ import { colors } from "../theme/colors";
 import { useVoice } from "../voice/VoiceContext";
 import { VisualizationCardRenderer } from "../voice/VoiceVisualizationCards";
 
+type QuickAction = { icon: string; label: string; screen: string; color: string };
+
 type ModuleConfig = {
   subtitle: string;
   topCardTitle: string;
   topCardLines: string[];
   voicePrompts: string[];
+  quickActions?: QuickAction[];
 };
 
 const MODULES: Record<string, ModuleConfig> = {
@@ -35,6 +38,10 @@ const MODULES: Record<string, ModuleConfig> = {
       "\"Digital literacy \u0938\u093F\u0916\u093E\u0913\" \u2014 Digital Skills",
       "\"Exam prep help\" \u2014 Study Support",
     ],
+    quickActions: [
+      { icon: "school-outline", label: "Knowledge Hub", screen: "KnowledgeDashboard", color: "#6A1B9A" },
+      { icon: "book-outline", label: "Courses", screen: "Action", color: "#1565C0" },
+    ],
   },
   FINANCE: {
     subtitle: "Artha \u2022 Loans \u2022 Benefits",
@@ -46,6 +53,13 @@ const MODULES: Record<string, ModuleConfig> = {
       "\"\u092C\u091A\u0924 \u0915\u0948\u0938\u0947 \u0915\u0930\u0947\u0902?\" \u2014 Savings Plan",
       "\"Loan \u0915\u0947 \u0932\u093F\u090F \u0915\u094D\u092F\u093E \u091A\u093E\u0939\u093F\u090F?\" \u2014 Micro-credit",
     ],
+    quickActions: [
+      { icon: "storefront-outline", label: "Business Directory", screen: "BusinessDirectory", color: "#EF6C00" },
+      { icon: "document-text-outline", label: "Schemes", screen: "SchemesList", color: "#6A1B9A" },
+      { icon: "shield-checkmark-outline", label: "Eligibility", screen: "Eligibility", color: "#1565C0" },
+      { icon: "wallet-outline", label: "Savings Nudges", screen: "SavingsNudge", color: "#2E7D32" },
+      { icon: "umbrella-outline", label: "Insurance Claims", screen: "InsuranceClaims", color: "#C62828" },
+    ],
   },
   HEALTH: {
     subtitle: "Swasthya \u2022 Care \u2022 Records",
@@ -56,6 +70,11 @@ const MODULES: Record<string, ModuleConfig> = {
       "\"Nearest clinic \u092C\u0924\u093E\u0913\" \u2014 Health Services",
       "\"\u091F\u0940\u0915\u093E\u0915\u0930\u0923 schedule\" \u2014 Vaccination",
     ],
+    quickActions: [
+      { icon: "medkit-outline", label: "Health Hub", screen: "HealthDashboard", color: "#C62828" },
+      { icon: "pulse-outline", label: "Symptom Checker", screen: "SymptomChecker", color: "#EF6C00" },
+      { icon: "fitness-outline", label: "Health Portals", screen: "HealthDashboard", color: "#6A1B9A" },
+    ],
   },
   INFRASTRUCTURE: {
     subtitle: "Suvidha \u2022 Civic \u2022 Utilities",
@@ -65,6 +84,12 @@ const MODULES: Record<string, ModuleConfig> = {
       "\"\u0938\u095C\u0915 \u0916\u0930\u093E\u092C \u0939\u0948\" \u2014 Report Issue",
       "\"\u092C\u093F\u091C\u0932\u0940 \u0915\u091F\u0940 \u0939\u0948\" \u2014 Utility Services",
       "\"Emergency number \u091A\u093E\u0939\u093F\u090F\" \u2014 Emergency",
+    ],
+    quickActions: [
+      { icon: "business-outline", label: "Govt Portals", screen: "GovtPortals", color: "#1565C0" },
+      { icon: "leaf-outline", label: "Livelihood", screen: "Livelihood", color: "#2E7D32" },
+      { icon: "mic-outline", label: "Voice Rooms", screen: "VoiceRooms", color: "#6A1B9A" },
+      { icon: "alert-circle-outline", label: "Alerts", screen: "Alerts", color: "#C62828" },
     ],
   },
 };
@@ -118,6 +143,33 @@ export default function ModuleScreen() {
             ))}
           </View>
         </View>
+
+        {/* Quick Actions */}
+        {config.quickActions && config.quickActions.length > 0 && (
+          <View style={{ marginTop: 14, gap: 8 }}>
+            <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {config.quickActions.map((action, idx) => (
+                <Pressable
+                  key={idx}
+                  style={styles.actionTile}
+                  onPress={() => {
+                    if (action.screen === "Action") {
+                      nav.navigate("Action", { moduleTitle: titleRaw, actionTitle: action.label });
+                    } else {
+                      nav.navigate(action.screen as any);
+                    }
+                  }}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: action.color + "18" }]}>
+                    <Ionicons name={action.icon as any} size={18} color={action.color} />
+                  </View>
+                  <Text style={styles.actionLabel} numberOfLines={1}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Voice prompts for this domain */}
         <View style={styles.promptSection}>
@@ -221,6 +273,23 @@ const styles = StyleSheet.create({
   promptText: { fontSize: 12, fontWeight: "700", color: colors.muted, lineHeight: 17 },
 
   sectionLabel: { fontSize: 10, fontWeight: "900", color: colors.muted, letterSpacing: 1, marginBottom: 8 },
+
+  actionTile: {
+    width: "47%" as any,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+  },
+  actionIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: "center", justifyContent: "center",
+  },
+  actionLabel: { flex: 1, fontSize: 11, fontWeight: "800", color: colors.ink },
 
   historyRow: {
     flexDirection: "row",

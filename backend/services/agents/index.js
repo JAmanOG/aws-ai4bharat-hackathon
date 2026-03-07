@@ -9,6 +9,7 @@ const agricultureAgent = require('./agriculture');
 const marketAgent = require('./market');
 const schemesAgent = require('./schemes');
 const healthAgent = require('./health');
+const knowledgeAgent = require('./knowledge');
 const generalAgent = require('./general');
 
 /* ─── Domain → Agent mapping ─── */
@@ -17,6 +18,7 @@ const AGENTS = {
     market: marketAgent,
     schemes: schemesAgent,
     health: healthAgent,
+    knowledge: knowledgeAgent,
     general: generalAgent,
 };
 
@@ -63,6 +65,16 @@ const INTENT_DOMAIN_MAP = {
     heat_prevention: 'health',
     health_scheme: 'health',
     facility_referral: 'health',
+
+    // Knowledge
+    request_video: 'knowledge',
+    request_article: 'knowledge',
+    request_course: 'knowledge',
+    knowledge_query: 'knowledge',
+    learning_content: 'knowledge',
+    training_resources: 'knowledge',
+    show_resources: 'knowledge',
+    peer_learning: 'knowledge',
 
     // General
     greeting: 'general',

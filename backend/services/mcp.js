@@ -60,7 +60,7 @@ const TOOL_DEFINITIONS = [
         inputSchema: {
             type: 'object',
             properties: {
-                domain: { type: 'string', enum: ['agriculture', 'market', 'schemes', 'health', 'general'] },
+                domain: { type: 'string', enum: ['agriculture', 'market', 'schemes', 'health', 'knowledge', 'general'] },
                 intent: { type: 'string' },
                 entities: { type: 'object' },
                 complexity: { type: 'string', enum: ['simple', 'moderate', 'complex'] },
@@ -102,6 +102,7 @@ const DOMAIN_CONTEXT = {
     schemes: 'You are an expert on Indian government schemes for farmers. Cover PM-KISAN, PMFBY, PKVY, KCC, subsidies, eligibility criteria, required documents, and deadlines. Direct users to CSC for offline help.',
     health: 'You provide rural health guidance for Indian communities. CRITICAL: NEVER diagnose conditions — always recommend professional medical consultation. For emergencies, direct to 108 (ambulance) or 112. Cover nutrition, maternal/child health, first aid, heat prevention.',
     general: 'You are a friendly assistant for rural Indian communities. Help with general knowledge, digital literacy, and connecting to available services.',
+    knowledge: 'You are a learning resource assistant for rural Indian farmers. Help find educational videos, articles, courses, and training content. Reference government training portals (ICAR, KVK, PMKVY) when relevant. Always provide actual resource links and titles.',
 };
 
 /* ═══════════════════════════════════════════════════════ */

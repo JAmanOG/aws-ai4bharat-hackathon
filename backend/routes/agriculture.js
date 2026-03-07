@@ -9,6 +9,7 @@ const prices = require('../lambdas/market-data/prices');
 const alerts = require('../lambdas/market-data/alerts');
 const bargaining = require('../lambdas/logistics/collective-bargaining');
 const transport = require('../lambdas/logistics/transport');
+const liveFetcher = require('../services/market-data-fetcher');
 
 async function agricultureRoutes(fastify) {
     // ═══════════════════════════════════════
@@ -135,18 +136,28 @@ async function agricultureRoutes(fastify) {
     });
 
     // ═══════════════════════════════════════
+    //  Available Crops (live)
+    // ═══════════════════════════════════════
+
+    fastify.get('/agriculture/crops', async () => {
+        return { crops: await liveFetcher.getAvailableCrops() };
+    });
+
+    // ═══════════════════════════════════════
     //  Market Prices
     // ═══════════════════════════════════════
 
     fastify.get('/agriculture/prices/:crop', async (req) => {
-        return prices.getCurrentPrices(req.params.crop, {
+        const crop = liveFetcher.normalizeCropName(req.params.crop);
+        return prices.getCurrentPrices(crop, {
             state: req.query.state, district: req.query.district,
             limit: +(req.query.limit || 20),
         });
     });
 
     fastify.get('/agriculture/prices/:crop/trend', async (req) => {
-        return prices.getPriceTrend(req.params.crop, {
+        const crop = liveFetcher.normalizeCropName(req.params.crop);
+        return prices.getPriceTrend(crop, {
             mandi_code: req.query.mandi_code, state: req.query.state,
             days: +(req.query.days || 30),
         });
