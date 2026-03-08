@@ -33,19 +33,19 @@ const { query } = require('../../utils/db');
 const liveFetcher = require('../../services/market-data-fetcher');
 
 /* ═══════════════════════════════════════════════════ */
-/* SECTION 1: CROP_COMMODITY_MAP — All 26 crops exist */
+/* SECTION 1: CROP_COMMODITY_MAP — All 27 crops exist */
 /* ═══════════════════════════════════════════════════ */
 
 describe('CROP_COMMODITY_MAP coverage', () => {
     const REQUIRED_CROPS = [
-        'wheat', 'rice', 'tomato', 'onion', 'potato',
+        'wheat', 'rice', 'tomato', 'onion', 'potato', 'brinjal',
         'soybean', 'cotton', 'sugarcane', 'mustard', 'chana',
         'maize', 'sunflower', 'groundnut', 'turmeric', 'cumin',
         'jowar', 'bajra', 'arhar', 'urad', 'moong',
         'barley', 'copra', 'pepper', 'cardamom', 'jute', 'okra',
     ];
 
-    test('should have all 26 crops in CROP_COMMODITY_MAP', () => {
+    test('should have all 27 crops in CROP_COMMODITY_MAP', () => {
         const map = liveFetcher.CROP_COMMODITY_MAP;
         expect(map).toBeDefined();
         for (const crop of REQUIRED_CROPS) {
@@ -55,12 +55,12 @@ describe('CROP_COMMODITY_MAP coverage', () => {
         }
     });
 
-    test('getAvailableCrops includes all 26 mapped crops', async () => {
-        // DB returns empty — should still get all 26 from the MAP
+    test('getAvailableCrops includes all 27 mapped crops', async () => {
+        // DB returns empty — should still get all 27 from the MAP
         query.mockResolvedValueOnce({ rows: [] });
         const result = await liveFetcher.getAvailableCrops();
         expect(Array.isArray(result)).toBe(true);
-        expect(result.length).toBeGreaterThanOrEqual(26);
+        expect(result.length).toBeGreaterThanOrEqual(27);
         const cropNames = result.map(c => c.name);
         for (const crop of REQUIRED_CROPS) {
             expect(cropNames).toContain(crop);
@@ -390,6 +390,8 @@ describe('Crop name normalization', () => {
         expect(norm('corn')).toBe('maize');
         expect(norm('peanut')).toBe('groundnut');
         expect(norm('coconut')).toBe('copra');
+        expect(norm('eggplant')).toBe('brinjal');
+        expect(norm('baingan')).toBe('brinjal');
         expect(norm('gram')).toBe('chana');
         expect(norm('chickpea')).toBe('chana');
         expect(norm('sorghum')).toBe('jowar');

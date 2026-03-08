@@ -43,10 +43,10 @@ import {
 
 /* ─── Market Data ─── */
 
-export function useMarketPrices(crop: string, state?: string, district?: string) {
+export function useMarketPrices(crop: string, state?: string, district?: string, days?: number, limit?: number) {
   return useApi<PricesResult>(
-    () => marketApi.getPrices(crop, state, district),
-    [crop, state, district],
+    () => marketApi.getPrices(crop, state, district, days, limit),
+    [crop, state, district, days, limit],
     !crop,
   );
 }

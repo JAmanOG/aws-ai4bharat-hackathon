@@ -37,7 +37,22 @@ jest.mock('../../services/llm', () => ({
   })),
 }));
 
+jest.mock('../../services/weather-aqi', () => ({
+  getWeatherAndAqi: jest.fn(async () => ({
+    response: 'In Pune, it is currently 28°C, partly cloudy. Air quality is AQI 74, moderate.',
+    provider: 'weather-open-meteo',
+    metadata: {
+      domain: 'general',
+      intent: 'weather_info',
+      entities: { location: 'Pune, Maharashtra', city: 'Pune', state: 'Maharashtra' },
+      weather: { temperatureC: 28, description: 'partly cloudy' },
+      airQuality: { usAqi: 74, category: 'moderate' },
+    },
+  })),
+}));
+
 const mcp = require('../../services/mcp');
+const weatherAqi = require('../../services/weather-aqi');
 
 describe('MCP Layer', () => {
   beforeEach(() => {
@@ -54,6 +69,11 @@ describe('MCP Layer', () => {
 
     test('defines deep_reasoning tool', () => {
       const tool = mcp.TOOL_DEFINITIONS.find(t => t.name === 'deep_reasoning');
+      expect(tool).toBeDefined();
+    });
+
+    test('defines weather_lookup tool', () => {
+      const tool = mcp.TOOL_DEFINITIONS.find(t => t.name === 'weather_lookup');
       expect(tool).toBeDefined();
     });
 
@@ -116,6 +136,51 @@ describe('MCP Layer', () => {
       expect(result.response).toBe('Gemini fallback result');
       expect(result.route).toContain('fallback');
     });
+
+    test('routes weather_info through weather_lookup tool', async () => {
+      const result = await mcp.routeToAgent({
+        domain: 'general',
+        intent: 'weather_info',
+        messages: [{ role: 'user', content: 'What is the weather in Pune?' }],
+        entities: { location: 'Pune' },
+        complexity: 'simple',
+        userId: 'u-1',
+      });
+
+      expect(weatherAqi.getWeatherAndAqi).toHaveBeenCalledTimes(1);
+      expect(result.tool).toBe('weather_lookup');
+      expect(result.route).toBe('weather_lookup');
+      expect(result.provider).toBe('weather-open-meteo');
+    });
+
+    test('routes health symptom guidance through the health domain agent', async () => {
+      const result = await mcp.routeToAgent({
+        domain: 'health',
+        intent: 'symptom_guidance',
+        messages: [{ role: 'user', content: 'I have fever and cough' }],
+        entities: { symptoms: 'fever and cough' },
+        complexity: 'simple',
+        userId: 'u-1',
+      });
+
+      expect(result.tool).toBe('domain_agent');
+      expect(result.route).toBe('agent');
+      expect(mockAgentHandle).toHaveBeenCalledTimes(1);
+    });
+
+    test('routes complex health symptom guidance to domain agent before deep reasoning', async () => {
+      const result = await mcp.routeToAgent({
+        domain: 'health',
+        intent: 'symptom_guidance',
+        messages: [{ role: 'user', content: 'I am not feeling well, can you check me?' }],
+        entities: {},
+        complexity: 'complex',
+        userId: 'u-1',
+      });
+
+      expect(result.tool).toBe('domain_agent');
+      expect(mockAgentHandle).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('executeTool', () => {
@@ -137,6 +202,18 @@ describe('MCP Layer', () => {
       ]);
 
       expect(result.response).toBe('Bedrock deep reasoning result');
+    });
+
+    test('executes weather_lookup tool', async () => {
+      const result = await mcp.executeTool('weather_lookup', {
+        intent: 'weather_info',
+        entities: { location: 'Pune' },
+      }, [
+        { role: 'user', content: 'weather in Pune' },
+      ]);
+
+      expect(result.tool).toBe('weather_lookup');
+      expect(result.response).toContain('Pune');
     });
 
     test('executes fallback_llm tool', async () => {

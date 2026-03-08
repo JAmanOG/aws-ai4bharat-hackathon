@@ -36,17 +36,20 @@ Given a user's spoken input (possibly in Hindi, Tamil, Telugu, etc.), perform th
 3. CLASSIFY INTENT: Determine the domain and sub-intent
 4. EXTRACT ENTITIES: Pull out key entities (crop, location, amount, etc.)
 5. ASSESS COMPLEXITY: Is this simple, moderate, or complex?
-6. DIRECT ANSWER: If the query is simple enough that you can confidently answer it yourself (greetings, basic general knowledge, simple app guidance, basic farming tips, or casual conversation), set can_answer_directly=true and provide the answer in direct_response. Keep it brief (1-3 sentences) since this will be spoken aloud via TTS. If the user speaks Hindi or another Indian language, respond in the same language. If the query requires real-time data (live prices, weather), tool access, specific scheme details, or complex domain expertise, set can_answer_directly=false.
+6. DIRECT ANSWER: If the query is simple enough that you can confidently answer it yourself (greetings, basic general knowledge, simple app guidance, basic farming tips, or casual conversation), set can_answer_directly=true and provide the answer in direct_response. Keep it brief (1-3 sentences) since this will be spoken aloud via TTS. If the user speaks Hindi or another Indian language, respond in the same language. If the query requires real-time data (live prices, live weather, AQI, air quality), tool access, specific scheme details, platform-specific health flows, or complex domain expertise, set can_answer_directly=false.
 
 Available domains:
 - agriculture: crop advice, soil, weather, irrigation, pest/disease, farming techniques
 - market: crop prices, mandi info, price trends, sell timing, MSP, buyers
 - schemes: government schemes, subsidies, loans, insurance, eligibility, documents
-- health: symptoms, nutrition, maternal health, first aid, facility referral
+- health: symptoms, symptom screening, AI doctor follow-up questions, nutrition, maternal health, first aid, facility referral, medical report upload, medical report insights, scan analysis, health dashboard guidance
 - knowledge: requests for videos, articles, courses, training content, learning resources, educational material, "show me a video", "find articles about", "courses on"
-- general: greetings, general questions, app help, digital literacy
+- general: greetings, general questions, app help, digital literacy, city weather, AQI, air quality
 
 IMPORTANT: When a user asks to see, watch, or find videos, articles, courses, or learning content, ALWAYS use domain="knowledge" and NEVER set can_answer_directly=true. These requests require fetching actual resources.
+IMPORTANT: When a user asks about uploading a medical report, analyzing an MRI or X-ray or CT or ultrasound or lab report, or asks what they can do on the health screening screen, use domain="health", intent="medical_report_analysis" or "health_platform_help", and NEVER set can_answer_directly=true.
+IMPORTANT: When a user describes symptoms, asks for symptom screening, starts an AI doctor consultation, or answers a doctor follow-up with age, gender, or additional symptoms, use domain="health", intent="symptom_guidance", and NEVER set can_answer_directly=true.
+IMPORTANT: When a user asks for current weather, temperature, rainfall, forecast, AQI, air quality, or pollution for a city or place, use domain="general", intent="weather_info" or "air_quality_info", extract the location, and NEVER set can_answer_directly=true. Only use agriculture domain for crop-specific weather impact or farming weather advice.
 
 Respond ONLY with valid JSON (no markdown, no explanation):
 {
@@ -181,13 +184,14 @@ function parseAnalysisResponse(text) {
 
     try {
         const parsed = JSON.parse(cleaned);
+        const normalizedIntent = normalizeIntentAlias(parsed.intent);
 
         // Validate required fields with defaults
         return {
             english_text: parsed.english_text || parsed.text || text,
             original_language: parsed.original_language || 'unknown',
             domain: validDomain(parsed.domain),
-            intent: parsed.intent || 'unknown',
+            intent: normalizedIntent || 'unknown',
             entities: parsed.entities || {},
             complexity: validComplexity(parsed.complexity),
             summary: parsed.summary || '',
@@ -210,6 +214,20 @@ function parseAnalysisResponse(text) {
     }
 }
 
+function normalizeIntentAlias(intent) {
+    const key = String(intent || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+
+    if (!key) return 'unknown';
+    if (key === 'loan_information' || key === 'loan_details' || key === 'crop_loan') return 'loan_info';
+    if (key === 'insurance_information' || key === 'insurance_details' || key === 'claim_status') return 'insurance_claim';
+    if (key === 'saving_plan' || key === 'savings_overview' || key === 'financial_overview' || key === 'profit_cost') return 'financial_aid';
+    if (key === 'eligibility_check') return 'scheme_eligibility';
+    return key;
+}
+
 /* ─── Basic keyword routing (last-resort fallback) ─── */
 
 function basicRoute(text, detectedLang) {
@@ -217,26 +235,43 @@ function basicRoute(text, detectedLang) {
 
     let domain = 'general';
     let intent = 'general_question';
+    let entities = {};
 
     // Simple keyword matching
     const agriKeywords = /crop|farm|soil|seed|harvest|irrigat|pest|wheat|rice|cotton|fertiliz|khet|fasal|kheti/i;
     const marketKeywords = /price|mandi|sell|buy|market|₹|rupee|rate|kilo|quintal|daam|bazaar|bhav/i;
     const schemeKeywords = /scheme|yojana|subsid|loan|insurance|kisan|pm-kisan|bima|kcc|sarkar/i;
-    const healthKeywords = /health|doctor|hospital|pain|fever|symptom|medicine|nutrition|pregnant|tabiyat|bukhar/i;
+    const healthKeywords = /health|doctor|hospital|pain|fever|symptom|medicine|nutrition|pregnant|tabiyat|bukhar|report|scan|xray|x-ray|\bmri\b|\bct\b|\bultrasound\b|\bpathology\b|upload/i;
+    const reportKeywords = /report|scan|xray|x-ray|\bmri\b|\bct\b|\bct scan\b|\bultrasound\b|\bpathology\b|lab report|medical report|upload/i;
+    const weatherKeywords = /weather|temperature|forecast|rain|humidity|wind|climate|mausam|baarish|barish|temp/i;
+    const aqiKeywords = /\baqi\b|air quality|pollution|smog|pm2\.?5|pm10|hawa/i;
     const greetingKeywords = /^(hello|hi|namaste|namaskar|vanakkam|kaise ho|how are)/i;
 
     if (greetingKeywords.test(lower)) {
         domain = 'general';
         intent = 'greeting';
+    } else if (aqiKeywords.test(lower)) {
+        domain = 'general';
+        intent = 'air_quality_info';
+        const location = extractLocationEntity(text);
+        if (location) entities.location = location;
+    } else if (weatherKeywords.test(lower) && !agriKeywords.test(lower)) {
+        domain = 'general';
+        intent = 'weather_info';
+        const location = extractLocationEntity(text);
+        if (location) entities.location = location;
     } else if (agriKeywords.test(lower)) {
         domain = 'agriculture';
-        intent = 'crop_advice';
+        intent = weatherKeywords.test(lower) ? 'weather_impact' : 'crop_advice';
     } else if (marketKeywords.test(lower)) {
         domain = 'market';
         intent = 'crop_prices';
     } else if (schemeKeywords.test(lower)) {
         domain = 'schemes';
         intent = 'scheme_eligibility';
+    } else if (reportKeywords.test(lower)) {
+        domain = 'health';
+        intent = 'medical_report_analysis';
     } else if (healthKeywords.test(lower)) {
         domain = 'health';
         intent = 'symptom_guidance';
@@ -247,12 +282,44 @@ function basicRoute(text, detectedLang) {
         original_language: detectedLang || 'unknown',
         domain,
         intent,
-        entities: {},
+        entities,
         complexity: 'simple',
         summary: '',
         can_answer_directly: false,
         direct_response: null,
     };
+}
+
+function extractLocationEntity(text = '') {
+    const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!cleaned) return '';
+
+    const stopwords = new Set([
+        'what', 'is', 'the', 'weather', 'temperature', 'forecast', 'aqi',
+        'air', 'quality', 'pollution', 'status', 'report', 'today', 'now',
+        'here', 'there', 'please', 'current', 'live', 'show', 'tell', 'me',
+    ]);
+
+    const patterns = [
+        /\b(?:in|at|for|near|around|of)\s+([a-zA-Z\u0900-\u097F][a-zA-Z\u0900-\u097F\s-]{1,40})/i,
+        /\b([a-zA-Z\u0900-\u097F][a-zA-Z\u0900-\u097F\s-]{1,40})\s+(?:weather|temperature|forecast|aqi|air quality|pollution)\b/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = cleaned.match(pattern);
+        if (match?.[1]) {
+            const candidate = match[1]
+                .replace(/\b(today|now|please|status|report)\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const words = candidate.toLowerCase().split(/\s+/).filter(Boolean);
+            if (words.length > 0 && !words.every((word) => stopwords.has(word))) {
+                return candidate;
+            }
+        }
+    }
+
+    return '';
 }
 
 /* ─── Validation helpers ─── */
@@ -272,5 +339,6 @@ module.exports = {
     analyzeAndRoute,
     parseAnalysisResponse,
     basicRoute,
+    extractLocationEntity,
     ANALYSIS_PROMPT,
 };

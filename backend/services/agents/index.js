@@ -38,8 +38,10 @@ const INTENT_DOMAIN_MAP = {
 
     // Market
     crop_prices: 'market',
+    crop_price_query: 'market',
     price_trend: 'market',
     mandi_info: 'market',
+    mandi_price_query: 'market',
     sell_timing: 'market',
     buyer_connection: 'market',
     supply_chain: 'market',
@@ -51,9 +53,15 @@ const INTENT_DOMAIN_MAP = {
     scheme_application: 'schemes',
     subsidy_info: 'schemes',
     loan_info: 'schemes',
+    loan_information: 'schemes',
+    loan_details: 'schemes',
     insurance_claim: 'schemes',
+    insurance_information: 'schemes',
+    insurance_details: 'schemes',
     document_help: 'schemes',
     financial_aid: 'schemes',
+    financial_overview: 'schemes',
+    savings_overview: 'schemes',
     deadline_reminder: 'schemes',
 
     // Health
@@ -65,6 +73,8 @@ const INTENT_DOMAIN_MAP = {
     heat_prevention: 'health',
     health_scheme: 'health',
     facility_referral: 'health',
+    medical_report_analysis: 'health',
+    health_platform_help: 'health',
 
     // Knowledge
     request_video: 'knowledge',
@@ -82,6 +92,7 @@ const INTENT_DOMAIN_MAP = {
     digital_literacy: 'general',
     app_help: 'general',
     weather_info: 'general',
+    air_quality_info: 'general',
     unknown: 'general',
 };
 

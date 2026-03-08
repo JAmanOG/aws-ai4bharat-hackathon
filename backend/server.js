@@ -20,9 +20,58 @@ const livelihoodRoutes = require('./routes/livelihood');
 const healthRoutes = require('./routes/health');
 const openDataRoutes = require('./routes/open-data');
 const voiceRoomRoutes = require('./routes/voice-room');
+const visionRoutes = require('./routes/vision');
+const liveMarketFetcher = require('./services/market-data-fetcher');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+const MARKET_SYNC_ENABLED = process.env.MARKET_SYNC_ENABLED !== 'false';
+const MARKET_SYNC_INTERVAL_HOURS = (() => {
+    const parsed = parseInt(process.env.MARKET_SYNC_INTERVAL_HOURS || '24', 10);
+    return Number.isFinite(parsed) ? Math.max(1, parsed) : 24;
+})();
+
+function startMarketSync(app) {
+    if (!MARKET_SYNC_ENABLED) {
+        app.log.info('Market sync disabled via MARKET_SYNC_ENABLED=false');
+        return () => {};
+    }
+
+    let running = false;
+
+    const runSync = async (trigger) => {
+        if (running) {
+            app.log.info({ trigger }, 'Market sync skipped because a previous run is still active');
+            return;
+        }
+
+        running = true;
+        try {
+            app.log.info({ trigger }, 'Starting background market sync');
+            const total = await liveMarketFetcher.syncTopCrops();
+            app.log.info({ trigger, total }, 'Background market sync complete');
+        } catch (err) {
+            app.log.error({ err, trigger }, 'Background market sync failed');
+        } finally {
+            running = false;
+        }
+    };
+
+    const startupTimer = setTimeout(() => {
+        void runSync('startup');
+    }, 1500);
+
+    const interval = setInterval(() => {
+        void runSync('interval');
+    }, MARKET_SYNC_INTERVAL_HOURS * 60 * 60 * 1000);
+
+    app.log.info({ intervalHours: MARKET_SYNC_INTERVAL_HOURS }, 'Market sync scheduler enabled');
+
+    return () => {
+        clearTimeout(startupTimer);
+        clearInterval(interval);
+    };
+}
 
 async function buildServer() {
     const app = Fastify({
@@ -85,7 +134,7 @@ async function buildServer() {
         return {
             name: 'Rural Ecosystem Platform API',
             version: '2.0.0',
-            modules: ['auth', 'knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice', 'community', 'business', 'government', 'livelihood', 'health', 'open-data', 'voice-rooms'],
+            modules: ['auth', 'knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice', 'community', 'business', 'government', 'livelihood', 'health', 'vision', 'open-data', 'voice-rooms'],
             docs: '/health',
         };
     });
@@ -102,6 +151,7 @@ async function buildServer() {
     await app.register(governmentRoutes);
     await app.register(livelihoodRoutes);
     await app.register(healthRoutes);
+    await app.register(visionRoutes);
     await app.register(openDataRoutes);
     await app.register(voiceRoomRoutes);
 
@@ -111,10 +161,12 @@ async function buildServer() {
 // ── Start Server ──
 async function start() {
     const app = await buildServer();
+    let stopMarketSync = () => {};
 
     // Graceful shutdown
     const shutdown = async (signal) => {
         app.log.info(`${signal} received, shutting down gracefully...`);
+        stopMarketSync();
         await app.close();
 
         // Close database pools
@@ -135,6 +187,7 @@ async function start() {
 
     try {
         await app.listen({ port: PORT, host: HOST });
+        stopMarketSync = startMarketSync(app);
         app.log.info(`🚀 Rural Ecosystem Platform API running on http://${HOST}:${PORT}`);
         app.log.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);
         app.log.info(`   Health check: http://${HOST}:${PORT}/health`);

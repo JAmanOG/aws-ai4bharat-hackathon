@@ -97,6 +97,11 @@ const NAVIGATION_MAP: Record<string, Record<string, string>> = {
     default: "SchemesList",
   },
   health: {
+    symptom_guidance: "SymptomChecker",
+    medical_report_analysis: "HealthDashboard",
+    health_platform_help: "HealthDashboard",
+    health_scheme: "HealthDashboard",
+    facility_referral: "HealthDashboard",
     symptoms: "SymptomChecker",
     nutrition: "SymptomChecker",
     first_aid: "SymptomChecker",
@@ -121,6 +126,7 @@ const NAVIGATION_MAP: Record<string, Record<string, string>> = {
     bargaining: "BargainingGroups",
     default: "Logistics",
   },
+  general: {},
 };
 
 /* ────────── Visualization mapping ────────── */
@@ -168,7 +174,42 @@ const VISUALIZATION_MAP: Record<string, Record<string, string>> = {
     bargaining: "peer_groups",
     default: "transport_options",
   },
+  general: {
+    weather_info: "weather_info",
+    air_quality_info: "weather_info",
+    default: "generic_info",
+  },
 };
+
+function normalizeIntentKey(intent?: string): string {
+  const key = intent?.toLowerCase().replace(/\s+/g, "_") ?? "default";
+  if (key === "crop_price_query" || key === "crop_price" || /crop.*price/.test(key)) return "crop_prices";
+  if (key === "mandi_price_query" || key === "mandi_prices" || /mandi.*(price|info)/.test(key)) return "mandi_info";
+  if (key === "scheme_eligibility" || key === "eligibility_check") return "eligibility";
+  if (
+    key === "loan_info"
+    || key === "loan_information"
+    || key === "loan_details"
+    || key === "loan"
+    || /crop.*loan/.test(key)
+  ) return "loan";
+  if (
+    key === "insurance_claim"
+    || key === "insurance_information"
+    || key === "insurance_status"
+    || key === "insurance_details"
+    || key === "insurance"
+  ) return "insurance";
+  if (
+    key === "financial_aid"
+    || key === "savings_plan"
+    || key === "saving_plan"
+    || key === "financial_overview"
+    || key === "profit_cost"
+    || key === "savings"
+  ) return "savings";
+  return key;
+}
 
 /* ────────── Engine ────────── */
 
@@ -183,7 +224,7 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
   const knowledgeResourceTarget = getKnowledgeResourceTarget(cmd);
 
   // Find the best matching intent key
-  const intentKey = intent?.toLowerCase().replace(/\s+/g, "_") ?? "default";
+  const intentKey = normalizeIntentKey(intent);
 
   // Determine target screen
   const screen = knowledgeResourceTarget?.screen
@@ -237,6 +278,25 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
 export function shouldAutoNavigate(cmd: VoiceCommand): boolean {
   if (getKnowledgeResourceTarget(cmd)) return true;
   if (cmd.metadata?.action === "create_room" || cmd.metadata?.action === "join_room") return true;
+  const intentKey = normalizeIntentKey(cmd.intent);
+  if (
+    (cmd.domain === "schemes" || cmd.domain === "finance")
+    && ["eligibility", "loan", "insurance", "savings"].includes(intentKey)
+  ) {
+    return true;
+  }
+  if (
+    cmd.domain === "health" &&
+    (
+      intentKey === "symptom_guidance" ||
+      intentKey === "medical_report_analysis" ||
+      intentKey === "health_platform_help" ||
+      intentKey === "health_scheme" ||
+      intentKey === "facility_referral"
+    )
+  ) {
+    return true;
+  }
   // Complex queries or explicit "show me" / "take me to" should navigate
   if (cmd.complexity === "complex") return true;
   // Market/scheme queries with specific entities should navigate
@@ -250,7 +310,7 @@ export function shouldAutoNavigate(cmd: VoiceCommand): boolean {
  * Get the screen name for a domain/intent combo
  */
 export function getScreenForIntent(domain: string, intent: string): string | null {
-  const intentKey = intent?.toLowerCase().replace(/\s+/g, "_") ?? "default";
+  const intentKey = normalizeIntentKey(intent);
   return NAVIGATION_MAP[domain]?.[intentKey] ?? NAVIGATION_MAP[domain]?.["default"] ?? null;
 }
 
@@ -270,12 +330,14 @@ function buildTitle(domain: string, intent: string, entities: Record<string, str
       return "Market Intelligence";
     case "schemes":
       if (entities?.scheme_name) return entities.scheme_name;
-      if (intent?.includes("insurance")) return "Insurance Claims";
-      if (intent?.includes("eligibility")) return "Eligibility Check";
+      if (intent?.includes("insurance")) return "Insurance & Claims";
+      if (intent?.includes("eligibility") || intent?.includes("loan")) return "Loan Eligibility";
+      if (intent?.includes("financial") || intent?.includes("saving")) return "Financial Overview";
       return "Government Schemes";
     case "finance":
-      if (intent?.includes("savings")) return "Savings Plan";
-      if (intent?.includes("insurance")) return "Insurance";
+      if (intent?.includes("saving")) return "Financial Overview";
+      if (intent?.includes("insurance")) return "Insurance & Claims";
+      if (intent?.includes("loan")) return "Loan Eligibility";
       return "Financial Overview";
     case "knowledge":
       if (intent?.includes("course")) return "Available Courses";
@@ -285,7 +347,23 @@ function buildTitle(domain: string, intent: string, entities: Record<string, str
       if (intent?.includes("transport")) return "Transport Options";
       return "Logistics";
     case "health":
+      if (intent?.includes("symptom")) return "AI Doctor Screening";
+      if (intent?.includes("medical_report") || intent?.includes("report") || intent?.includes("insight")) {
+        return "Medical Report Insights";
+      }
+      if (intent?.includes("health_platform_help")) return "AI Health Screening";
+      if (intent?.includes("scheme")) return "Health Schemes";
+      if (intent?.includes("facility") || intent?.includes("referral")) return "Consult Doctors";
       return "Health Advisory";
+    case "general":
+      if (intent?.includes("air_quality") || intent?.includes("aqi")) {
+        return location ? `AQI in ${location}` : "Air Quality Update";
+      }
+      if (intent?.includes("weather")) {
+        return location ? `Weather in ${location}` : "Weather Update";
+      }
+      if (intent?.includes("app_help")) return "App Help";
+      return "AI Response";
     default:
       return "AI Response";
   }

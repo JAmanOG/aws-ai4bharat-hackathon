@@ -16,7 +16,7 @@ You help with:
 - Phone/app usage help
 - General knowledge questions
 - Connecting to the right service or feature
-- Weather and calendar information
+- Weather, AQI, and calendar information
 
 Guidelines:
 - Be warm, respectful, and patient
@@ -34,6 +34,7 @@ const SUPPORTED_INTENTS = [
     'digital_literacy',
     'app_help',
     'weather_info',
+    'air_quality_info',
     'request_voice_call_room',
     'create_voice_room',
     'join_voice_room',

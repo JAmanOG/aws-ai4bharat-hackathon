@@ -85,6 +85,10 @@ describe('AI Agent Registry', () => {
       expect(agentRegistry.resolveDomain('symptom_guidance')).toBe('health');
     });
 
+    test('maps medical_report_analysis intent to health', () => {
+      expect(agentRegistry.resolveDomain('medical_report_analysis')).toBe('health');
+    });
+
     test('maps greeting intent to general', () => {
       expect(agentRegistry.resolveDomain('greeting')).toBe('general');
     });
@@ -146,6 +150,26 @@ describe('AI Agent Registry', () => {
       const callArgs = mockLlm.generateResponse.mock.calls[0];
       const opts = callArgs[1];
       expect(opts.temperature).toBe(0.1);
+    });
+
+    test('health agent gives platform-aware report guidance on health dashboard', async () => {
+      const agent = agentRegistry.getAgent('health');
+      mockLlm.generateResponse.mockClear();
+
+      const result = await agent.handle({
+        ...baseContext,
+        intent: 'medical_report_analysis',
+        screenContext: 'User is on screen: HealthDashboard. availableActions: Start Screening, Upload Report, Get Insights. availableReportTypes: Lab report, X-ray, MRI. selectedReportType: Lab report. reportStatus: Ready to upload.',
+        messages: [
+          { role: 'system', content: 'Default system prompt' },
+          { role: 'user', content: 'How do I upload my report for AI insights?' },
+        ],
+      }, { llm: mockLlm });
+
+      expect(result.provider).toBe('health-platform');
+      expect(result.response).toContain('Upload Report');
+      expect(result.response).toContain('Get Insights');
+      expect(mockLlm.generateResponse).not.toHaveBeenCalled();
     });
 
     test('general agent handles greetings', async () => {

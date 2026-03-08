@@ -10,6 +10,14 @@ import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import type { VisualizationCard } from "./VoiceCommandEngine";
+import {
+  FinancialOverviewView,
+  InsuranceClaimsView,
+  LoanEligibilityView,
+  useFinancialOverviewModel,
+  useInsuranceModel,
+  useLoanEligibilityModel,
+} from "../components/EconomicsResponses";
 
 /* ─── Master card renderer ─── */
 
@@ -125,17 +133,8 @@ function CropAdvisoryCard({ card }: { card: VisualizationCard }) {
 /* ─── Savings Card ─── */
 
 function SavingsPlanCard({ card }: { card: VisualizationCard }) {
-  return (
-    <View style={[styles.card, { borderLeftColor: "#EF6C00", borderLeftWidth: 4 }]}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.iconCircle, { backgroundColor: "rgba(239,108,0,0.12)" }]}>
-          <Ionicons name="wallet" size={20} color="#EF6C00" />
-        </View>
-        <Text style={[styles.cardTitle, { flex: 1 }]}>{card.title}</Text>
-      </View>
-      <Text style={styles.responseText}>{card.data?.responseText}</Text>
-    </View>
-  );
+  const model = useFinancialOverviewModel();
+  return <FinancialOverviewView model={model} compact />;
 }
 
 /* ─── Course List Card ─── */
@@ -157,17 +156,8 @@ function CourseListCard({ card }: { card: VisualizationCard }) {
 /* ─── Insurance Card ─── */
 
 function InsuranceCard({ card }: { card: VisualizationCard }) {
-  return (
-    <View style={[styles.card, { borderLeftColor: "#C62828", borderLeftWidth: 4 }]}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.iconCircle, { backgroundColor: "rgba(198,40,40,0.12)" }]}>
-          <Ionicons name="shield-checkmark" size={20} color="#C62828" />
-        </View>
-        <Text style={[styles.cardTitle, { flex: 1 }]}>{card.title}</Text>
-      </View>
-      <Text style={styles.responseText}>{card.data?.responseText}</Text>
-    </View>
-  );
+  const model = useInsuranceModel();
+  return <InsuranceClaimsView model={model} compact />;
 }
 
 /* ─── Transport Card ─── */
@@ -221,17 +211,8 @@ function PracticeCard({ card }: { card: VisualizationCard }) {
 /* ─── Eligibility Card ─── */
 
 function EligibilityCard({ card }: { card: VisualizationCard }) {
-  return (
-    <View style={[styles.card, { borderLeftColor: "#6A1B9A", borderLeftWidth: 4 }]}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.iconCircle, { backgroundColor: "rgba(106,27,154,0.12)" }]}>
-          <Ionicons name="checkmark-circle" size={20} color="#6A1B9A" />
-        </View>
-        <Text style={[styles.cardTitle, { flex: 1 }]}>{card.title}</Text>
-      </View>
-      <Text style={styles.responseText}>{card.data?.responseText}</Text>
-    </View>
-  );
+  const model = useLoanEligibilityModel();
+  return <LoanEligibilityView model={model} compact />;
 }
 
 /* ─── Order Card ─── */

@@ -28,8 +28,10 @@ Guidelines:
 
 const SUPPORTED_INTENTS = [
     'crop_prices',
+    'crop_price_query',
     'price_trend',
     'mandi_info',
+    'mandi_price_query',
     'sell_timing',
     'buyer_connection',
     'supply_chain',
@@ -38,6 +40,14 @@ const SUPPORTED_INTENTS = [
 ];
 
 const LIVE_MARKET_INTENTS = new Set(['crop_prices', 'mandi_info']);
+
+function normalizeIntentKey(intent) {
+    const key = String(intent || '').toLowerCase().trim().replace(/\s+/g, '_');
+    if (!key) return 'crop_prices';
+    if (key === 'crop_price_query' || key === 'crop_price' || /crop.*price/.test(key)) return 'crop_prices';
+    if (key === 'mandi_price_query' || key === 'mandi_prices' || /mandi.*(price|info)/.test(key)) return 'mandi_info';
+    return key;
+}
 
 const STATE_ALIASES = {
     mh: 'Maharashtra',
@@ -137,9 +147,12 @@ function buildMarketSnapshot(result, crop, state) {
 function buildLivePriceResponse(snapshot) {
     const cropLabel = capitalizeWords(snapshot.crop);
     const regionLabel = snapshot.state ? ` in ${snapshot.state}` : '';
+    const fallbackIntro = snapshot.fallbackFromState
+        ? `I could not find live ${cropLabel} prices in ${snapshot.fallbackFromState} right now. `
+        : '';
 
     if (!snapshot.summary || snapshot.prices.length === 0) {
-        return `I could not find live mandi prices for ${cropLabel}${regionLabel} right now. Please try again in a few minutes or ask for another crop.`;
+        return `${fallbackIntro}I could not find live mandi prices for ${cropLabel}${regionLabel} right now. Please try again in a few minutes or ask for another crop.`;
     }
 
     const topMandis = snapshot.prices
@@ -152,7 +165,8 @@ function buildLivePriceResponse(snapshot) {
     const avg = Math.round(snapshot.summary.average_price);
     const mandiCount = snapshot.summary.mandi_count || snapshot.prices.length;
     const sourceLabel = snapshot.fresh ? 'live' : 'cached';
-    return `The ${sourceLabel} ${cropLabel} price${regionLabel} is about Rs ${avg} per quintal across ${mandiCount} mandis. Highest recent quotes are ${topMandis}.`;
+    const scopeLabel = snapshot.fallbackFromState ? ' from other states' : regionLabel;
+    return `${fallbackIntro}The ${sourceLabel} ${cropLabel} price${scopeLabel} is about Rs ${avg} per quintal across ${mandiCount} mandis. Highest recent quotes are ${topMandis}.`;
 }
 
 function buildSnapshotPrompt(snapshot) {
@@ -182,6 +196,7 @@ function buildSnapshotPrompt(snapshot) {
 async function handle(ctx, deps) {
     const { messages, intent, entities, complexity } = ctx;
     const { llm } = deps;
+    const normalizedIntent = normalizeIntentKey(intent);
 
     const normalizedCrop = entities?.crop ? liveFetcher.normalizeCropName(entities.crop) : '';
     const normalizedState = normalizeStateName(entities?.location);
@@ -209,15 +224,30 @@ async function handle(ctx, deps) {
         }
     }
 
-    if (normalizedCrop && LIVE_MARKET_INTENTS.has(intent)) {
+    if (normalizedCrop && normalizedState && (!snapshot?.summary || snapshot.prices.length === 0)) {
+        try {
+            const fallbackResult = await liveFetcher.getOrFetchPrices(normalizedCrop);
+            if ((fallbackResult?.prices || []).length > 0) {
+                snapshot = {
+                    ...buildMarketSnapshot(fallbackResult, normalizedCrop, undefined),
+                    fallbackFromState: normalizedState,
+                };
+            }
+        } catch {
+            // Keep the state-scoped no-data snapshot if the nationwide fallback also fails.
+        }
+    }
+
+    if (normalizedCrop && LIVE_MARKET_INTENTS.has(normalizedIntent)) {
         return {
             response: buildLivePriceResponse(snapshot),
             provider: 'market-live',
             metadata: {
                 domain: 'market',
-                intent,
+                intent: normalizedIntent,
                 entities: normalizedEntities,
                 grounded: true,
+                requestedState: normalizedState,
                 marketData: snapshot,
             },
         };
@@ -254,10 +284,11 @@ async function handle(ctx, deps) {
         provider: result.provider,
         metadata: {
             domain: 'market',
-            intent,
+            intent: normalizedIntent,
             entities: normalizedEntities,
             usage: result.usage,
             grounded: !!snapshot?.summary,
+            requestedState: normalizedState,
             ...(snapshot ? { marketData: snapshot } : {}),
         },
     };

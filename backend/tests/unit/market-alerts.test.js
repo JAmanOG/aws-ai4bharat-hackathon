@@ -17,7 +17,7 @@ jest.mock('@aws-sdk/client-sns', () => ({
     PublishCommand: jest.fn(),
 }));
 
-const { dynamoDB } = require('../../utils/db');
+const { query, dynamoDB } = require('../../utils/db');
 const { subscribePriceAlert, getUserAlerts, deleteAlert, dispatchPriceAlerts } = require('../../lambdas/market-data/alerts');
 
 describe('Price Alerts', () => {
@@ -57,6 +57,39 @@ describe('Price Alerts', () => {
 
         const result = await getUserAlerts('user-1');
         expect(result).toHaveLength(2);
+        expect(result[0].alert_id).toBe('a1');
+        expect(result[0].active).toBe(true);
+    });
+
+    test('getUserAlerts should fall back to Postgres when DynamoDB fails', async () => {
+        dynamoDB.send.mockRejectedValueOnce(new Error('ResourceNotFoundException'));
+        query.mockResolvedValueOnce({});
+        query.mockResolvedValueOnce({
+            rows: [
+                {
+                    user_id: 'user-1',
+                    alert_id: 'pg-a1',
+                    crop_type: 'okra',
+                    state: 'Maharashtra',
+                    threshold_percent: '12',
+                    notify_via: 'push',
+                    target_price: '2500',
+                    direction: 'above',
+                    is_active: true,
+                    created_at: '2026-03-08T00:00:00.000Z',
+                },
+            ],
+        });
+
+        const result = await getUserAlerts('user-1');
+
+        expect(result).toHaveLength(1);
+        expect(result[0].alertId).toBe('pg-a1');
+        expect(result[0].alert_id).toBe('pg-a1');
+        expect(result[0].crop_type).toBe('okra');
+        expect(result[0].active).toBe(true);
+        expect(result[0].target_price).toBe(2500);
+        expect(query).toHaveBeenCalledTimes(2);
     });
 
     test('deleteAlert should remove subscription', async () => {
@@ -64,6 +97,17 @@ describe('Price Alerts', () => {
 
         const result = await deleteAlert('user-1', 'alert-id');
         expect(result.deleted).toBe(true);
+    });
+
+    test('deleteAlert should fall back to Postgres when DynamoDB fails', async () => {
+        dynamoDB.send.mockRejectedValueOnce(new Error('Missing table'));
+        query.mockResolvedValueOnce({});
+        query.mockResolvedValueOnce({});
+
+        const result = await deleteAlert('user-1', 'alert-id');
+
+        expect(result.deleted).toBe(true);
+        expect(query).toHaveBeenCalledTimes(2);
     });
 
     test('dispatchPriceAlerts should return 0 sent for empty changes', async () => {

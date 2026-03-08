@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { getFocusedRouteNameFromRoute, useNavigation } from "@react-navigation/native";
 
 import SplashScreen from "../screens/SplashScreen";
+import LanguageSelectScreen from "../screens/LanguageSelectScreen";
 import LoginScreen from "../screens/LoginScreen";
 import AskScreen from "../screens/AskScreen";
 import ProfileScreen from "../screens/ProfileScreen";
@@ -19,10 +20,13 @@ import CommunityScreen from "../screens/CommunityScreen";
 import { VoiceProvider, useVoice } from "../voice/VoiceContext";
 import { ScreenProvider } from "../context/ScreenContext";
 import VoiceOverlay from "../voice/VoiceOverlay";
+import { normalizeAppLanguage, readStoredLanguagePreference, writeStoredLanguagePreference } from "../utils/languagePreference";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const FULLSCREEN_HOME_ROUTES = new Set(["VoiceRooms", "VoiceRoom"]);
+const TAB_BAR_HIDDEN_HOME_ROUTES = new Set(["VoiceRooms", "VoiceRoom", "SymptomChecker"]);
+const DEDICATED_VOICE_ROUTES = new Set(["Ask", "SymptomChecker"]);
 
 function shouldHideTabBar(state: { index: number; routes: Array<any> }) {
   const activeRoute = state.routes[state.index];
@@ -31,7 +35,7 @@ function shouldHideTabBar(state: { index: number; routes: Array<any> }) {
   }
 
   const nestedRouteName = getFocusedRouteNameFromRoute(activeRoute);
-  return nestedRouteName ? FULLSCREEN_HOME_ROUTES.has(nestedRouteName) : false;
+  return nestedRouteName ? TAB_BAR_HIDDEN_HOME_ROUTES.has(nestedRouteName) : false;
 }
 
 function Tabs() {
@@ -49,8 +53,9 @@ function Tabs() {
 }
 
 function OverlayHost({ activeRouteName }: { activeRouteName: string | null }) {
-  const hideOverlay = activeRouteName ? FULLSCREEN_HOME_ROUTES.has(activeRouteName) : false;
-  return <VoiceOverlay hidden={hideOverlay} />;
+  const hideForVoiceRoom = activeRouteName ? FULLSCREEN_HOME_ROUTES.has(activeRouteName) : false;
+  const hideForDedicatedVoice = activeRouteName ? DEDICATED_VOICE_ROUTES.has(activeRouteName) : false;
+  return <VoiceOverlay hidden={hideForVoiceRoom || hideForDedicatedVoice} cleanupOnHide={hideForVoiceRoom} />;
 }
 
 /**
@@ -103,19 +108,79 @@ function AuthenticatedApp({ activeRouteName }: { activeRouteName: string | null 
 }
 
 export default function RootNavigator({ activeRouteName = null }: { activeRouteName?: string | null }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
+  const [languageReady, setLanguageReady] = useState(false);
+  const [languageJourneyDone, setLanguageJourneyDone] = useState(false);
+  const [initialLanguage, setInitialLanguage] = useState("hi");
 
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 1200);
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    if (showSplash) {
+      setLanguageJourneyDone(false);
+    }
+  }, [showSplash]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (isLoading) return () => {
+      cancelled = true;
+    };
+
+    if (user?.preferredLanguage) {
+      const normalized = normalizeAppLanguage(user.preferredLanguage);
+      writeStoredLanguagePreference(normalized).catch(() => {});
+      setInitialLanguage(normalized);
+      setLanguageReady(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    readStoredLanguagePreference()
+      .then((stored) => {
+        if (cancelled) return;
+        setInitialLanguage(stored ?? "hi");
+        setLanguageReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setInitialLanguage("hi");
+        setLanguageReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, user?.preferredLanguage]);
+
+  const handleLanguageContinue = useCallback((language: string) => {
+    const normalized = normalizeAppLanguage(language);
+    setInitialLanguage(normalized);
+    setLanguageJourneyDone(true);
+    writeStoredLanguagePreference(normalized).catch(() => {});
+  }, []);
+
   // Show splash while loading auth state or during splash timer
-  if (isLoading || showSplash) {
+  if (isLoading || showSplash || !languageReady) {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Splash" component={SplashScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  if (!languageJourneyDone) {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="LanguageSelect">
+          {() => <LanguageSelectScreen initialLanguage={initialLanguage} onContinue={handleLanguageContinue} />}
+        </Stack.Screen>
       </Stack.Navigator>
     );
   }

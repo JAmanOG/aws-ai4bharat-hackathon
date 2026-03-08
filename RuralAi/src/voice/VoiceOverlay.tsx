@@ -88,7 +88,13 @@ const DOMAIN_COLORS: Record<string, string> = {
 
 /* ── Main component ── */
 
-export default function VoiceOverlay({ hidden = false }: { hidden?: boolean }) {
+export default function VoiceOverlay({
+  hidden = false,
+  cleanupOnHide = true,
+}: {
+  hidden?: boolean;
+  cleanupOnHide?: boolean;
+}) {
   const insets = useSafeAreaInsets();
   const voice = useVoiceService();
   const ctx = useVoice();
@@ -122,7 +128,7 @@ export default function VoiceOverlay({ hidden = false }: { hidden?: boolean }) {
   }, [state]);
 
   useEffect(() => {
-    if (!hidden) {
+    if (!hidden || !cleanupOnHide) {
       return;
     }
 
@@ -134,7 +140,7 @@ export default function VoiceOverlay({ hidden = false }: { hidden?: boolean }) {
     setState("idle");
     setExpanded(false);
     clearVisualization();
-  }, [hidden, voice, setState, clearVisualization]);
+  }, [cleanupOnHide, hidden, voice, setState, clearVisualization]);
 
   /* Request mic permission on mount */
   useEffect(() => {

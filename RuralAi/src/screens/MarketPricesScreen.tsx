@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -20,10 +20,12 @@ import {
   normalizeMarketCropName,
   normalizeMarketStateName,
 } from "../utils/market";
+import { useScreenContext } from "../context/ScreenContext";
 
 export default function MarketPricesScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<RouteProp<HomeStackParamList, "MarketPrices">>();
+  const screen = useScreenContext();
   const routeCrop = normalizeMarketCropName(route.params?.crop);
   const routeState = normalizeMarketStateName(route.params?.location);
 
@@ -51,11 +53,51 @@ export default function MarketPricesScreen() {
   }, [searchText, crop]);
 
   const { data, loading, error, refresh } = useMarketPrices(crop, stateFilter);
+  const fallbackQuery = useMarketPrices(stateFilter ? crop : "");
+  const showFallbackRows =
+    !!stateFilter &&
+    !loading &&
+    (data?.prices?.length ?? 0) === 0 &&
+    (fallbackQuery.data?.prices?.length ?? 0) > 0;
+  const effectiveData = showFallbackRows ? fallbackQuery.data : data;
+  const visibleDates = useMemo(
+    () => Array.from(new Set((effectiveData?.prices ?? []).map((price) => price.date).filter(Boolean))).sort(),
+    [effectiveData?.prices]
+  );
+  const visibleDatePreview = useMemo(() => {
+    if (visibleDates.length === 0) return "None";
+    if (visibleDates.length <= 4) return visibleDates.join(", ");
+    return `${visibleDates.slice(0, 2).join(", ")} ... ${visibleDates.slice(-2).join(", ")}`;
+  }, [visibleDates]);
 
-  const avgPrice = data?.summary?.average_price ?? 0;
-  const lastUpdated = data?.last_updated
-    ? new Date(data.last_updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  const avgPrice = effectiveData?.summary?.average_price ?? 0;
+  const lastUpdated = effectiveData?.last_updated
+    ? new Date(effectiveData.last_updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "";
+
+  useEffect(() => {
+    screen.update({
+      screen: "MarketPrices",
+      crop,
+      location: stateFilter || undefined,
+      meta: {
+        locationFilter: stateFilter || "All India",
+        visibleScope: showFallbackRows && stateFilter ? `Fallback to All India for ${stateFilter}` : (stateFilter || "All India"),
+        visibleRows: effectiveData?.prices?.length ?? 0,
+        visiblePriceDateStart: visibleDates[0] || "None",
+        visiblePriceDateEnd: visibleDates[visibleDates.length - 1] || "None",
+        visiblePriceDates: visibleDatePreview,
+        visibleMandis: (effectiveData?.prices ?? []).slice(0, 5).map((price) => price.mandi_name).join(", ") || "None",
+      },
+    });
+  }, [crop, effectiveData?.prices, screen.update, showFallbackRows, stateFilter, visibleDatePreview, visibleDates]);
+
+  const formatVisibleDate = useCallback((date?: string) => {
+    if (!date) return "";
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return date;
+    return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -69,9 +111,9 @@ export default function MarketPricesScreen() {
           <SyncPill synced={!error} />
         </View>
 
-        {loading && !data ? (
+        {(loading || (stateFilter && !data && fallbackQuery.loading)) && !effectiveData ? (
           <LoadingView message={`Fetching ${crop} prices…`} />
-        ) : error && !data ? (
+        ) : error && !effectiveData ? (
           <ErrorView message={error.message} onRetry={refresh} />
         ) : (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -117,6 +159,14 @@ export default function MarketPricesScreen() {
 
             {/* Current Price Card */}
             <View style={styles.priceCard}>
+              {showFallbackRows ? (
+                <View style={styles.fallbackBanner}>
+                  <Ionicons name="information-circle-outline" size={14} color={colors.earth} />
+                  <Text style={styles.fallbackText}>
+                    No live rows for {stateFilter}. Showing latest {formatMarketCropLabel(crop)} prices from other states.
+                  </Text>
+                </View>
+              ) : null}
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <Text style={styles.cardLabel}>Average price</Text>
                 {lastUpdated ? (
@@ -129,14 +179,20 @@ export default function MarketPricesScreen() {
 
               <Text style={styles.price}>₹ {Math.round(avgPrice)}</Text>
               <Text style={styles.priceSub}>
-                per quintal • {formatMarketCropLabel(data?.crop ?? crop)}{stateFilter ? ` • ${stateFilter}` : ""} • {data?.summary?.mandi_count ?? 0} mandis
+                per quintal • {formatMarketCropLabel(effectiveData?.crop ?? crop)}{showFallbackRows ? " • All India fallback" : stateFilter ? ` • ${stateFilter}` : ""} • {effectiveData?.summary?.mandi_count ?? 0} mandis
               </Text>
+              {visibleDates.length > 0 ? (
+                <Text style={styles.priceCoverage}>
+                  Visible dates: {formatVisibleDate(visibleDates[0])}
+                  {visibleDates.length > 1 ? ` to ${formatVisibleDate(visibleDates[visibleDates.length - 1])}` : ""}
+                </Text>
+              ) : null}
 
               {/* Trend summary */}
               <View style={styles.trendBox}>
                 <TrendLine
                   icon="stats-chart-outline"
-                  text={`Min: ₹${data?.summary?.min_price ?? '–'} • Max: ₹${data?.summary?.max_price ?? '–'}`}
+                  text={`Min: ₹${effectiveData?.summary?.min_price ?? '–'} • Max: ₹${effectiveData?.summary?.max_price ?? '–'}`}
                 />
                 <TrendLine icon="alert-circle-outline" text="Tip: Set price alert for big changes" />
               </View>
@@ -152,13 +208,13 @@ export default function MarketPricesScreen() {
             </View>
 
             <View style={{ gap: 10 }}>
-              {(data?.prices?.length ?? 0) > 0 ? (
-                (data?.prices ?? []).map((p, idx) => (
+              {(effectiveData?.prices?.length ?? 0) > 0 ? (
+                (effectiveData?.prices ?? []).map((p, idx) => (
                   <View key={`${p.mandi_name}-${idx}`} style={styles.marketRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.marketName}>{p.mandi_name}</Text>
                       <Text style={styles.marketMeta}>
-                        {p.district ? `${p.district}, ${p.state}` : p.state}
+                        {[p.district ? `${p.district}, ${p.state}` : p.state, formatVisibleDate(p.date)].filter(Boolean).join(" • ")}
                       </Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
@@ -271,6 +327,19 @@ const styles = StyleSheet.create({
   offlineSub: { marginTop: 2, fontSize: 11, color: colors.muted, fontWeight: "700" },
   retryBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   retryText: { fontSize: 12, fontWeight: "900", color: colors.ink },
+  fallbackBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(139,94,60,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(139,94,60,0.18)",
+  },
+  fallbackText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: "800", color: colors.earth },
   emptyCard: {
     borderRadius: 18,
     borderWidth: 1,
@@ -338,6 +407,7 @@ const styles = StyleSheet.create({
 
   price: { marginTop: 10, fontSize: 28, fontWeight: "900", color: colors.ink },
   priceSub: { marginTop: 4, fontSize: 12, fontWeight: "800", color: colors.muted },
+  priceCoverage: { marginTop: 6, fontSize: 11, fontWeight: "700", color: colors.earth },
 
   trendBox: {
     marginTop: 12,

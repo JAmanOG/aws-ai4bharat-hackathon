@@ -1,313 +1,1287 @@
-/**
- * Ask Screen — Voice results canvas.
- *
- * This screen is intentionally minimal: it acts as a real-time visual
- * representation of the user's spoken requests. All recording flows are
- * handled by the global VoiceOverlay — this canvas only consumes
- * VoiceContext state and renders results.
- */
-
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Easing,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../theme/colors";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
+import { useNavigation } from "@react-navigation/native";
 import { useVoice } from "../voice/VoiceContext";
+import { useVoiceService, type ChatResult } from "../services/voice";
 import { VisualizationCardRenderer } from "../voice/VoiceVisualizationCards";
+import { useScreenContext } from "../context/ScreenContext";
+import {
+  healthApi,
+  visionApi,
+  type HealthImagingType,
+  type VisionAttachmentAnalysis,
+} from "../services/api";
+import { askDomains, ruralPalette as P } from "../theme/ruralPalette";
+const HERO_SIZE = 120;
 
-/* ── Domain badge colors ── */
-const DOMAIN_COLORS: Record<string, string> = {
-  agriculture: "#2E7D32",
-  market: "#1565C0",
-  schemes: "#6A1B9A",
-  finance: "#EF6C00",
-  health: "#C62828",
-  knowledge: colors.primary,
-  logistics: "#5D4037",
-  general: colors.muted,
+type AskAttachmentMimeType = "application/pdf" | "image/jpeg" | "image/png";
+type AskAttachmentSource = "camera" | "document";
+type AskAttachmentCategory = "medical_report" | "crop_image" | "general_image";
+type AskAttachmentStatus = "selected" | "analyzing" | "ready" | "error";
+
+type PickedAttachment = {
+  uri: string;
+  name: string;
+  mimeType: AskAttachmentMimeType;
+  source: AskAttachmentSource;
+  size?: number;
 };
 
-/* ── Voice state indicator ── */
-function StateIndicator({ state }: { state: string }) {
-  const meta = STATE_META[state] ?? STATE_META.idle;
+type AskAttachment = PickedAttachment & {
+  id: string;
+  status: AskAttachmentStatus;
+  category: AskAttachmentCategory;
+  analysisTitle?: string;
+  analysisSummary?: string;
+  observations?: string[];
+  promptHint?: string;
+  suggestedDomain?: "agriculture" | "health" | "general";
+  suggestedIntent?: string;
+  confidence?: number;
+  documentId?: string;
+  imagingType?: HealthImagingType;
+  error?: string;
+};
+
+function toBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 8192;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...Array.from(bytes.subarray(i, Math.min(i + chunkSize, bytes.length))));
+  }
+
+  return btoa(binary);
+}
+
+function normalizeMimeType(name: string, mimeType?: string | null): AskAttachmentMimeType | null {
+  const raw = String(mimeType || "").toLowerCase();
+  if (raw === "application/pdf") return "application/pdf";
+  if (raw === "image/png") return "image/png";
+  if (raw === "image/jpeg" || raw === "image/jpg") return "image/jpeg";
+
+  const lowerName = String(name || "").toLowerCase();
+  if (lowerName.endsWith(".pdf")) return "application/pdf";
+  if (lowerName.endsWith(".png")) return "image/png";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  return null;
+}
+
+function inferHealthImagingType(name: string): HealthImagingType {
+  const lower = String(name || "").toLowerCase();
+  if (/x[\s-]?ray/.test(lower)) return "xray";
+  if (/\bmri\b/.test(lower)) return "mri";
+  if (/\bct\b|ct[\s-]?scan/.test(lower)) return "ct_scan";
+  if (/ultra[\s-]?sound|sonography/.test(lower)) return "ultrasound";
+  return "pathology";
+}
+
+function looksLikeMedicalDocument(name: string) {
+  return /report|lab|blood|scan|x[\s-]?ray|\bmri\b|\bct\b|ultra[\s-]?sound|prescription|discharge|medical|test/i.test(String(name || ""));
+}
+
+function sanitizeContextValue(value?: string | null, limit = 220) {
+  return String(value || "")
+    .replace(/[.:]/g, ",")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
+function attachmentCategoryLabel(category: AskAttachmentCategory) {
+  if (category === "medical_report") return "Medical";
+  if (category === "crop_image") return "Crop";
+  return "Image";
+}
+
+function mapVisionKindToCategory(kind?: VisionAttachmentAnalysis["attachmentKind"]): AskAttachmentCategory {
+  if (kind === "crop_image" || kind === "field_image") return "crop_image";
+  if (kind === "medical_image" || kind === "medical_document") return "medical_report";
+  return "general_image";
+}
+
+function buildAttachmentHint(attachment?: AskAttachment | null) {
+  if (!attachment) {
+    return "Take a photo or choose a report, then ask about it.";
+  }
+  if (attachment.promptHint) return attachment.promptHint;
+  if (attachment.category === "medical_report") {
+    return "Ask what this report means or what to discuss with a doctor.";
+  }
+  if (attachment.category === "crop_image") {
+    return "Ask what issue is visible in this crop and what action to take next.";
+  }
+  return "Ask what this image shows or what you want to know about it.";
+}
+
+function buildAttachmentPromptContext(attachment?: AskAttachment | null) {
+  if (!attachment) return "";
+
+  const parts = [
+    `Selected attachment name: ${sanitizeContextValue(attachment.name, 80) || "unknown"}`,
+    `Selected attachment type: ${attachmentCategoryLabel(attachment.category)}`,
+    `Selected attachment status: ${attachment.status}`,
+  ];
+
+  if (attachment.suggestedDomain) {
+    parts.push(`Attachment suggested domain: ${attachment.suggestedDomain}`);
+  }
+  if (attachment.analysisSummary) {
+    parts.push(`Attachment summary: ${sanitizeContextValue(attachment.analysisSummary)}`);
+  }
+  if (attachment.observations?.length) {
+    parts.push(`Attachment observations: ${sanitizeContextValue(attachment.observations.join(", "), 180)}`);
+  }
+  if (attachment.promptHint) {
+    parts.push(`Attachment prompt hint: ${sanitizeContextValue(attachment.promptHint, 150)}`);
+  }
+  if (attachment.documentId) {
+    parts.push(`Attachment document id: ${attachment.documentId}`);
+  }
+  return parts.join(". ");
+}
+
+function attachmentIconName(attachment: AskAttachment): keyof typeof Ionicons.glyphMap {
+  if (attachment.status === "error") return "alert-circle";
+  if (attachment.category === "medical_report") return "document-text";
+  if (attachment.category === "crop_image") return "leaf";
+  return "images";
+}
+
+function statusCopy(state: string, hasResult: boolean, attachment?: AskAttachment | null) {
+  const attachmentHint = buildAttachmentHint(attachment);
+
+  switch (state) {
+    case "listening":
+      return {
+        title: "Listening...",
+        subtitle: attachment
+          ? "Ask what you want to know about this photo or report."
+          : "Describe your problem in Hindi, English, or your preferred language.",
+      };
+    case "processing":
+      return {
+        title: "Thinking...",
+        subtitle: attachment
+          ? "The assistant is combining your voice query with the selected attachment."
+          : "The assistant is grounding your answer with app context and live tools.",
+      };
+    case "speaking":
+      return {
+        title: "Speaking",
+        subtitle: "The response is being read aloud.",
+      };
+    case "visualizing":
+      return {
+        title: "Response Ready",
+        subtitle: hasResult
+          ? "The latest answer is visible below. Tap again to ask the next question."
+          : "Tap again to continue.",
+      };
+    default:
+      return {
+        title: "Tap to Speak",
+        subtitle: attachment ? attachmentHint : "Example: Ask about crop prices in Hindi...",
+      };
+  }
+}
+
+function DomainBubble({
+  label,
+  icon,
+  bubble,
+  iconColor,
+  style,
+  counterRotate,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  bubble: string;
+  iconColor: string;
+  style?: any;
+  counterRotate?: Animated.AnimatedInterpolation<string>;
+}) {
+  const inner = (
+    <>
+      <View style={[styles.domainCircle, { backgroundColor: bubble }]}>
+        <Ionicons name={icon} size={22} color={iconColor} />
+      </View>
+      <Text style={styles.domainLabel}>{label}</Text>
+    </>
+  );
+
   return (
-    <View style={[si.wrap, { backgroundColor: meta.bg }]}>
-      <View style={[si.dot, { backgroundColor: meta.color }]} />
-      <Text style={[si.label, { color: meta.color }]}>{meta.label}</Text>
+    <View style={[styles.domainNode, style]}>
+      {counterRotate ? (
+        <Animated.View style={{ alignItems: "center", transform: [{ rotate: counterRotate }] }}>
+          {inner}
+        </Animated.View>
+      ) : (
+        <View style={{ alignItems: "center" }}>{inner}</View>
+      )}
     </View>
   );
 }
 
-const STATE_META: Record<string, { label: string; color: string; bg: string }> = {
-  idle: { label: "Ready", color: colors.muted, bg: colors.bg },
-  listening: { label: "Listening…", color: colors.danger, bg: "rgba(239,68,68,0.08)" },
-  processing: { label: "Thinking…", color: colors.warn, bg: "rgba(245,158,11,0.08)" },
-  speaking: { label: "Speaking…", color: colors.primary, bg: "rgba(74,144,217,0.08)" },
-  visualizing: { label: "Done", color: colors.success, bg: "rgba(19,236,91,0.08)" },
-};
-
-const si = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, alignSelf: "center" },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  label: { fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
-});
-
-/* ── Main Component ── */
 export default function AskScreen() {
+  const nav = useNavigation<any>();
+  const parentNav = nav.getParent();
+  const insets = useSafeAreaInsets();
+  const voiceService = useVoiceService();
+  const screen = useScreenContext();
   const {
     state,
+    setState,
     transcript,
     responseText,
     currentVisualization,
     lastCommand,
-    history,
+    language,
+    sessionId,
+    processResult,
+    clearVisualization,
   } = useVoice();
 
-  const domain = lastCommand?.domain ?? "general";
-  const domainColor = DOMAIN_COLORS[domain] ?? colors.muted;
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
+  const [selectedAttachment, setSelectedAttachment] = useState<AskAttachment | null>(null);
+  const pulse = useRef(new Animated.Value(1)).current;
+  const halo = useRef(new Animated.Value(0.9)).current;
+  const orbitSpin = useRef(new Animated.Value(0)).current;
+  const mountedRef = useRef(true);
+  const attachmentJobRef = useRef(0);
 
-  /* Recent history for inline display */
-  const recentHistory = history.slice(-6).reverse();
+  const hasResult = !!(transcript || responseText || currentVisualization);
+  const attachmentPromptContext = useMemo(
+    () => buildAttachmentPromptContext(selectedAttachment),
+    [selectedAttachment]
+  );
+  const copy = statusCopy(state, hasResult, selectedAttachment);
+  const activeDomain = lastCommand?.domain ?? "general";
+  const orbitRotate = useMemo(
+    () =>
+      orbitSpin.interpolate({
+        inputRange: [0, 1],
+        outputRange: ["0deg", "360deg"],
+      }),
+    [orbitSpin]
+  );
 
-  const hasResults = !!(transcript || responseText || currentVisualization);
-  const showEmpty = !hasResults && state === "idle" && recentHistory.length === 0;
+  const counterRotate = useMemo(
+    () =>
+      orbitSpin.interpolate({
+        inputRange: [0, 1],
+        outputRange: ["0deg", "-360deg"],
+      }),
+    [orbitSpin]
+  );
+
+  const navigateForHealthResult = useCallback((result: ChatResult) => {
+    if (result.domain !== "health") return;
+
+    const intent = String(result.intent || "");
+    if (intent.includes("symptom")) {
+      nav.navigate("Home", { screen: "SymptomChecker" });
+      return;
+    }
+
+    if (
+      intent.includes("medical_report")
+      || intent.includes("health_platform_help")
+      || intent.includes("health_scheme")
+      || intent.includes("facility_referral")
+    ) {
+      nav.navigate("Home", { screen: "HealthDashboard" });
+    }
+  }, [nav]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    voiceService.requestMicPermission().then(setHasMicPermission).catch(() => setHasMicPermission(false));
+
+    return () => {
+      mountedRef.current = false;
+      voiceService.cancelRecording();
+      voiceService.stopPlayback();
+      setState("idle");
+    };
+  }, []);
+
+  useEffect(() => {
+    screen.update({
+      screen: "Ask",
+      meta: {
+        voiceState: state,
+        visibleDomains: askDomains.map((domain) => domain.label).join(", "),
+        activeDomain,
+        transcriptVisible: !!transcript,
+        responseVisible: !!responseText,
+        selectedAttachmentName: sanitizeContextValue(selectedAttachment?.name || "None", 80),
+        selectedAttachmentType: selectedAttachment ? attachmentCategoryLabel(selectedAttachment.category) : "None",
+        selectedAttachmentStatus: selectedAttachment?.status || "none",
+        attachmentSummary: sanitizeContextValue(selectedAttachment?.analysisSummary || selectedAttachment?.error || "None"),
+        attachmentObservations: sanitizeContextValue(selectedAttachment?.observations?.join(", ") || "None", 180),
+        attachmentPromptHint: selectedAttachment
+          ? sanitizeContextValue(buildAttachmentHint(selectedAttachment), 150)
+          : "None",
+      },
+    });
+  }, [activeDomain, attachmentPromptContext, responseText, screen.update, selectedAttachment, state, transcript]);
+
+  useEffect(() => {
+    if (state !== "listening") {
+      pulse.setValue(1);
+      halo.setValue(0.9);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulse, {
+            toValue: 1.06,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(halo, {
+            toValue: 1.12,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(halo, {
+            toValue: 0.9,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [halo, pulse, state]);
+
+  useEffect(() => {
+    if (hasResult) {
+      orbitSpin.stopAnimation();
+      orbitSpin.setValue(0);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.timing(orbitSpin, {
+        toValue: 1,
+        duration: 18000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    loop.start();
+    return () => {
+      loop.stop();
+      orbitSpin.setValue(0);
+    };
+  }, [hasResult, orbitSpin]);
+
+  const handleResult = useCallback(
+    (result: ChatResult) => {
+      processResult(result);
+      navigateForHealthResult(result);
+
+      if (!result.audio_base64) {
+        if (mountedRef.current) setState("visualizing");
+        return;
+      }
+
+      if (mountedRef.current) setState("speaking");
+
+      voiceService
+        .playBase64Audio(result.audio_base64)
+        .then(() => {
+          if (mountedRef.current) setState("visualizing");
+        })
+        .catch(() => {
+          if (mountedRef.current) setState("visualizing");
+        });
+    },
+    [navigateForHealthResult, processResult, setState, voiceService]
+  );
+
+  const buildVoiceScreenContext = useCallback(() => {
+    const baseContext = screen.toPromptContext();
+    if (!attachmentPromptContext) {
+      return baseContext;
+    }
+    return `${baseContext}. ${attachmentPromptContext}`;
+  }, [attachmentPromptContext, screen]);
+
+  const analyzeMedicalDocument = useCallback(async (asset: PickedAttachment) => {
+    const imagingType = inferHealthImagingType(asset.name);
+    const upload = await healthApi.initiateUpload({
+      fileName: asset.name,
+      fileType: asset.mimeType,
+      imagingType,
+      metadata: {
+        description: `Ask attachment upload for ${asset.name}`,
+        originalName: asset.name,
+        source: asset.source,
+      },
+    });
+
+    const localFile = await fetch(asset.uri);
+    const fileBuffer = await localFile.arrayBuffer();
+    const uploadResponse = await fetch(upload.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": asset.mimeType },
+      body: fileBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Upload failed with status ${uploadResponse.status}`);
+    }
+
+    const analysis = await healthApi.analyzeImage(upload.documentId, imagingType);
+    const summary = analysis.analysis.general_info || analysis.analysis.next_steps || "Medical report insights are ready.";
+    const observations = Array.isArray(analysis.analysis.common_findings)
+      ? analysis.analysis.common_findings.filter(Boolean).slice(0, 3)
+      : [];
+
+    return {
+      category: "medical_report" as const,
+      analysisTitle: "Medical Report Ready",
+      analysisSummary: summary,
+      observations,
+      promptHint: "Ask what this report means, what the important findings are, or what to discuss with a doctor.",
+      suggestedDomain: "health" as const,
+      suggestedIntent: "medical_report_analysis",
+      documentId: upload.documentId,
+      imagingType,
+    };
+  }, []);
+
+  const analyzeImageAttachment = useCallback(async (asset: PickedAttachment & { mimeType: "image/jpeg" | "image/png" }) => {
+    const response = await fetch(asset.uri);
+    const buffer = await response.arrayBuffer();
+    const base64 = toBase64(new Uint8Array(buffer));
+
+    if (!base64) {
+      throw new Error("Unable to read the selected image.");
+    }
+
+    const analysis = await visionApi.analyzeAttachment({
+      fileBase64: base64,
+      fileType: asset.mimeType,
+      fileName: asset.name,
+      source: asset.source,
+    });
+
+    return {
+      category: mapVisionKindToCategory(analysis.attachmentKind),
+      analysisTitle: analysis.title,
+      analysisSummary: analysis.summary,
+      observations: analysis.keyObservations,
+      promptHint: analysis.spokenPromptHint || buildAttachmentHint(null),
+      suggestedDomain: analysis.suggestedDomain,
+      suggestedIntent: analysis.suggestedIntent,
+      confidence: analysis.confidence,
+    };
+  }, []);
+
+  const prepareAttachment = useCallback(async (asset: PickedAttachment) => {
+    if (asset.mimeType !== "application/pdf" && asset.size && asset.size > 6 * 1024 * 1024) {
+      Alert.alert("Image too large", "Choose an image under 6MB so it can be analyzed quickly.");
+      return;
+    }
+
+    clearVisualization();
+    const draft: AskAttachment = {
+      id: `${Date.now()}-${asset.name}`,
+      ...asset,
+      category: asset.mimeType === "application/pdf" ? "medical_report" : "general_image",
+      status: "analyzing",
+    };
+
+    const jobId = attachmentJobRef.current + 1;
+    attachmentJobRef.current = jobId;
+    setSelectedAttachment(draft);
+
+    try {
+      const analysis = asset.mimeType === "application/pdf"
+        ? await analyzeMedicalDocument(asset)
+        : await analyzeImageAttachment(asset as PickedAttachment & { mimeType: "image/jpeg" | "image/png" });
+
+      if (attachmentJobRef.current !== jobId) {
+        return;
+      }
+
+      setSelectedAttachment({
+        ...draft,
+        ...analysis,
+        category: analysis.category,
+        status: "ready",
+      });
+    } catch (error: any) {
+      if (attachmentJobRef.current !== jobId) {
+        return;
+      }
+
+      setSelectedAttachment({
+        ...draft,
+        status: "error",
+        error: error?.message ?? "Unable to analyze the selected attachment right now.",
+      });
+      Alert.alert("Attachment analysis failed", error?.message ?? "Unable to analyze the selected attachment right now.");
+    }
+  }, [analyzeImageAttachment, analyzeMedicalDocument, clearVisualization]);
+
+  const pickAttachmentFromCamera = useCallback(async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Camera permission needed", "Allow camera access to capture a photo for AI analysis.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: false,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets?.[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const mimeType = normalizeMimeType(asset.fileName || "", asset.mimeType);
+    if (!mimeType || mimeType === "application/pdf") {
+      Alert.alert("Unsupported file", "Capture a JPG or PNG image.");
+      return;
+    }
+
+    await prepareAttachment({
+      uri: asset.uri,
+      name: asset.fileName || `camera-photo-${Date.now()}.jpg`,
+      mimeType,
+      source: "camera",
+      size: asset.fileSize,
+    });
+  }, [prepareAttachment]);
+
+  const pickAttachmentFromFiles = useCallback(async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: ["application/pdf", "image/jpeg", "image/png"],
+    });
+
+    if (result.canceled || !result.assets?.[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const mimeType = normalizeMimeType(asset.name || "", asset.mimeType);
+    if (!mimeType) {
+      Alert.alert("Unsupported file", "Choose a PDF, JPG, or PNG file.");
+      return;
+    }
+
+    if (mimeType === "application/pdf" && !looksLikeMedicalDocument(asset.name || "")) {
+      Alert.alert("PDF support is limited", "For now, PDF upload on Ask is for medical reports only. Use an image for crop or object questions.");
+      return;
+    }
+
+    await prepareAttachment({
+      uri: asset.uri,
+      name: asset.name || `attachment-${Date.now()}`,
+      mimeType,
+      source: "document",
+      size: asset.size,
+    });
+  }, [prepareAttachment]);
+
+  const openAttachmentPicker = useCallback(() => {
+    if (state === "listening" || state === "processing" || state === "speaking") {
+      Alert.alert("Finish the current turn", "Stop the current voice turn before adding a new photo or report.");
+      return;
+    }
+
+    if (selectedAttachment?.status === "analyzing") {
+      Alert.alert("Attachment is still processing", "Wait for the current photo or report to finish analyzing.");
+      return;
+    }
+
+    Alert.alert(
+      "Add photo or report",
+      "Take a photo or choose an image/report file, then ask about it.",
+      [
+        {
+          text: "Take Photo",
+          onPress: () => {
+            void pickAttachmentFromCamera();
+          },
+        },
+        {
+          text: "Choose File",
+          onPress: () => {
+            void pickAttachmentFromFiles();
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }, [pickAttachmentFromCamera, pickAttachmentFromFiles, selectedAttachment?.status, state]);
+
+  const clearAttachmentSelection = useCallback(() => {
+    if (selectedAttachment?.status === "analyzing") {
+      return;
+    }
+    attachmentJobRef.current += 1;
+    setSelectedAttachment(null);
+  }, [selectedAttachment?.status]);
+
+  const startListening = useCallback(async () => {
+    if (hasMicPermission === false) {
+      Alert.alert("Microphone permission needed", "Allow microphone access to speak with the assistant.");
+      return;
+    }
+
+    if (selectedAttachment?.status === "analyzing") {
+      Alert.alert("Attachment is still processing", "Wait for the selected photo or report to finish analyzing.");
+      return;
+    }
+
+    try {
+      clearVisualization();
+      await voiceService.startRecording();
+      if (mountedRef.current) setState("listening");
+    } catch {
+      if (mountedRef.current) setState("idle");
+    }
+  }, [clearVisualization, hasMicPermission, selectedAttachment?.status, setState, voiceService]);
+
+  const stopAndSend = useCallback(async () => {
+    if (mountedRef.current) setState("processing");
+
+    try {
+      const uri = await voiceService.stopRecording();
+      if (!uri) {
+        if (mountedRef.current) setState("idle");
+        return;
+      }
+
+      const response = await fetch(uri);
+      const buffer = await response.arrayBuffer();
+      const base64 = toBase64(new Uint8Array(buffer));
+      if (!base64) {
+        if (mountedRef.current) setState("idle");
+        return;
+      }
+
+      const result = await voiceService.chatWithAudio(base64, {
+        language_code: language,
+        session_id: sessionId ?? undefined,
+        screen_context: buildVoiceScreenContext(),
+      });
+      handleResult(result);
+    } catch {
+      if (mountedRef.current) setState("idle");
+    }
+  }, [buildVoiceScreenContext, handleResult, language, sessionId, setState, voiceService]);
+
+  const handleHeroPress = useCallback(async () => {
+    if (state === "processing" || state === "speaking") return;
+    if (state === "listening") {
+      await stopAndSend();
+      return;
+    }
+
+    await startListening();
+  }, [startListening, state, stopAndSend]);
+
+  const openCommunity = useCallback(() => {
+    parentNav?.navigate("Community");
+  }, [parentNav]);
+
+  const openAlerts = useCallback(() => {
+    nav.navigate("Home", { screen: "Alerts" });
+  }, [nav]);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} bounces={false}>
-        {/* Title */}
-        <Text style={styles.platformTitle}>RURAL AI</Text>
-        <Text style={styles.hindiSub}>आपका डिजिटल साथी</Text>
-
-        {/* Voice state */}
-        <View style={styles.stateRow}>
-          <StateIndicator state={state} />
+      <View style={styles.container}>
+        <View style={styles.topRow}>
+          <Pressable style={styles.topIconBtn} onPress={openCommunity}>
+            <Ionicons name="menu-outline" size={28} color={P.mutedDark} />
+          </Pressable>
+          <Text style={styles.brand}>RURAL ECOSYSTEM PLATFORM</Text>
+          <Pressable style={styles.topIconBtn} onPress={openAlerts}>
+            <Ionicons name="notifications" size={24} color={P.mutedDark} />
+          </Pressable>
         </View>
 
-        {/* Domain badge when active */}
-        {lastCommand && domain !== "general" && (
-          <View style={[styles.domainBadge, { backgroundColor: domainColor + "14" }]}>
-            <View style={[styles.domainDot, { backgroundColor: domainColor }]} />
-            <Text style={[styles.domainText, { color: domainColor }]}>{domain.toUpperCase()}</Text>
-          </View>
-        )}
+        <Text style={styles.hindiHeading}>मेरी फसल के लिए सलाह</Text>
 
-        {/* Transcript */}
-        {transcript ? (
-          <View style={styles.transcriptCard}>
-            <View style={styles.transcriptHeader}>
-              <Ionicons name="mic" size={14} color={colors.primary} />
-              <Text style={styles.transcriptLabel}>You said</Text>
-            </View>
-            <Text style={styles.transcriptText}>{transcript}</Text>
-          </View>
-        ) : null}
-
-        {/* Visualization card */}
-        {currentVisualization && (
-          <View style={styles.vizSection}>
-            <VisualizationCardRenderer card={currentVisualization} />
-          </View>
-        )}
-
-        {/* AI Response (when no viz card) */}
-        {responseText && !currentVisualization ? (
-          <View style={styles.responseCard}>
-            <View style={styles.responseHeader}>
-              <Ionicons name="sparkles" size={14} color={colors.success} />
-              <Text style={styles.responseLabel}>AI Response</Text>
-            </View>
-            <Text style={styles.responseText}>{responseText}</Text>
-          </View>
-        ) : null}
-
-        {/* Chat history */}
-        {recentHistory.length > 0 && (
-          <View style={styles.chatSection}>
-            <Text style={styles.sectionTitle}>Recent</Text>
-            {recentHistory.map((entry) => (
-              <View key={entry.id} style={[styles.bubble, entry.role === "user" ? styles.bubbleUser : styles.bubbleAi]}>
-                <View style={styles.bubbleHeader}>
-                  <Ionicons
-                    name={entry.role === "user" ? "person-circle" : "sparkles"}
-                    size={12}
-                    color={entry.role === "user" ? colors.primary : colors.success}
-                  />
-                  <Text style={[styles.bubbleRole, { color: entry.role === "user" ? colors.primary : colors.success }]}>
-                    {entry.role === "user" ? "You" : "AI"}
-                  </Text>
-                  {entry.domain && entry.role !== "user" && (
-                    <View style={[styles.miniBadge, { backgroundColor: (DOMAIN_COLORS[entry.domain] ?? colors.muted) + "18" }]}>
-                      <Text style={[styles.miniBadgeText, { color: DOMAIN_COLORS[entry.domain] ?? colors.muted }]}>
-                        {entry.domain}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.bubbleText} numberOfLines={3}>{entry.text}</Text>
-                {/* Inline viz card for assistant entries */}
-                {entry.visualization && entry.role !== "user" && (
-                  <View style={styles.inlineViz}>
-                    <VisualizationCardRenderer card={entry.visualization} />
-                  </View>
-                )}
-              </View>
+        <View style={styles.heroSection}>
+          <View style={styles.sideDotsLeft}>
+            {[0, 1, 2].map((idx) => (
+              <View key={`l-${idx}`} style={[styles.sideDot, idx === 1 && styles.sideDotCenter]} />
             ))}
           </View>
-        )}
+          <View style={styles.sideDotsRight}>
+            {[0, 1, 2].map((idx) => (
+              <View key={`r-${idx}`} style={[styles.sideDot, idx === 1 && styles.sideDotCenter]} />
+            ))}
+          </View>
 
-        {/* Empty state */}
-        {showEmpty && (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconWrap}>
-              <Ionicons name="mic-outline" size={48} color={colors.primary} />
-            </View>
-            <Text style={styles.emptyTitle}>Speak to get started</Text>
-            <Text style={styles.emptyHint}>
-              Tap the mic button to ask anything.{"\n"}
-              The screen will update with your results.
-            </Text>
+          <Animated.View style={[styles.heroHalo, { transform: [{ scale: halo }] }]} />
+          <View style={styles.heroRing}>
+            <Animated.View style={{ transform: [{ scale: pulse }] }}>
+              <Pressable
+                onPress={handleHeroPress}
+                style={({ pressed }) => [
+                  styles.heroButton,
+                  state === "listening" && styles.heroButtonActive,
+                  pressed && styles.heroButtonPressed,
+                ]}
+              >
+                {state === "processing" ? (
+                  <ActivityIndicator size="small" color={P.surface} />
+                ) : (
+                  <Ionicons
+                    name={state === "listening" ? "stop" : "mic"}
+                    size={54}
+                    color={P.surface}
+                  />
+                )}
+              </Pressable>
+            </Animated.View>
+          </View>
+        </View>
 
-            {/* Suggestion chips */}
-            <View style={styles.suggestionsWrap}>
-              <Text style={styles.suggestLabel}>TRY SAYING</Text>
-              {SUGGESTIONS.map((s) => (
-                <View key={s} style={styles.suggestChip}>
-                  <Ionicons name="chatbubble-outline" size={12} color={colors.primary} />
-                  <Text style={styles.suggestText}>{s}</Text>
+        <Text style={styles.heroTitle}>{copy.title}</Text>
+        <Text style={styles.heroSubtitle}>{copy.subtitle}</Text>
+
+        {selectedAttachment ? (
+          <View style={styles.attachmentCard}>
+            <View style={styles.attachmentHeader}>
+              <View style={styles.attachmentIconWrap}>
+                {selectedAttachment.status === "analyzing" ? (
+                  <ActivityIndicator size="small" color={P.goldDark} />
+                ) : (
+                  <Ionicons
+                    name={attachmentIconName(selectedAttachment)}
+                    size={24}
+                    color={selectedAttachment.status === "error" ? "#B45442" : P.goldDark}
+                  />
+                )}
+              </View>
+
+              <View style={styles.attachmentCopy}>
+                <View style={styles.attachmentTopRow}>
+                  <Text style={styles.attachmentName} numberOfLines={1}>
+                    {selectedAttachment.name}
+                  </Text>
+                  <Pressable
+                    style={[
+                      styles.attachmentClearBtn,
+                      selectedAttachment.status === "analyzing" && styles.attachmentClearBtnDisabled,
+                    ]}
+                    disabled={selectedAttachment.status === "analyzing"}
+                    onPress={clearAttachmentSelection}
+                  >
+                    <Ionicons name="close" size={18} color={P.mutedDark} />
+                  </Pressable>
                 </View>
-              ))}
+
+                <View style={styles.attachmentMetaRow}>
+                  <View style={styles.attachmentPill}>
+                    <Text style={styles.attachmentPillText}>
+                      {attachmentCategoryLabel(selectedAttachment.category)}
+                    </Text>
+                  </View>
+                  <Text style={styles.attachmentStatusText}>
+                    {selectedAttachment.status === "analyzing"
+                      ? "Analyzing"
+                      : selectedAttachment.status === "ready"
+                        ? "Ready"
+                        : selectedAttachment.status === "error"
+                          ? "Needs retry"
+                          : "Selected"}
+                  </Text>
+                  {selectedAttachment.confidence != null ? (
+                    <Text style={styles.attachmentConfidenceText}>
+                      {selectedAttachment.confidence}% confidence
+                    </Text>
+                  ) : null}
+                </View>
+
+                <Text style={styles.attachmentSummary}>
+                  {selectedAttachment.status === "error"
+                    ? selectedAttachment.error || "This attachment could not be analyzed."
+                    : selectedAttachment.analysisSummary || "Attachment selected. Ask a question about it after the analysis finishes."}
+                </Text>
+
+                <Text style={styles.attachmentHint}>{buildAttachmentHint(selectedAttachment)}</Text>
+              </View>
             </View>
           </View>
-        )}
+        ) : null}
 
-        {/* Vision block */}
-        <View style={styles.visionBlock}>
-          <Ionicons name="sparkles" size={16} color={colors.primary} />
-          <Text style={styles.visionText}>
-            Voice is the primary control. Speak naturally and the screen responds.
-          </Text>
-        </View>
-      </ScrollView>
+        {!hasResult ? (
+          <Animated.View style={[styles.domainOrbitSection, { transform: [{ rotate: orbitRotate }] }]}>
+            <View style={styles.orbitRing} />
+            <DomainBubble
+              label={askDomains[0].label}
+              icon={askDomains[0].icon}
+              bubble={askDomains[0].bubble}
+              iconColor={askDomains[0].iconColor}
+              style={styles.domainTop}
+              counterRotate={counterRotate}
+            />
+            <DomainBubble
+              label={askDomains[1].label}
+              icon={askDomains[1].icon}
+              bubble={askDomains[1].bubble}
+              iconColor={askDomains[1].iconColor}
+              style={styles.domainLeft}
+              counterRotate={counterRotate}
+            />
+            <DomainBubble
+              label={askDomains[2].label}
+              icon={askDomains[2].icon}
+              bubble={askDomains[2].bubble}
+              iconColor={askDomains[2].iconColor}
+              style={styles.domainRight}
+              counterRotate={counterRotate}
+            />
+            <DomainBubble
+              label={askDomains[3].label}
+              icon={askDomains[3].icon}
+              bubble={askDomains[3].bubble}
+              iconColor={askDomains[3].iconColor}
+              style={styles.domainBottomLeft}
+              counterRotate={counterRotate}
+            />
+            <DomainBubble
+              label={askDomains[4].label}
+              icon={askDomains[4].icon}
+              bubble={askDomains[4].bubble}
+              iconColor={askDomains[4].iconColor}
+              style={styles.domainBottomRight}
+              counterRotate={counterRotate}
+            />
+          </Animated.View>
+        ) : (
+          <ScrollView
+            style={styles.resultsScroll}
+            contentContainerStyle={styles.resultsScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {transcript ? (
+              <View style={styles.resultCard}>
+                <Text style={styles.resultEyebrow}>You said</Text>
+                <Text style={styles.resultBody}>{transcript}</Text>
+              </View>
+            ) : null}
+
+            {responseText ? (
+              <View style={styles.resultCard}>
+                <View style={styles.resultHeader}>
+                  <Text style={styles.resultEyebrow}>Assistant</Text>
+                  {lastCommand?.domain ? (
+                    <View style={styles.domainPill}>
+                      <Text style={styles.domainPillText}>{lastCommand.domain}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.resultBody}>{responseText}</Text>
+              </View>
+            ) : null}
+
+            {currentVisualization ? (
+              <View style={styles.visualizationWrap}>
+                <VisualizationCardRenderer card={currentVisualization} />
+              </View>
+            ) : null}
+          </ScrollView>
+        )}
+      </View>
+
+      <Pressable style={[styles.cameraFab, { left: 26, bottom: insets.bottom + 30 }]} onPress={openAttachmentPicker}>
+        <Ionicons name="camera" size={26} color={P.surface} />
+      </Pressable>
     </SafeAreaView>
   );
 }
 
-/* ── Suggestion prompts ── */
-const SUGGESTIONS = [
-  "\"Wheat ka bhav batao\"",
-  "\"Mausam kaisa hai?\"",
-  "\"PM Kisan scheme details\"",
-  "\"Insurance claim status\"",
-];
-
-/* ── Styles ── */
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  scrollContent: { alignItems: "center", paddingHorizontal: 20, paddingBottom: 120, paddingTop: 14 },
-
-  platformTitle: { fontSize: 18, fontWeight: "900", color: colors.ink, letterSpacing: 3, textAlign: "center" },
-  hindiSub: { marginTop: 4, fontSize: 13, fontWeight: "600", color: colors.muted, textAlign: "center" },
-
-  stateRow: { marginTop: 16 },
-
-  domainBadge: {
+  safe: { flex: 1, backgroundColor: P.bg },
+  container: {
+    flex: 1,
+    paddingHorizontal: 26,
+    paddingTop: 6,
+    alignItems: "center",
+  },
+  topRow: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-    marginTop: 10,
-    alignSelf: "center",
+    justifyContent: "space-between",
   },
-  domainDot: { width: 6, height: 6, borderRadius: 3 },
-  domainText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.6 },
-
-  transcriptCard: {
-    width: "100%",
-    marginTop: 16,
-    backgroundColor: "rgba(74,144,217,0.08)",
-    borderRadius: 16,
-    padding: 14,
-    gap: 6,
-  },
-  transcriptHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-  transcriptLabel: { fontSize: 10, fontWeight: "900", color: colors.primary, letterSpacing: 0.4 },
-  transcriptText: { fontSize: 14, fontWeight: "700", color: colors.ink, lineHeight: 20 },
-
-  vizSection: { width: "100%", marginTop: 14 },
-
-  responseCard: {
-    width: "100%",
-    marginTop: 14,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 14,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  responseHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-  responseLabel: { fontSize: 10, fontWeight: "900", color: colors.success, letterSpacing: 0.4 },
-  responseText: { fontSize: 13, fontWeight: "600", color: colors.ink, lineHeight: 20 },
-
-  chatSection: { width: "100%", marginTop: 18, gap: 8 },
-  sectionTitle: { fontSize: 11, fontWeight: "900", color: colors.muted, letterSpacing: 0.5, marginBottom: 4 },
-
-  bubble: { borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 4 },
-  bubbleUser: { backgroundColor: "rgba(74,144,217,0.05)", borderBottomLeftRadius: 4 },
-  bubbleAi: { backgroundColor: colors.surface, borderBottomRightRadius: 4 },
-  bubbleHeader: { flexDirection: "row", alignItems: "center", gap: 4 },
-  bubbleRole: { fontSize: 10, fontWeight: "900", letterSpacing: 0.3 },
-  bubbleText: { fontSize: 13, fontWeight: "600", lineHeight: 18, color: colors.ink },
-  miniBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 4 },
-  miniBadgeText: { fontSize: 8, fontWeight: "900", letterSpacing: 0.3 },
-  inlineViz: { marginTop: 6 },
-
-  emptyState: { alignItems: "center", marginTop: 30, gap: 10 },
-  emptyIconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.primaryTint,
+  topIconBtn: {
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
   },
-  emptyTitle: { fontSize: 18, fontWeight: "900", color: colors.ink },
-  emptyHint: { fontSize: 13, fontWeight: "600", color: colors.muted, textAlign: "center", lineHeight: 20 },
-
-  suggestionsWrap: { marginTop: 20, width: "100%", gap: 8 },
-  suggestLabel: { fontSize: 10, fontWeight: "900", color: colors.muted, letterSpacing: 0.8, marginBottom: 4 },
-  suggestChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
+  brand: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 3.2,
+    color: P.ink,
   },
-  suggestText: { fontSize: 13, fontWeight: "700", color: colors.ink, fontStyle: "italic" },
-
-  visionBlock: {
-    width: "100%",
-    marginTop: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.primaryTint,
-    flexDirection: "row",
+  hindiHeading: {
+    marginTop: 10,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "900",
+    color: P.ink,
+    textAlign: "center",
+  },
+  heroSection: {
+    marginTop: 16,
+    width: 240,
+    height: 170,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  sideDotsLeft: {
+    position: "absolute",
+    left: 4,
+    top: 88,
+    flexDirection: "row",
     gap: 10,
   },
-  visionText: { flex: 1, fontSize: 12, fontWeight: "700", lineHeight: 18, color: colors.ink },
+  sideDotsRight: {
+    position: "absolute",
+    right: 4,
+    top: 88,
+    flexDirection: "row",
+    gap: 10,
+  },
+  sideDot: {
+    width: 8,
+    height: 18,
+    borderRadius: 8,
+    backgroundColor: P.goldSoft,
+    opacity: 0.9,
+  },
+  sideDotCenter: {
+    height: 24,
+    backgroundColor: P.gold,
+  },
+  heroHalo: {
+    position: "absolute",
+    width: HERO_SIZE + 34,
+    height: HERO_SIZE + 34,
+    borderRadius: (HERO_SIZE + 34) / 2,
+    backgroundColor: P.goldTint,
+  },
+  heroRing: {
+    width: HERO_SIZE + 12,
+    height: HERO_SIZE + 12,
+    borderRadius: (HERO_SIZE + 12) / 2,
+    borderWidth: 5,
+    borderColor: P.gold,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.surface,
+  },
+  heroButton: {
+    width: HERO_SIZE,
+    height: HERO_SIZE,
+    borderRadius: HERO_SIZE / 2,
+    backgroundColor: P.gold,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: P.goldDark,
+    shadowOpacity: 0.24,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
+  },
+  heroButtonActive: {
+    backgroundColor: P.goldDark,
+  },
+  heroButtonPressed: {
+    transform: [{ scale: 0.97 }],
+  },
+  heroTitle: {
+    marginTop: 4,
+    fontSize: 22,
+    fontWeight: "900",
+    color: P.ink,
+    textAlign: "center",
+  },
+  heroSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "600",
+    color: P.muted,
+    textAlign: "center",
+    maxWidth: 300,
+  },
+  attachmentCard: {
+    width: "100%",
+    marginTop: 16,
+    backgroundColor: P.surface,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: P.line,
+    padding: 14,
+    shadowColor: P.goldShadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  attachmentHeader: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  attachmentIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: P.goldTint,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachmentCopy: {
+    flex: 1,
+  },
+  attachmentTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  attachmentName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  attachmentClearBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: P.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachmentClearBtnDisabled: {
+    opacity: 0.45,
+  },
+  attachmentMetaRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  attachmentPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: P.goldTint,
+  },
+  attachmentPillText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: P.goldDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  attachmentStatusText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.mutedDark,
+  },
+  attachmentConfidenceText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.goldDark,
+  },
+  attachmentSummary: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "600",
+    color: P.ink,
+  },
+  attachmentHint: {
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: P.goldDark,
+  },
+  resultsScroll: {
+    flex: 1,
+    width: "100%",
+    marginTop: 10,
+  },
+  resultsScrollContent: {
+    gap: 10,
+    paddingBottom: 20,
+  },
+  resultCard: {
+    backgroundColor: P.surface,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: P.line,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: P.goldShadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  resultHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  resultEyebrow: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: P.goldDark,
+  },
+  resultBody: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: "600",
+    color: P.ink,
+  },
+  domainPill: {
+    backgroundColor: P.goldTint,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  domainPillText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: P.goldDark,
+    textTransform: "capitalize",
+  },
+  visualizationWrap: {
+    width: "100%",
+  },
+  domainOrbitSection: {
+    width: 290,
+    height: 290,
+    marginTop: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  orbitRing: {
+    position: "absolute",
+    top: 45,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 2,
+    borderColor: P.lineSoft,
+    borderStyle: "dashed",
+  },
+  domainNode: {
+    position: "absolute",
+    alignItems: "center",
+    width: 100,
+  },
+  domainCircle: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: P.goldShadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 2,
+  },
+  domainLabel: {
+    marginTop: 6,
+    fontSize: 10,
+    fontWeight: "800",
+    color: P.ink,
+    textAlign: "center",
+  },
+  domainTop: {
+    top: 0,
+  },
+  domainLeft: {
+    left: 0,
+    top: 76,
+  },
+  domainRight: {
+    right: 0,
+    top: 76,
+  },
+  domainBottomLeft: {
+    left: 14,
+    bottom: 10,
+  },
+  domainBottomRight: {
+    right: 14,
+    bottom: 10,
+  },
+  cameraFab: {
+    position: "absolute",
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#B9BAC4",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#A8A9B2",
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
+  },
 });

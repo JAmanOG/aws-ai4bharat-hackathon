@@ -253,8 +253,13 @@ function normalizePriceSummary(summary?: RawPricesResult['summary']) {
 }
 
 export const marketApi = {
-  getPrices: async (crop: string, state?: string, district?: string) => {
-    const result = await api.get<RawPricesResult>(`/agriculture/prices/${encodeURIComponent(crop)}`, { state, district });
+  getPrices: async (crop: string, state?: string, district?: string, days?: number, limit?: number) => {
+    const result = await api.get<RawPricesResult>(`/agriculture/prices/${encodeURIComponent(crop)}`, {
+      state,
+      district,
+      days,
+      limit,
+    });
     return {
       crop: String(result.crop ?? result.crop_type ?? crop),
       crop_type: result.crop_type,
@@ -545,8 +550,11 @@ export const economicsApi = {
   updateProfile: (body: Record<string, unknown>) =>
     api.post('/economics/profile', body),
 
-  getSchemes: (params?: { category?: string; state?: string }) =>
-    api.get<{ schemes: Scheme[] }>('/economics/schemes', params),
+  getSchemes: (params?: { category?: string; type?: string; state?: string }) =>
+    api.get<{ schemes: Scheme[] }>('/economics/schemes', {
+      ...params,
+      type: params?.type ?? params?.category,
+    }),
 
   getScheme: (id: string) =>
     api.get<Scheme>(`/economics/schemes/${id}`),
@@ -940,6 +948,30 @@ export const healthApi = {
 
   analyzeImage: (id: string, imagingType?: HealthImagingType) =>
     api.post<HealthImagingAnalysisResponse>(`/health/imaging/${id}/analyze`, imagingType ? { imagingType } : {}),
+};
+
+export interface VisionAttachmentAnalysis {
+  attachmentKind: "crop_image" | "field_image" | "medical_image" | "medical_document" | "object_image" | "general_image" | "unknown";
+  title: string;
+  summary: string;
+  keyObservations: string[];
+  questionsToAsk: string[];
+  suggestedDomain: "agriculture" | "health" | "general";
+  suggestedIntent?: string;
+  spokenPromptHint?: string;
+  confidence?: number;
+  provider?: string;
+}
+
+export const visionApi = {
+  analyzeAttachment: (body: {
+    fileBase64: string;
+    fileType: "image/jpeg" | "image/png";
+    fileName?: string;
+    source?: "camera" | "document";
+    userPrompt?: string;
+  }) =>
+    api.post<VisionAttachmentAnalysis>("/vision/analyze", body),
 };
 
 // ═══════════ Open Data Export ═══════════

@@ -20,15 +20,34 @@ const NOVA_MODEL = process.env.NOVA_MODEL_ID || 'amazon.nova-micro-v1:0';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_API_KEY = () => process.env.GEMINI_API_KEY || '';
 
+function sanitizeModelOutput(raw = '') {
+    return String(raw || '')
+        .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, ' ')
+        .replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, ' ')
+        .replace(/<\/?think\b[^>]*>/gi, ' ')
+        .replace(/<\/?thinking\b[^>]*>/gi, ' ')
+        .replace(/```(?:json|text|markdown)?\s*/gi, ' ')
+        .replace(/```\s*/g, ' ')
+        .replace(/\r/g, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+}
+
 /* ─── Provider 1: Sarvam-M ─── */
 
 async function callSarvam(messages, opts = {}) {
-    return sarvam.chat(messages, {
+    const result = await sarvam.chat(messages, {
         temperature: opts.temperature ?? 0.2,
         maxTokens: opts.maxTokens ?? 1024,
         wikiGrounding: opts.wikiGrounding ?? false,
         reasoningEffort: opts.reasoningEffort,
     });
+    return {
+        ...result,
+        content: sanitizeModelOutput(result.content),
+    };
 }
 
 /* ─── Provider 2: AWS Nova Micro (via Bedrock) ─── */
@@ -66,7 +85,7 @@ async function callNova(messages, opts = {}) {
     const text = data.output?.message?.content?.[0]?.text || '';
 
     return {
-        content: text,
+        content: sanitizeModelOutput(text),
         provider: 'nova-micro',
         usage: {
             prompt_tokens: data.usage?.inputTokens || 0,
@@ -108,7 +127,7 @@ async function callBedrock(messages, opts = {}) {
     const data = JSON.parse(Buffer.from(response.body).toString('utf-8'));
 
     return {
-        content: data.content?.[0]?.text || '',
+        content: sanitizeModelOutput(data.content?.[0]?.text || ''),
         provider: 'bedrock-claude',
         usage: {
             prompt_tokens: data.usage?.input_tokens || 0,
@@ -169,7 +188,7 @@ async function callGemini(messages, opts = {}) {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     return {
-        content: text,
+        content: sanitizeModelOutput(text),
         provider: 'gemini',
         usage: {
             prompt_tokens: data.usageMetadata?.promptTokenCount || 0,
@@ -217,6 +236,9 @@ async function generateResponse(messages, opts = {}) {
     for (const provider of providers) {
         try {
             const result = await provider.fn(messages, opts);
+            if (!String(result?.content || '').trim()) {
+                throw new Error('Empty response after sanitization');
+            }
             return result;
         } catch (err) {
             lastError = err;
@@ -231,6 +253,7 @@ async function generateResponse(messages, opts = {}) {
 }
 
 module.exports = {
+    sanitizeModelOutput,
     generateResponse,
     callSarvam,
     callNova,

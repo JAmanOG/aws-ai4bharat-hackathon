@@ -2,3 +2,4 @@ backend/node_modules
 .env
 docs
 rohit/feature1/info.md
+backend/coverage/

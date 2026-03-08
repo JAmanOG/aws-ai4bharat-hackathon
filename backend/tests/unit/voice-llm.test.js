@@ -107,6 +107,23 @@ describe('LLM Service – Quad Fallback', () => {
       expect(result.provider).toBe('sarvam-m');
     });
 
+    test('strips think tags from provider output', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: '<think>\ninternal\n</think>\nVisible answer' } }],
+          usage: {},
+          id: 'c-2',
+        }),
+      });
+
+      const result = await llm.generateResponse([
+        { role: 'user', content: 'Hello' },
+      ]);
+
+      expect(result.content).toBe('Visible answer');
+    });
+
     test('falls back to next provider when Sarvam fails', async () => {
       // Sarvam fails
       mockFetch.mockRejectedValueOnce(new Error('Sarvam down'));

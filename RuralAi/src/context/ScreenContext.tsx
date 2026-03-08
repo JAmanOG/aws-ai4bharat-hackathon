@@ -53,6 +53,40 @@ const DEFAULT: ScreenState = { screen: "HomeMain" };
 
 const ScreenCtx = createContext<ScreenContextValue | null>(null);
 
+function areMetaEqual(
+  left?: Record<string, any>,
+  right?: Record<string, any>,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return !left && !right;
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) {
+      return false;
+    }
+    if (!Object.is(left[key], right[key])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areScreenStatesEqual(left: ScreenState, right: ScreenState): boolean {
+  return (
+    left.screen === right.screen &&
+    left.tab === right.tab &&
+    left.crop === right.crop &&
+    left.compareCrop === right.compareCrop &&
+    left.location === right.location &&
+    areMetaEqual(left.meta, right.meta)
+  );
+}
+
 export function useScreenContext(): ScreenContextValue {
   const ctx = useContext(ScreenCtx);
   if (!ctx) throw new Error("useScreenContext must be inside ScreenProvider");
@@ -64,13 +98,31 @@ export function ScreenProvider({ children }: { children: React.ReactNode }) {
   const ref = useRef<ScreenState>(DEFAULT);
 
   const set = useCallback((state: ScreenState) => {
-    ref.current = state;
-    setCurrent(state);
+    setCurrent((prev) => {
+      if (areScreenStatesEqual(prev, state)) {
+        return prev;
+      }
+      ref.current = state;
+      return state;
+    });
   }, []);
 
   const update = useCallback((partial: Partial<ScreenState>) => {
     setCurrent((prev) => {
-      const next = { ...prev, ...partial };
+      const next =
+        partial.screen && partial.screen !== prev.screen
+          ? ({
+              screen: partial.screen,
+              tab: partial.tab,
+              crop: partial.crop,
+              compareCrop: partial.compareCrop,
+              location: partial.location,
+              meta: partial.meta,
+            } satisfies ScreenState)
+          : { ...prev, ...partial };
+      if (areScreenStatesEqual(prev, next)) {
+        return prev;
+      }
       ref.current = next;
       return next;
     });

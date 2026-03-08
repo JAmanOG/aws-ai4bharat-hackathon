@@ -169,6 +169,20 @@ describe('Nova – basicRoute keyword matching', () => {
     expect(r.domain).toBe('health');
   });
 
+  test('city weather query → general weather_info', () => {
+    const r = nova.basicRoute('what is the weather in Pune today?');
+    expect(r.domain).toBe('general');
+    expect(r.intent).toBe('weather_info');
+    expect(r.entities.location).toBe('Pune');
+  });
+
+  test('AQI query → general air_quality_info', () => {
+    const r = nova.basicRoute('Delhi AQI status');
+    expect(r.domain).toBe('general');
+    expect(r.intent).toBe('air_quality_info');
+    expect(r.entities.location).toBe('Delhi');
+  });
+
   test('namaste → general greeting', () => {
     const r = nova.basicRoute('namaskar');
     expect(r.domain).toBe('general');
@@ -211,9 +225,14 @@ describe('MCP – selectTool routing rules', () => {
     expect(s.tool).toBe('deep_reasoning');
   });
 
-  test('health domain (any complexity) → deep_reasoning', () => {
+  test('health symptom guidance → deep_reasoning', () => {
     const s = mcp.selectTool({ domain: 'health', complexity: 'simple', intent: 'symptom_guidance' });
     expect(s.tool).toBe('deep_reasoning');
+  });
+
+  test('health report insights → domain_agent', () => {
+    const s = mcp.selectTool({ domain: 'health', complexity: 'moderate', intent: 'medical_report_analysis' });
+    expect(s.tool).toBe('domain_agent');
   });
 
   test('schemes + moderate → deep_reasoning', () => {
@@ -240,16 +259,27 @@ describe('MCP – selectTool routing rules', () => {
     const s = mcp.selectTool({ domain: 'general', complexity: 'simple', intent: 'greeting' });
     expect(s.tool).toBe('domain_agent');
   });
+
+  test('weather_info → weather_lookup', () => {
+    const s = mcp.selectTool({ domain: 'general', complexity: 'simple', intent: 'weather_info' });
+    expect(s.tool).toBe('weather_lookup');
+  });
+
+  test('air_quality_info → weather_lookup', () => {
+    const s = mcp.selectTool({ domain: 'general', complexity: 'moderate', intent: 'air_quality_info' });
+    expect(s.tool).toBe('weather_lookup');
+  });
 });
 
 describe('MCP – TOOL_DEFINITIONS', () => {
-  test('has exactly 3 MCP tools', () => {
-    expect(mcp.TOOL_DEFINITIONS).toHaveLength(3);
+  test('has exactly 4 MCP tools', () => {
+    expect(mcp.TOOL_DEFINITIONS).toHaveLength(4);
   });
 
-  test('tool names are domain_agent, deep_reasoning, fallback_llm', () => {
+  test('tool names include domain_agent, weather_lookup, deep_reasoning, fallback_llm', () => {
     const names = mcp.TOOL_DEFINITIONS.map(t => t.name);
     expect(names).toContain('domain_agent');
+    expect(names).toContain('weather_lookup');
     expect(names).toContain('deep_reasoning');
     expect(names).toContain('fallback_llm');
   });
@@ -458,7 +488,7 @@ describe('Agent Registry – INTENT_DOMAIN_MAP', () => {
 
   test('general intents map to general', () => {
     const generalIntents = ['greeting', 'general_question', 'digital_literacy',
-      'app_help', 'weather_info', 'unknown'];
+      'app_help', 'weather_info', 'air_quality_info', 'unknown'];
     for (const intent of generalIntents) {
       expect(map[intent]).toBe('general');
     }
@@ -494,9 +524,9 @@ describe('Agent Registry – getAgent', () => {
 });
 
 describe('Agent Registry – listAgents', () => {
-  test('lists 5 agents', () => {
+  test('lists all registered agents', () => {
     const agents = agentRegistry.listAgents();
-    expect(agents.length).toBe(5);
+    expect(agents.length).toBeGreaterThanOrEqual(6);
   });
 
   test('each agent has name and description', () => {

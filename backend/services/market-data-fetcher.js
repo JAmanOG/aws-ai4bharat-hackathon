@@ -41,6 +41,10 @@ const CROP_ALIASES = {
     chawal: 'rice', dhan: 'rice', paddy: 'rice',
     pyaaz: 'onion', pyaz: 'onion', kanda: 'onion',
     aloo: 'potato', aaloo: 'potato',
+    brinjal: 'brinjal', brinjals: 'brinjal',
+    eggplant: 'brinjal', eggplants: 'brinjal',
+    baingan: 'brinjal', baigan: 'brinjal', bagan: 'brinjal',
+    begun: 'brinjal', began: 'brinjal', bengan: 'brinjal',
     tamatar: 'tomato',
     sarson: 'mustard', sarso: 'mustard',
     surajmukhi: 'sunflower',
@@ -98,6 +102,7 @@ const CROP_COMMODITY_MAP = {
     tomato:     ['Tomato'],
     onion:      ['Onion'],
     potato:     ['Potato'],
+    brinjal:    ['Brinjal'],
     soybean:    ['Soyabean'],
     cotton:     ['Cotton'],
     sugarcane:  ['Sugarcane'],
@@ -248,8 +253,16 @@ function _mapRecord(r, commodity) {
  */
 async function getOrFetchPrices(cropType, opts = {}) {
     const normalized = normalizeCropName(cropType);
-    const { state, district, forceRefresh = false } = opts;
-    const cacheKey = `prices:${normalized}:${state || ''}:${district || ''}`;
+    const {
+        state,
+        district,
+        forceRefresh = false,
+        daysBack = 7,
+        limit = 50,
+    } = opts;
+    const safeDaysBack = Number.isFinite(daysBack) ? Math.max(1, Math.trunc(daysBack)) : 7;
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 50;
+    const cacheKey = `prices:${normalized}:${state || ''}:${district || ''}:${safeDaysBack}:${safeLimit}`;
 
     // 0. In-memory cache hit (fastest — avoids DB + API)
     if (!forceRefresh) {
@@ -267,7 +280,7 @@ async function getOrFetchPrices(cropType, opts = {}) {
     const doFetch = async () => {
         // 1. Check DB for recent data (within 6 hours)
         if (!forceRefresh) {
-            const dbResult = await _getFromDB(normalized, { state, district });
+            const dbResult = await _getFromDB(normalized, { state, district, daysBack: safeDaysBack, limit: safeLimit });
             if (dbResult && dbResult.prices.length > 0) {
                 const result = { ...dbResult, source: 'cache', fresh: false };
                 _memCache.set(cacheKey, { data: result, ts: Date.now() });
@@ -283,7 +296,7 @@ async function getOrFetchPrices(cropType, opts = {}) {
             await _upsertRecords(normalized, liveRecords);
 
             // 4. Read back from DB (ensures consistent format)
-            const dbResult = await _getFromDB(normalized, { state, district });
+            const dbResult = await _getFromDB(normalized, { state, district, daysBack: safeDaysBack, limit: safeLimit });
             if (dbResult) {
                 const result = { ...dbResult, source: 'data.gov.in', fresh: true };
                 _memCache.set(cacheKey, { data: result, ts: Date.now() });
@@ -292,7 +305,12 @@ async function getOrFetchPrices(cropType, opts = {}) {
         }
 
         // 5. Fallback: return whatever DB has (even old data)
-        const fallback = await _getFromDB(normalized, { state, district, daysBack: 90 });
+        const fallback = await _getFromDB(normalized, {
+            state,
+            district,
+            daysBack: Math.max(safeDaysBack, 90),
+            limit: safeLimit,
+        });
         if (fallback && fallback.prices.length > 0) {
             const result = { ...fallback, source: 'cache-stale', fresh: false };
             _memCache.set(cacheKey, { data: result, ts: Date.now() });
@@ -318,13 +336,14 @@ async function getOrFetchPrices(cropType, opts = {}) {
 /**
  * Read prices from the local database.
  */
-async function _getFromDB(cropType, { state, district, daysBack = 7 } = {}) {
+async function _getFromDB(cropType, { state, district, daysBack = 7, limit = 50 } = {}) {
     let sql = `SELECT * FROM market_prices WHERE LOWER(crop_type) = $1 AND trade_date >= CURRENT_DATE - $2 * INTERVAL '1 day'`;
     const params = [cropType, daysBack];
     let i = 3;
     if (state) { sql += ` AND LOWER(state) = LOWER($${i++})`; params.push(state); }
     if (district) { sql += ` AND LOWER(district) = LOWER($${i++})`; params.push(district); }
-    sql += ` ORDER BY trade_date DESC, modal_price DESC LIMIT 50`;
+    sql += ` ORDER BY trade_date DESC, modal_price DESC LIMIT $${i}`;
+    params.push(limit);
 
     const result = await query(sql, params);
     const prices = result.rows;
@@ -460,7 +479,7 @@ async function getAvailableCrops() {
  */
 async function syncTopCrops() {
     const topCrops = ['wheat', 'rice', 'tomato', 'onion', 'potato', 'soybean',
-                      'cotton', 'mustard', 'chana', 'sunflower', 'maize',
+                      'cotton', 'mustard', 'chana', 'sunflower', 'maize', 'brinjal',
                       'groundnut', 'turmeric', 'cumin', 'jowar', 'bajra', 'okra',
                       'arhar', 'urad', 'moong'];
     let total = 0;

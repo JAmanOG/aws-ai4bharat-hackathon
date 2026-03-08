@@ -14,6 +14,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -26,6 +27,11 @@ import {
   type VoiceCommand,
 } from "./VoiceCommandEngine";
 import type { ChatResult } from "../services/voice";
+import {
+  readStoredLanguagePreference,
+  toVoiceLanguageCode,
+  writeStoredLanguagePreference,
+} from "../utils/languagePreference";
 
 /* ─── Types ─── */
 
@@ -111,7 +117,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [autoListen, setAutoListen] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [language, setLanguage] = useState("hi-IN");
+  const [language, setLanguageState] = useState("hi-IN");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const navigateRef = useRef<((screen: string, params?: any) => void) | null>(null);
 
@@ -123,6 +129,19 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const clearVisualization = useCallback(() => {
     setCurrentVisualization(null);
+  }, []);
+
+  useEffect(() => {
+    readStoredLanguagePreference()
+      .then((stored) => {
+        if (stored) setLanguageState(toVoiceLanguageCode(stored));
+      })
+      .catch(() => {});
+  }, []);
+
+  const setLanguage = useCallback((nextLanguage: string) => {
+    setLanguageState(toVoiceLanguageCode(nextLanguage));
+    writeStoredLanguagePreference(nextLanguage).catch(() => {});
   }, []);
 
   const processResult = useCallback(

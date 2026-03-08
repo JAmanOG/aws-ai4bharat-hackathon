@@ -12,6 +12,11 @@ import * as SecureStore from 'expo-secure-store';
 import { ENV } from '../config/env';
 import { logger } from '../utils/logger';
 import { setAuthCredentials } from '../services/api';
+import {
+  normalizeAppLanguage,
+  readStoredLanguagePreference,
+  writeStoredLanguagePreference,
+} from '../utils/languagePreference';
 
 /* ────────────────────────────────────── */
 /*  Types                                  */
@@ -82,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (storedToken && storedUser) {
           const user: User = JSON.parse(storedUser);
+          writeStoredLanguagePreference(user.preferredLanguage).catch(() => {});
           setAuthCredentials(storedToken, user.userId, user.name);
           setState({ user, token: storedToken, isAuthenticated: true, isLoading: false });
           logger.info('Auth', 'Restored session', { userId: user.userId });
@@ -107,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!res.ok) throw new Error(json.error || json.message || 'Login failed');
 
     const { user, token } = json;
+    writeStoredLanguagePreference(user.preferredLanguage).catch(() => {});
     await Promise.all([
       SecureStore.setItemAsync(TOKEN_KEY, token),
       SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)),
@@ -129,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!res.ok) throw new Error(json.error || json.message || 'Registration failed');
 
     const { user: regUser, token: regToken } = json;
+    writeStoredLanguagePreference(regUser.preferredLanguage ?? data.language ?? 'hi').catch(() => {});
     await Promise.all([
       SecureStore.setItemAsync(TOKEN_KEY, regToken),
       SecureStore.setItemAsync(USER_KEY, JSON.stringify(regUser)),
@@ -152,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Update user locally (e.g., after profile edit) ──
   const updateUser = useCallback((user: User) => {
+    writeStoredLanguagePreference(user.preferredLanguage).catch(() => {});
     setState(prev => {
       setAuthCredentials(prev.token, user.userId, user.name);
       return { ...prev, user };
@@ -161,21 +170,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Skip auth (demo mode) ──
   const skipAuth = useCallback(() => {
-    const demoUser: User = {
-      userId: ENV.DEMO_USER_ID,
-      phone: '',
-      name: 'Demo User',
-      preferredLanguage: 'hi',
-      state: '',
-      district: '',
-      isVerified: false,
-      profileComplete: false,
-      onboardingDone: false,
-      createdAt: new Date().toISOString(),
-    };
-    setAuthCredentials(null, ENV.DEMO_USER_ID, demoUser.name);
-    setState({ user: demoUser, token: null, isAuthenticated: true, isLoading: false });
-    logger.info('Auth', 'Demo mode activated');
+    readStoredLanguagePreference()
+      .then((storedLanguage) => {
+        const preferredLanguage = normalizeAppLanguage(storedLanguage ?? 'hi');
+        const demoUser: User = {
+          userId: ENV.DEMO_USER_ID,
+          phone: '',
+          name: 'Demo User',
+          preferredLanguage,
+          state: '',
+          district: '',
+          isVerified: false,
+          profileComplete: false,
+          onboardingDone: false,
+          createdAt: new Date().toISOString(),
+        };
+        writeStoredLanguagePreference(demoUser.preferredLanguage).catch(() => {});
+        setAuthCredentials(null, ENV.DEMO_USER_ID, demoUser.name);
+        setState({ user: demoUser, token: null, isAuthenticated: true, isLoading: false });
+        logger.info('Auth', 'Demo mode activated');
+      })
+      .catch(() => {
+        const demoUser: User = {
+          userId: ENV.DEMO_USER_ID,
+          phone: '',
+          name: 'Demo User',
+          preferredLanguage: 'hi',
+          state: '',
+          district: '',
+          isVerified: false,
+          profileComplete: false,
+          onboardingDone: false,
+          createdAt: new Date().toISOString(),
+        };
+        setAuthCredentials(null, ENV.DEMO_USER_ID, demoUser.name);
+        setState({ user: demoUser, token: null, isAuthenticated: true, isLoading: false });
+        logger.info('Auth', 'Demo mode activated');
+      });
   }, []);
 
   return (

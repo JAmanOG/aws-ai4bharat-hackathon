@@ -15,10 +15,10 @@ const liveFetcher = require('../../services/market-data-fetcher');
  * Uses live data.gov.in fetch with DB caching.
  */
 async function getCurrentPrices(cropType, filters = {}) {
-    const { state, district, limit = 20 } = filters;
+    const { state, district, limit = 20, daysBack = 7 } = filters;
 
     // Use live fetcher (fetches from data.gov.in, caches in DB)
-    const result = await liveFetcher.getOrFetchPrices(cropType, { state, district });
+    const result = await liveFetcher.getOrFetchPrices(cropType, { state, district, limit, daysBack });
     const prices = (result.prices || []).slice(0, limit);
     return {
         crop_type: cropType,

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useHealthPortals, useHealthProviders } from "../hooks/useData";
+import { useScreenContext } from "../context/ScreenContext";
 import {
   healthApi,
   type HealthImagingAnalysisResponse,
@@ -96,6 +97,7 @@ type ActiveSheet = "schemes" | "providers" | "insights" | null;
 
 export default function HealthDashboardScreen() {
   const nav = useNavigation<any>();
+  const screen = useScreenContext();
   const portals = useHealthPortals();
   const providers = useHealthProviders({ limit: 24 });
 
@@ -178,6 +180,38 @@ export default function HealthDashboardScreen() {
     }
     return "Upload a report or scan to get AI-assisted observations.";
   }, [analysis, pickedFile, uploadedReport]);
+
+  useEffect(() => {
+    screen.update({
+      screen: "HealthDashboard",
+      tab: activeSheet || "overview",
+      meta: {
+        availableActions: "Start Screening, Upload Report, Get Insights, View All Schemes, Visit Site, Explore Providers",
+        availableReportTypes: REPORT_TYPES.map((entry) => entry.label).join(", "),
+        selectedReportType: formatReportType(reportType),
+        selectedReportName: pickedFile?.name || "None",
+        uploadedReportName: uploadedReport?.fileName || "None",
+        reportStatus,
+        insightsReady: analysis ? "Yes" : "No",
+        insightSummary: analysis?.analysis.general_info?.slice(0, 180) || "None",
+        visibleSchemeNames: schemePreview.map((entry) => entry.name).join(", "),
+        visibleProviderNames: thirdPartyProviders.slice(0, 6).map((entry) => entry.name).join(", "),
+        activeSheet: activeSheet || "none",
+      },
+    });
+  }, [
+    activeSheet,
+    analysis,
+    pickedFile?.name,
+    portals.loading,
+    providers.loading,
+    reportStatus,
+    reportType,
+    schemePreview,
+    screen.update,
+    thirdPartyProviders,
+    uploadedReport?.fileName,
+  ]);
 
   const pickMedicalReport = useCallback(async () => {
     const result = await DocumentPicker.getDocumentAsync({

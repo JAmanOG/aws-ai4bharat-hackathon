@@ -1,75 +1,64 @@
-/**
- * LoginScreen – Registration & Login with phone + PIN.
- *
- * Features:
- *   - Phone number input (10+ digits)
- *   - 4-6 digit numeric PIN
- *   - Toggle between Login / Register
- *   - Optional name + language for registration
- *   - "Continue as Guest" demo mode
- *   - DigiLocker verification (post-registration)
- *
- * Navigated to from RootNavigator when not authenticated.
- */
-
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../contexts/AuthContext';
-import { colors } from '../theme/colors';
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "../contexts/AuthContext";
+import { askDomains, ruralPalette as P } from "../theme/ruralPalette";
+import { APP_LANGUAGES, readStoredLanguagePreference } from "../utils/languagePreference";
 
-type Mode = 'login' | 'register';
-
-const LANGUAGES = [
-  { code: 'hi', label: 'हिन्दी' },
-  { code: 'en', label: 'English' },
-  { code: 'ta', label: 'தமிழ்' },
-  { code: 'te', label: 'తెలుగు' },
-  { code: 'kn', label: 'ಕನ್ನಡ' },
-  { code: 'mr', label: 'मराठी' },
-  { code: 'bn', label: 'বাংলা' },
-  { code: 'gu', label: 'ગુજરાતી' },
-  { code: 'pa', label: 'ਪੰਜਾਬੀ' },
-];
+type Mode = "login" | "register";
 
 export default function LoginScreen() {
   const { login, register, skipAuth } = useAuth();
-  const [mode, setMode] = useState<Mode>('login');
-  const [phone, setPhone] = useState('');
-  const [pin, setPin] = useState('');
-  const [name, setName] = useState('');
-  const [language, setLanguage] = useState('hi');
+  const [mode, setMode] = useState<Mode>("login");
+  const [phone, setPhone] = useState("");
+  const [pin, setPin] = useState("");
+  const [name, setName] = useState("");
+  const [language, setLanguage] = useState("hi");
   const [loading, setLoading] = useState(false);
   const pinRef = useRef<TextInput>(null);
 
   const isValid = phone.length >= 10 && pin.length >= 4;
+  const title = mode === "login" ? "Welcome back" : "Create your account";
+  const subtitle = mode === "login"
+    ? "Sign in to continue with voice-first rural assistance."
+    : "Register once and keep your voice preferences across devices.";
+
+  const visibleDomains = useMemo(() => askDomains.slice(0, 4), []);
+
+  useEffect(() => {
+    readStoredLanguagePreference()
+      .then((stored) => {
+        if (stored) setLanguage(stored);
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit() {
     if (!isValid) return;
     setLoading(true);
 
     try {
-      if (mode === 'login') {
+      if (mode === "login") {
         await login(phone, pin);
       } else {
         await register({ phone, pin, name, language });
       }
     } catch (err: any) {
       Alert.alert(
-        mode === 'login' ? 'Login Failed' : 'Registration Failed',
-        err.message || 'Please try again',
+        mode === "login" ? "Login failed" : "Registration failed",
+        err.message || "Please try again."
       );
     } finally {
       setLoading(false);
@@ -78,49 +67,74 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {/* Logo / Header */}
-          <View style={styles.header}>
-            <View style={styles.logoCircle}>
-              <Ionicons name="leaf" size={40} color={colors.primary} />
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={styles.heroCard}>
+            <Text style={styles.brand}>RURAL ECOSYSTEM PLATFORM</Text>
+            <Text style={styles.hindi}>आवाज़ से भरोसेमंद ग्रामीण मार्गदर्शन</Text>
+
+            <View style={styles.logoWrap}>
+              <View style={styles.logoHalo} />
+              <View style={styles.logoRing}>
+                <View style={styles.logoCore}>
+                  <Ionicons name="mic" size={34} color={P.surface} />
+                </View>
+              </View>
             </View>
-            <Text style={styles.title}>Rural AI</Text>
-            <Text style={styles.subtitle}>
-              {mode === 'login' ? 'Welcome back!' : 'Create your account'}
-            </Text>
+
+            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
+
+            <View style={styles.domainRow}>
+              {visibleDomains.map((domain) => (
+                <View key={domain.key} style={styles.domainChip}>
+                  <View style={[styles.domainDot, { backgroundColor: domain.bubble }]}>
+                    <Ionicons name={domain.icon} size={14} color={domain.iconColor} />
+                  </View>
+                  <Text style={styles.domainText}>{domain.label}</Text>
+                </View>
+              ))}
+            </View>
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
-            {/* Name (register only) */}
-            {mode === 'register' && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Name (optional)</Text>
+          <View style={styles.formCard}>
+            <View style={styles.modeToggle}>
+              <Pressable
+                onPress={() => setMode("login")}
+                style={[styles.modeSegment, mode === "login" && styles.modeSegmentActive]}
+              >
+                <Text style={[styles.modeText, mode === "login" && styles.modeTextActive]}>Login</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setMode("register")}
+                style={[styles.modeSegment, mode === "register" && styles.modeSegmentActive]}
+              >
+                <Text style={[styles.modeText, mode === "register" && styles.modeTextActive]}>Register</Text>
+              </Pressable>
+            </View>
+
+            {mode === "register" ? (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Name</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Your name / आपका नाम"
-                  placeholderTextColor={colors.muted}
+                  placeholder="Your name"
+                  placeholderTextColor={P.muted}
                   value={name}
                   onChangeText={setName}
                   autoCapitalize="words"
-                  returnKeyType="next"
                 />
               </View>
-            )}
+            ) : null}
 
-            {/* Phone */}
-            <View style={styles.inputGroup}>
+            <View style={styles.fieldGroup}>
               <Text style={styles.label}>Phone Number</Text>
               <TextInput
                 style={styles.input}
                 placeholder="10-digit mobile number"
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={P.muted}
                 value={phone}
-                onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, ''))}
+                onChangeText={(value) => setPhone(value.replace(/[^0-9]/g, ""))}
                 keyboardType="phone-pad"
                 maxLength={15}
                 returnKeyType="next"
@@ -128,78 +142,67 @@ export default function LoginScreen() {
               />
             </View>
 
-            {/* PIN */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>PIN (4-6 digits)</Text>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>PIN</Text>
               <TextInput
                 ref={pinRef}
                 style={styles.input}
-                placeholder="••••"
-                placeholderTextColor={colors.muted}
+                placeholder="4 to 6 digits"
+                placeholderTextColor={P.muted}
                 value={pin}
-                onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ''))}
+                onChangeText={(value) => setPin(value.replace(/[^0-9]/g, ""))}
                 keyboardType="number-pad"
                 secureTextEntry
                 maxLength={6}
-                returnKeyType="done"
                 onSubmitEditing={handleSubmit}
               />
             </View>
 
-            {/* Language (register only) */}
-            {mode === 'register' && (
-              <View style={styles.inputGroup}>
+            {mode === "register" ? (
+              <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Preferred Language</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langRow}>
-                  {LANGUAGES.map((l) => (
-                    <TouchableOpacity
-                      key={l.code}
-                      style={[styles.langChip, language === l.code && styles.langChipActive]}
-                      onPress={() => setLanguage(l.code)}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.languageRow}>
+                  {APP_LANGUAGES.map((item) => (
+                    <Pressable
+                      key={item.code}
+                      onPress={() => setLanguage(item.code)}
+                      style={[styles.langChip, language === item.code && styles.langChipActive]}
                     >
-                      <Text style={[styles.langText, language === l.code && styles.langTextActive]}>
-                        {l.label}
+                      <Text style={[styles.langChipText, language === item.code && styles.langChipTextActive]}>
+                        {item.label}
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   ))}
                 </ScrollView>
               </View>
-            )}
+            ) : null}
 
-            {/* Submit */}
-            <TouchableOpacity
-              style={[styles.button, !isValid && styles.buttonDisabled]}
+            <Pressable
               onPress={handleSubmit}
               disabled={!isValid || loading}
-              activeOpacity={0.8}
+              style={[styles.submitBtn, (!isValid || loading) && styles.submitBtnDisabled]}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={P.surface} />
               ) : (
-                <Text style={styles.buttonText}>
-                  {mode === 'login' ? 'Login' : 'Register'}
-                </Text>
+                <>
+                  <Text style={styles.submitText}>{mode === "login" ? "Continue" : "Create Account"}</Text>
+                  <Ionicons name="arrow-forward" size={18} color={P.surface} />
+                </>
               )}
-            </TouchableOpacity>
+            </Pressable>
 
-            {/* Toggle mode */}
-            <TouchableOpacity
-              style={styles.toggleBtn}
-              onPress={() => setMode(mode === 'login' ? 'register' : 'login')}
-            >
-              <Text style={styles.toggleText}>
-                {mode === 'login'
-                  ? "Don't have an account? Register"
-                  : 'Already have an account? Login'}
+            <Pressable style={styles.switchModeBtn} onPress={() => setMode(mode === "login" ? "register" : "login")}>
+              <Text style={styles.switchModeText}>
+                {mode === "login" ? "Need a new account? Register" : "Already registered? Login"}
               </Text>
-            </TouchableOpacity>
-          </View>
+            </Pressable>
 
-          {/* Demo mode */}
-          <TouchableOpacity style={styles.demoBtn} onPress={skipAuth}>
-            <Ionicons name="play-circle-outline" size={18} color={colors.muted} />
-            <Text style={styles.demoText}>Continue as Guest</Text>
-          </TouchableOpacity>
+            <Pressable style={styles.guestBtn} onPress={skipAuth}>
+              <Ionicons name="play-circle" size={20} color={P.goldDark} />
+              <Text style={styles.guestText}>Continue as Guest</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -207,66 +210,245 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-
-  header: { alignItems: 'center', marginBottom: 32 },
-  logoCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: colors.primaryTint,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 12,
+  safe: { flex: 1, backgroundColor: P.bg },
+  flex: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
   },
-  title: { fontSize: 28, fontWeight: '700', color: colors.ink },
-  subtitle: { fontSize: 14, color: colors.muted, marginTop: 4 },
-
-  form: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+  heroCard: {
+    borderRadius: 34,
+    backgroundColor: P.surfaceSoft,
+    borderWidth: 1,
+    borderColor: P.line,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    alignItems: "center",
   },
-  inputGroup: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: colors.ink, marginBottom: 6 },
-  input: {
-    height: 48, borderRadius: 10,
-    backgroundColor: colors.bg,
-    paddingHorizontal: 14,
-    fontSize: 16, color: colors.ink,
-    borderWidth: 1, borderColor: colors.border,
+  brand: {
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 3,
+    color: P.ink,
+    textAlign: "center",
   },
-
-  langRow: { flexDirection: 'row', marginTop: 4 },
-  langChip: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: colors.bg,
-    marginRight: 8,
-    borderWidth: 1, borderColor: colors.border,
+  hindi: {
+    marginTop: 10,
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: "900",
+    color: P.ink,
+    textAlign: "center",
   },
-  langChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  langText: { fontSize: 13, color: colors.ink },
-  langTextActive: { color: '#fff', fontWeight: '600' },
-
-  button: {
-    height: 50, borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center', justifyContent: 'center',
+  logoWrap: {
+    marginTop: 22,
+    width: 124,
+    height: 124,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoHalo: {
+    position: "absolute",
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    backgroundColor: P.goldTint,
+  },
+  logoRing: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 4,
+    borderColor: P.gold,
+    backgroundColor: P.surface,
+  },
+  logoCore: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.gold,
+  },
+  title: {
+    marginTop: 18,
+    fontSize: 28,
+    fontWeight: "900",
+    color: P.ink,
+    textAlign: "center",
+  },
+  subtitle: {
     marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "600",
+    color: P.mutedDark,
+    textAlign: "center",
   },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  toggleBtn: { alignItems: 'center', marginTop: 16 },
-  toggleText: { color: colors.primary, fontSize: 14 },
-
-  demoBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: 24, paddingVertical: 12,
+  domainRow: {
+    marginTop: 18,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
   },
-  demoText: { color: colors.muted, fontSize: 14, marginLeft: 6 },
+  domainChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.lineSoft,
+  },
+  domainDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  domainText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.ink,
+  },
+  formCard: {
+    marginTop: 18,
+    borderRadius: 30,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.line,
+    padding: 20,
+    shadowColor: P.goldShadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  modeToggle: {
+    flexDirection: "row",
+    borderRadius: 999,
+    padding: 4,
+    backgroundColor: P.bgWarm,
+    borderWidth: 1,
+    borderColor: P.lineSoft,
+  },
+  modeSegment: {
+    flex: 1,
+    height: 42,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeSegmentActive: {
+    backgroundColor: P.gold,
+  },
+  modeText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: P.mutedDark,
+  },
+  modeTextActive: {
+    color: P.ink,
+  },
+  fieldGroup: {
+    marginTop: 16,
+  },
+  label: {
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: P.goldDark,
+  },
+  input: {
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.surfaceSoft,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: "600",
+    color: P.ink,
+  },
+  languageRow: {
+    gap: 8,
+    paddingRight: 6,
+  },
+  langChip: {
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.surfaceSoft,
+    borderWidth: 1,
+    borderColor: P.line,
+  },
+  langChipActive: {
+    backgroundColor: P.gold,
+    borderColor: P.gold,
+  },
+  langChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.mutedDark,
+  },
+  langChipTextActive: {
+    color: P.ink,
+  },
+  submitBtn: {
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: P.goldDark,
+    marginTop: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  submitBtnDisabled: {
+    opacity: 0.5,
+  },
+  submitText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: P.surface,
+  },
+  switchModeBtn: {
+    marginTop: 18,
+    alignItems: "center",
+  },
+  switchModeText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: P.goldDark,
+  },
+  guestBtn: {
+    marginTop: 18,
+    height: 50,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.surfaceSoft,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  guestText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: P.ink,
+  },
 });

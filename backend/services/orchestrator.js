@@ -28,6 +28,18 @@ const nova = require('./nova');
 const mcp = require('./mcp');
 const memory = require('./memory');
 const sarvam = require('./sarvam');
+const { sanitizeModelOutput } = require('./llm');
+const {
+    buildPlatformCapabilityHint,
+    enrichAnalysisWithScreenContext,
+} = require('./platform-context');
+const {
+    buildSymptomContextSummary,
+    extractSymptomIntake,
+    getMissingSymptomSlot,
+    mergeSymptomIntake,
+    toSymptomEntities,
+} = require('./symptom-intake');
 
 /* ─── Structured logger ─── */
 function log(level, stage, msg, data = {}) {
@@ -65,6 +77,200 @@ function shouldForceAgentRouting(analysis, originalText = '') {
     }
 
     return false;
+}
+
+const FOLLOW_UP_WEAK_INTENTS = new Set([
+    'greeting',
+    'general_question',
+    'unknown',
+    'query_payment_methods',
+    'clarification',
+    'confirmation',
+]);
+
+function findLastTurn(history = [], role) {
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+        if (history[i]?.role === role) {
+            return history[i];
+        }
+    }
+    return null;
+}
+
+function isLikelyShortReply(text = '') {
+    const cleaned = String(text || '')
+        .replace(/[?.!,।]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!cleaned) return false;
+    return cleaned.split(' ').length <= 4;
+}
+
+function extractFollowUpLocation(text = '') {
+    const cleaned = String(text || '')
+        .replace(/[?.!,।]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!cleaned) return '';
+
+    const tokens = cleaned.split(' ');
+    const deduped = tokens.filter((token, index) => {
+        const prev = tokens[index - 1];
+        return index === 0 || token.toLowerCase() !== String(prev || '').toLowerCase();
+    }).join(' ');
+    const lower = deduped.toLowerCase();
+
+    if (/^(hello|hi|hey|namaste|namaskar|vanakkam|yes|no|ok|okay|thanks|thank you|haan|haan ji|hmm|hmmm|हां|हाँ|नहीं|नही|ठीक)$/i.test(lower)) {
+        return '';
+    }
+
+    return deduped.split(' ').length <= 4 ? deduped : '';
+}
+
+function buildFollowUpEnglish(intent, location) {
+    if (intent === 'air_quality_info') {
+        return `What is the AQI in ${location}?`;
+    }
+    if (intent === 'weather_info') {
+        return `What is the weather in ${location}?`;
+    }
+    return `${intent.replace(/_/g, ' ')} for ${location}`;
+}
+
+function buildSymptomFollowUpEnglish(intake = {}, text = '') {
+    const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+    if (cleaned) {
+        return cleaned;
+    }
+    return buildSymptomContextSummary(intake) || 'Health symptom interview';
+}
+
+function applyRecentTurnContext({ analysis, text, recentHistory = [] }) {
+    if (!Array.isArray(recentHistory) || recentHistory.length === 0) {
+        return { analysis, reason: null };
+    }
+
+    const currentIntent = String(analysis?.intent || '').toLowerCase();
+    const weakGeneral = String(analysis?.domain || '') === 'general'
+        && (
+            FOLLOW_UP_WEAK_INTENTS.has(currentIntent)
+            || !!analysis?.can_answer_directly
+            || /^query_/.test(currentIntent)
+        );
+    const shortReply = isLikelyShortReply(text);
+
+    if (!weakGeneral && !shortReply) {
+        return { analysis, reason: null };
+    }
+
+    const lastAssistant = findLastTurn(recentHistory, 'assistant');
+    const lastUser = findLastTurn(recentHistory, 'user');
+    const pendingFollowUp = lastAssistant?.followUp || null;
+
+    if (pendingFollowUp?.pendingSlot === 'location') {
+        const location = extractFollowUpLocation(text);
+        if (location) {
+            const nextIntent = pendingFollowUp.intent || lastUser?.intent || analysis.intent || 'weather_info';
+            return {
+                analysis: {
+                    ...analysis,
+                    domain: pendingFollowUp.intentDomain || lastUser?.intentDomain || analysis.domain || 'general',
+                    intent: nextIntent,
+                    entities: {
+                        ...((pendingFollowUp.entities && typeof pendingFollowUp.entities === 'object') ? pendingFollowUp.entities : {}),
+                        ...((lastUser?.entities && typeof lastUser.entities === 'object') ? lastUser.entities : {}),
+                        ...(analysis?.entities || {}),
+                        location,
+                    },
+                    complexity: 'simple',
+                    can_answer_directly: false,
+                    direct_response: null,
+                    summary: `Follow-up location answer for ${nextIntent}`,
+                    english_text: buildFollowUpEnglish(nextIntent, location),
+                },
+                reason: 'follow-up-location-slot',
+            };
+        }
+    }
+
+    if (
+        pendingFollowUp?.intentDomain === 'health'
+        && ['symptoms', 'age', 'gender'].includes(String(pendingFollowUp.pendingSlot || ''))
+    ) {
+        const carriedEntities = pendingFollowUp.entities && typeof pendingFollowUp.entities === 'object'
+            ? pendingFollowUp.entities
+            : {};
+        const carriedIntake = mergeSymptomIntake({}, carriedEntities);
+        const nextIntake = extractSymptomIntake(text, carriedIntake);
+        const currentMissing = getMissingSymptomSlot(nextIntake);
+        const prevSlot = String(pendingFollowUp.pendingSlot || 'symptoms');
+        const stillSameSlot = currentMissing === prevSlot;
+        const prevRetry = Number(pendingFollowUp.retryCount) || 0;
+        const retryCount = stillSameSlot ? prevRetry + 1 : 0;
+
+        // Auto-fill stuck slots after 2 failed retries to avoid infinite loop
+        if (stillSameSlot && retryCount >= 2) {
+            if (prevSlot === 'gender') {
+                nextIntake.gender = 'other';
+                log('info', 'Nova', `↺ Auto-filling gender=other after ${retryCount} retries`);
+            } else if (prevSlot === 'age') {
+                nextIntake.age = 30;
+                log('info', 'Nova', `↺ Auto-filling age=30 after ${retryCount} retries`);
+            } else if (prevSlot === 'symptoms') {
+                nextIntake.symptoms = 'general discomfort';
+                log('info', 'Nova', `↺ Auto-filling symptoms after ${retryCount} retries`);
+            }
+        }
+
+        const pendingSlot = getMissingSymptomSlot(nextIntake) || prevSlot;
+
+        return {
+            analysis: {
+                ...analysis,
+                domain: 'health',
+                intent: pendingFollowUp.intent || lastUser?.intent || 'symptom_guidance',
+                entities: {
+                    ...carriedEntities,
+                    ...toSymptomEntities(nextIntake),
+                    _slotRetryCount: retryCount,
+                },
+                complexity: 'simple',
+                can_answer_directly: false,
+                direct_response: null,
+                summary: `Follow-up symptom interview answer for ${pendingSlot}`,
+                english_text: buildSymptomFollowUpEnglish(nextIntake, text),
+            },
+            reason: 'follow-up-symptom-slot',
+        };
+    }
+
+    const continuationCue = /(^|\b)(aur|also|and|isme|usme|isse|issme|that|this|it|there|yahan|yahaan|idhar|wahan|wahaan|phir|then|kab|kaise|kitna|konsa|kaunsa|what about|other|another|all of them|sab|baaki|baki)(\b|$)/i.test(String(text || ''));
+    if (weakGeneral && (shortReply || continuationCue) && lastUser?.intent && lastUser?.intentDomain && lastUser.intentDomain !== 'general') {
+        return {
+            analysis: {
+                ...analysis,
+                domain: lastUser.intentDomain,
+                intent: lastUser.intent,
+                entities: {
+                    ...((lastUser.entities && typeof lastUser.entities === 'object') ? lastUser.entities : {}),
+                    ...(analysis?.entities || {}),
+                },
+                can_answer_directly: false,
+                direct_response: null,
+                summary: `Follow-up to previous ${lastUser.intentDomain} turn`,
+            },
+            reason: 'recent-turn-carryover',
+        };
+    }
+
+    return { analysis, reason: null };
+}
+
+function sanitizeSpokenResponse(text = '') {
+    return sanitizeModelOutput(text)
+        .replace(/\n+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
 }
 
 /* ═══════════════════════════════════════════════════════ */
@@ -258,6 +464,12 @@ async function processText(params) {
 /* ═══════════════════════════════════════════════════════ */
 
 async function _processFromText({ text, userId, sessionId, detectedLang, generateAudio, startTime, pipeline, screenContext }) {
+    let recentHistory = [];
+    try {
+        recentHistory = await memory.getSessionHistory(userId, sessionId, 6);
+    } catch (historyErr) {
+        log('warn', 'Context', `⚠ Failed to load recent history before routing: ${historyErr.message}`);
+    }
 
     // ──────────────────────────────────────────────
     // Stage 2: AWS Nova (Translate + Understand + Route + Direct Answer)
@@ -267,6 +479,10 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
     try {
         log('info', 'Nova', '→ Analyzing intent + routing', { textPreview: text.substring(0, 80), lang: detectedLang });
         analysis = await nova.analyzeAndRoute(text, detectedLang);
+        const screenAware = enrichAnalysisWithScreenContext(analysis, text, screenContext);
+        analysis = screenAware.analysis;
+        const recentAware = applyRecentTurnContext({ analysis, text, recentHistory });
+        analysis = recentAware.analysis;
         const novaMs = Date.now() - novaStart;
         log('info', 'Nova', `✓ Analysis complete in ${novaMs}ms`, {
             provider: analysis.provider,
@@ -278,6 +494,8 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
             directResponse: analysis.can_answer_directly
                 ? (analysis.direct_response || '').substring(0, 80)
                 : undefined,
+            screenOverride: screenAware.reason || undefined,
+            recentOverride: recentAware.reason || undefined,
         });
         pipeline.stages.nova = {
             provider: analysis.provider,
@@ -285,6 +503,8 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
             intent: analysis.intent,
             complexity: analysis.complexity,
             can_answer_directly: analysis.can_answer_directly,
+            screen_override: screenAware.reason || undefined,
+            recent_override: recentAware.reason || undefined,
             ms: novaMs,
         };
     } catch (novaErr) {
@@ -332,14 +552,15 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
     }
 
     if (analysis.can_answer_directly && analysis.direct_response) {
+        const cleanedDirectResponse = sanitizeSpokenResponse(analysis.direct_response);
         // ⚡ Nova can answer directly — skip the full Agent/MCP pipeline
         log('info', 'Agent', `⚡ Nova direct answer (skipping agent pipeline)`, {
             domain: analysis.domain,
             intent: analysis.intent,
-            responsePreview: analysis.direct_response.substring(0, 100),
+            responsePreview: cleanedDirectResponse.substring(0, 100),
         });
         agentResult = {
-            response: analysis.direct_response,
+            response: cleanedDirectResponse,
             provider: 'nova-direct',
             route: 'direct',
             agent: 'nova',
@@ -371,7 +592,11 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
 
             // Inject screen context into the system prompt if available
             if (screenContext && contextMessages.length > 0 && contextMessages[0].role === 'system') {
-                contextMessages[0].content += `\n\n--- Current App Screen Context ---\n${screenContext}\n\nUse this context to provide RELEVANT answers about what the user is currently viewing. If they ask about prices, refer to the crop they are viewing. If they mention "this crop" or "current crop", it refers to the crop shown on screen.`;
+                const capabilityHint = buildPlatformCapabilityHint(screenContext);
+                contextMessages[0].content += `\n\n--- Current App Screen Context ---\n${screenContext}\n\nUse this context to provide RELEVANT answers about what the user is currently viewing. If they ask about prices, refer to the crop they are viewing. If they mention "this crop" or "current crop", it refers to the crop shown on screen. If the screen exposes specific platform actions, guide the user using those exact actions and labels.`;
+                if (capabilityHint) {
+                    contextMessages[0].content += `\n\n--- Current Screen Capabilities ---\n${capabilityHint}\n\nGround your answer in these exact platform capabilities. Do not invent features that are not present in this context.`;
+                }
                 log('info', 'Context', `✓ Injected screen context into system prompt`, {
                     screenContext: screenContext.substring(0, 100),
                 });
@@ -391,6 +616,7 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
                 complexity: analysis.complexity,
                 messages: contextMessages,
                 userId,
+                screenContext,
             });
             const mcpMs = Date.now() - mcpStart;
             log('info', 'MCP', `✓ MCP response in ${mcpMs}ms`, {
@@ -421,7 +647,7 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
         }
     } // end else (full MCP pipeline)
 
-    const responseEnglish = agentResult.response;
+    const responseEnglish = sanitizeSpokenResponse(agentResult.response);
 
     // ──────────────────────────────────────────────
     // Stage 4: Sarvam AI — Localize + TTS
@@ -441,7 +667,7 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
                 textLength: responseEnglish.length,
             });
             const translated = await sarvam.translate(responseEnglish, 'en', detectedLang);
-            responseText = translated.translated_text || responseEnglish;
+            responseText = sanitizeSpokenResponse(translated.translated_text || responseEnglish);
             log('info', 'Sarvam/Translate', `✓ Translation done`, {
                 outputLength: responseText.length,
                 preview: responseText.substring(0, 80),
@@ -491,10 +717,16 @@ async function _processFromText({ text, userId, sessionId, detectedLang, generat
             await memory.storeTurn(userId, sessionId, 'user', text, {
                 language: detectedLang,
                 intentDomain: analysis.domain,
+                intent: analysis.intent,
+                entities: analysis.entities,
             });
             await memory.storeTurn(userId, sessionId, 'assistant', responseText, {
                 language: detectedLang,
                 intentDomain: analysis.domain,
+                intent: analysis.intent,
+                entities: analysis.entities,
+                followUp: agentResult.metadata?.followUp,
+                provider: agentResult.provider,
                 responseTimeMs: Date.now() - startTime,
             });
             log('debug', 'Memory', `✓ Both turns stored in ${Date.now() - memStartTime}ms`);

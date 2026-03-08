@@ -152,6 +152,7 @@ async function agricultureRoutes(fastify) {
         return prices.getCurrentPrices(crop, {
             state: req.query.state, district: req.query.district,
             limit: +(req.query.limit || 20),
+            daysBack: +(req.query.days || 7),
         });
     });
 

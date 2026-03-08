@@ -239,6 +239,7 @@ const CROP_REGISTRY: Record<string, { emoji: string; bg: string; color: string }
   tomato:     { emoji: "🍅", bg: "#FEE2E2", color: "#E74C3C" },
   onion:      { emoji: "🧅", bg: "#FEF3C7", color: "#D97706" },
   potato:     { emoji: "🥔", bg: "#FEF9C3", color: "#A16207" },
+  brinjal:    { emoji: "🍆", bg: "#F3E8FF", color: "#7C3AED" },
   soybean:    { emoji: "🫘", bg: "#ECFDF5", color: "#15803D" },
   cotton:     { emoji: "☁️", bg: "#EFF6FF", color: "#3B82F6" },
   sugarcane:  { emoji: "🎋", bg: "#F0FDF4", color: "#16A34A" },
@@ -263,7 +264,9 @@ const CROP_REGISTRY: Record<string, { emoji: string; bg: string; color: string }
 };
 
 const ALL_CROPS = Object.keys(CROP_REGISTRY);
-const DEFAULT_VISIBLE_CROPS = ["wheat", "rice", "tomato", "onion", "potato", "okra"];
+const DEFAULT_VISIBLE_CROPS = ["wheat", "rice", "tomato", "onion", "potato", "brinjal"];
+const HISTORY_WINDOW_DAYS = 365;
+const HISTORY_ROW_LIMIT = 240;
 
 /* ═══════════ MAIN SCREEN ═══════════ */
 export default function AgriMarketScreen() {
@@ -289,36 +292,40 @@ export default function AgriMarketScreen() {
   const health = useHealthCheck();
   const primaryPrices = useMarketPrices(primaryCrop, locationFilter);
   const comparePrices = useMarketPrices(compareCrop || "", locationFilter);
+  const primaryFallbackPrices = useMarketPrices(locationFilter ? primaryCrop : "");
+  const compareFallbackPrices = useMarketPrices(locationFilter && compareCrop ? compareCrop : "");
+  const primaryHistoryPrices = useMarketPrices(primaryCrop, locationFilter, undefined, HISTORY_WINDOW_DAYS, HISTORY_ROW_LIMIT);
+  const primaryFallbackHistoryPrices = useMarketPrices(locationFilter ? primaryCrop : "", undefined, undefined, HISTORY_WINDOW_DAYS, HISTORY_ROW_LIMIT);
   const mandis = useMandis();
   const primaryTrendData = usePriceTrend(primaryCrop, undefined, 365, locationFilter);
   const compareTrendData = usePriceTrend(compareCrop || "", undefined, 365, locationFilter);
+  const primaryFallbackTrendData = usePriceTrend(locationFilter ? primaryCrop : "", undefined, 365);
+  const compareFallbackTrendData = usePriceTrend(locationFilter && compareCrop ? compareCrop : "", undefined, 365);
   const bargaining = useBargainingGroups();
 
   const isOnline = health.data?.status === "ok";
-  const isLoading = primaryPrices.loading;
+  const primaryHasRows = (primaryPrices.data?.prices?.length ?? 0) > 0;
+  const compareHasRows = (comparePrices.data?.prices?.length ?? 0) > 0;
+  const primaryHistoryHasRows = (primaryHistoryPrices.data?.prices?.length ?? 0) > 0;
+  const usePrimaryFallback = !!locationFilter && !primaryHasRows && (primaryFallbackPrices.data?.prices?.length ?? 0) > 0;
+  const useCompareFallback = !!locationFilter && !!compareCrop && !compareHasRows && (compareFallbackPrices.data?.prices?.length ?? 0) > 0;
+  const usePrimaryHistoryFallback =
+    !!locationFilter &&
+    !primaryHistoryHasRows &&
+    (primaryFallbackHistoryPrices.data?.prices?.length ?? 0) > 0;
+  const resolvedPrimaryPrices = usePrimaryFallback ? primaryFallbackPrices : primaryPrices;
+  const resolvedComparePrices = useCompareFallback ? compareFallbackPrices : comparePrices;
+  const resolvedPrimaryHistoryPrices = usePrimaryHistoryFallback ? primaryFallbackHistoryPrices : primaryHistoryPrices;
+  const isLoading = primaryPrices.loading || (!!locationFilter && !primaryHasRows && primaryFallbackPrices.loading);
 
   /* ── Crop info helper ── */
   const cropInfo = (c: string) => CROP_REGISTRY[c] || { emoji: "🌿", bg: "#F0FDF4", color: "#16A34A" };
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const showLiveStateFallback = usePrimaryFallback || useCompareFallback;
 
   /* ─────────────────────────────────────────────────────── */
   /*  VOICE ↔ SCREEN SYNC                                   */
   /* ─────────────────────────────────────────────────────── */
-
-  /* Report screen state to ScreenContext whenever key state changes */
-  useEffect(() => {
-    screen.update({
-      screen: "AgriMarket",
-      tab: activeTab,
-      crop: primaryCrop,
-      compareCrop: compareCrop || undefined,
-      meta: {
-        availableCrops: ALL_CROPS.join(", "),
-        priceLoaded: !primaryPrices.loading,
-        locationFilter: locationFilter || "All India",
-      },
-    });
-  }, [activeTab, primaryCrop, compareCrop, locationFilter, primaryPrices.loading]);
 
   /* Listen to incoming voice commands and react */
   const lastCommandRef = useRef(voice.lastCommand);
@@ -332,7 +339,7 @@ export default function AgriMarketScreen() {
     // If voice mentions a crop, switch to it
     if (entities.crop) {
       const voiceCrop = normalizeMarketCropName(entities.crop);
-      if (ALL_CROPS.includes(voiceCrop)) {
+      if (voiceCrop) {
         setPrimaryCrop(voiceCrop);
       }
     }
@@ -340,7 +347,7 @@ export default function AgriMarketScreen() {
     // If voice says "compare with rice", set compareCrop
     if (entities.compareCrop || entities.compare_crop) {
       const vc = normalizeMarketCropName(entities.compareCrop ?? entities.compare_crop);
-      if (ALL_CROPS.includes(vc) && vc !== primaryCrop) {
+      if (vc && vc !== primaryCrop) {
         setCompareCrop(vc);
       }
     }
@@ -361,22 +368,23 @@ export default function AgriMarketScreen() {
 
   /* Also react to route.params changes (when voice navigates again to same screen) */
   useEffect(() => {
-    if (paramCrop && ALL_CROPS.includes(paramCrop)) setPrimaryCrop(paramCrop);
+    if (paramCrop) setPrimaryCrop(paramCrop);
     if (paramTab) setActiveTab(paramTab);
-    if (paramCompareCrop && ALL_CROPS.includes(paramCompareCrop)) setCompareCrop(paramCompareCrop);
+    if (paramCompareCrop) setCompareCrop(paramCompareCrop);
     setLocationFilter(paramLocation);
   }, [paramCrop, paramTab, paramCompareCrop, paramLocation]);
 
   /* ── Parse prices ── */
-  const primaryPrice = primaryPrices.data?.summary?.average_price
-    ?? (primaryPrices.data as any)?.summary?.avgPrice ?? 0;
-  const comparePrice = comparePrices.data?.summary?.average_price
-    ?? (comparePrices.data as any)?.summary?.avgPrice ?? 0;
+  const primaryPrice = resolvedPrimaryPrices.data?.summary?.average_price
+    ?? (resolvedPrimaryPrices.data as any)?.summary?.avgPrice ?? 0;
+  const comparePrice = resolvedComparePrices.data?.summary?.average_price
+    ?? (resolvedComparePrices.data as any)?.summary?.avgPrice ?? 0;
   const bargainCount = ((bargaining.data as any)?.groups ?? []).length;
 
   /* ── Parse trend data for sparklines ── */
+  const getTrendPoints = (trendRaw: any) => trendRaw?.data?.data_points ?? trendRaw?.data?.trend ?? trendRaw?.data?.prices ?? [];
   const parseTrend = (trendRaw: any): { prices: number[]; dates: string[] } => {
-    const pts = trendRaw?.data?.data_points ?? trendRaw?.data?.trend ?? trendRaw?.data?.prices ?? [];
+    const pts = getTrendPoints(trendRaw);
     if (Array.isArray(pts) && pts.length > 0) {
       return {
         prices: pts.map((p: any) =>
@@ -388,8 +396,17 @@ export default function AgriMarketScreen() {
     return { prices: [], dates: [] };
   };
 
-  const primaryTrendParsed = parseTrend(primaryTrendData);
-  const compareTrendParsed = compareCrop ? parseTrend(compareTrendData) : null;
+  const usePrimaryTrendFallback =
+    !!locationFilter && getTrendPoints(primaryTrendData).length === 0 && getTrendPoints(primaryFallbackTrendData).length > 0;
+  const useCompareTrendFallback =
+    !!locationFilter && !!compareCrop && getTrendPoints(compareTrendData).length === 0 && getTrendPoints(compareFallbackTrendData).length > 0;
+  const resolvedPrimaryTrendData = usePrimaryTrendFallback ? primaryFallbackTrendData : primaryTrendData;
+  const resolvedCompareTrendData = useCompareTrendFallback ? compareFallbackTrendData : compareTrendData;
+  const showHistoryStateFallback = usePrimaryHistoryFallback || usePrimaryTrendFallback;
+  const showStateFallback = activeTab === "historical" ? showHistoryStateFallback : showLiveStateFallback;
+
+  const primaryTrendParsed = parseTrend(resolvedPrimaryTrendData);
+  const compareTrendParsed = compareCrop ? parseTrend(resolvedCompareTrendData) : null;
 
   const primarySparkline = primaryTrendParsed.prices.length > 0 ? primaryTrendParsed.prices.slice(-7) : [];
   const compareSparkline = compareTrendParsed && compareTrendParsed.prices.length > 0 ? compareTrendParsed.prices.slice(-7) : [];
@@ -449,13 +466,13 @@ export default function AgriMarketScreen() {
 
   /* ── Historical price entries (distinct, primary crop only) ── */
   const historyEntries = useMemo(() => {
-    const prices = primaryPrices.data?.prices ?? (primaryPrices.data as any)?.prices ?? [];
+    const prices = resolvedPrimaryHistoryPrices.data?.prices ?? (resolvedPrimaryHistoryPrices.data as any)?.prices ?? [];
     const format = (d: string) => {
       const dt = new Date(d);
       return isNaN(dt.getTime()) ? d : `${MONTH_SHORT[dt.getMonth()]} ${dt.getDate()}, ${dt.getFullYear()}`;
     };
     const seen = new Set<string>();
-    const entries: { date: string; mandi: string; state: string; price: number; delta: number }[] = [];
+    const entries: { date: string; rawDate: string; mandi: string; state: string; price: number; delta: number }[] = [];
     (prices as any[]).forEach((p: any, i: number) => {
       const date = p.trade_date ?? p.date ?? "";
       const mandi = p.mandi_name ?? p.mandi ?? "";
@@ -467,19 +484,82 @@ export default function AgriMarketScreen() {
       const prev = (prices as any[])[i + 1];
       const prevPrice = prev ? parseFloat(prev.modal_price ?? prev.price_per_quintal ?? 0) : price;
       const delta = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
-      entries.push({ date: format(date), mandi, state, price, delta });
+      entries.push({ date: format(date), rawDate: date, mandi, state, price, delta });
     });
     return entries;
-  }, [primaryPrices.data]);
+  }, [resolvedPrimaryHistoryPrices.data]);
 
   /* ── Date range for Historical header ── */
   const dateRange = useMemo(() => {
     const allDates = primaryTrendParsed.dates.filter(Boolean).map(d => new Date(d)).filter(d => !isNaN(d.getTime()));
     if (allDates.length === 0) return { start: "N/A", end: "N/A" };
     allDates.sort((a, b) => a.getTime() - b.getTime());
-    const fmt = (d: Date) => `${MONTH_SHORT[d.getMonth()]} - ${d.getFullYear()}`;
+    const fmt = (d: Date) => `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
     return { start: fmt(allDates[0]), end: fmt(allDates[allDates.length - 1]) };
   }, [primaryTrendParsed.dates]);
+
+  const historyDates = useMemo(
+    () => Array.from(new Set(primaryTrendParsed.dates.filter(Boolean))).sort(),
+    [primaryTrendParsed.dates]
+  );
+
+  const historyCoverageSummary = useMemo(() => {
+    if (historyDates.length === 0) {
+      return {
+        days: 0,
+        summary: `No stored history available for ${primaryLabel}${locationFilter ? ` in ${locationFilter}` : ""}.`,
+      };
+    }
+
+    const scopeLabel =
+      showHistoryStateFallback && locationFilter
+        ? `all-India fallback because ${locationFilter} has no stored rows yet`
+        : (locationFilter || "all India");
+    const dayLabel = historyDates.length === 1 ? "day" : "days";
+    return {
+      days: historyDates.length,
+      summary: `Showing ${historyDates.length} stored ${dayLabel} for ${primaryLabel} in ${scopeLabel}. Coverage: ${historyDates[0]} to ${historyDates[historyDates.length - 1]}.`,
+    };
+  }, [historyDates, locationFilter, primaryLabel, showHistoryStateFallback]);
+
+  const historyDatePreview = useMemo(() => {
+    if (historyDates.length === 0) return "None";
+    if (historyDates.length <= 6) return historyDates.join(", ");
+    return `${historyDates.slice(0, 3).join(", ")} ... ${historyDates.slice(-3).join(", ")}`;
+  }, [historyDates]);
+
+  /* Report screen state to ScreenContext whenever key state changes */
+  useEffect(() => {
+    screen.update({
+      screen: "AgriMarket",
+      tab: activeTab,
+      crop: primaryCrop,
+      compareCrop: compareCrop || undefined,
+      location: locationFilter || undefined,
+      meta: {
+        availableCrops: ALL_CROPS.join(", "),
+        priceLoaded: !resolvedPrimaryPrices.loading,
+        historyLoaded: !resolvedPrimaryHistoryPrices.loading,
+        locationFilter: locationFilter || "All India",
+        visibleScope: showStateFallback && locationFilter ? `Fallback to All India for ${locationFilter}` : (locationFilter || "All India"),
+        historicalDaysAvailable: historyDates.length,
+        historicalCoverageStart: historyDates[0] || "None",
+        historicalCoverageEnd: historyDates[historyDates.length - 1] || "None",
+        historicalVisibleDates: historyDatePreview,
+      },
+    });
+  }, [
+    activeTab,
+    compareCrop,
+    historyDatePreview,
+    historyDates,
+    locationFilter,
+    primaryCrop,
+    resolvedPrimaryHistoryPrices.loading,
+    resolvedPrimaryPrices.loading,
+    screen.update,
+    showStateFallback,
+  ]);
 
   /* crop selector handler */
   const selectCrop = useCallback((crop: string) => {
@@ -595,10 +675,19 @@ export default function AgriMarketScreen() {
           {/* Live Mandi Prices header */}
           <View style={[s.sectionHeader, { marginTop: 14 }]}>
             <Text style={s.sectionTitle}>Live Mandi Prices</Text>
-            <Pressable onPress={() => nav.navigate("MarketPrices")}>
+            <Pressable onPress={() => nav.navigate("MarketPrices", { crop: primaryCrop, location: locationFilter })}>
               <Text style={s.viewAll}>View all</Text>
             </Pressable>
           </View>
+
+          {showLiveStateFallback && locationFilter ? (
+            <View style={s.infoBanner}>
+              <Ionicons name="information-circle-outline" size={16} color={T.goldDark} />
+              <Text style={s.infoBannerText}>
+                No live rows for {locationFilter}. Showing the latest {primaryLabel} data available from other states.
+              </Text>
+            </View>
+          ) : null}
 
           {/* Price cards row — dynamic primary + optional compare */}
           <View style={s.priceRow}>
@@ -675,6 +764,11 @@ export default function AgriMarketScreen() {
             <Text style={s.dateRangeLabel}>{dateRange.start}</Text>
             <Ionicons name="arrow-forward" size={14} color={T.muted} />
             <Text style={s.dateRangeLabel}>{dateRange.end}</Text>
+          </View>
+
+          <View style={s.infoBanner}>
+            <Ionicons name="calendar-outline" size={16} color={T.goldDark} />
+            <Text style={s.infoBannerText}>{historyCoverageSummary.summary}</Text>
           </View>
 
           {/* Legend */}
@@ -799,7 +893,7 @@ export default function AgriMarketScreen() {
           )}
 
           {/* Analyze Data CTA */}
-          <Pressable style={s.ctaBtn} onPress={() => nav.navigate("MarketPrices")}>
+          <Pressable style={s.ctaBtn} onPress={() => nav.navigate("MarketPrices", { crop: primaryCrop, location: locationFilter })}>
             <Ionicons name="analytics" size={18} color={T.white} />
             <Text style={s.ctaBtnText}>Analyze Data</Text>
           </Pressable>
@@ -879,6 +973,25 @@ const s = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "800", color: T.ink },
   viewAll: { fontSize: 12, fontWeight: "700", color: T.gold },
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: T.goldTint,
+    borderWidth: 1,
+    borderColor: T.cardBorder,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "700",
+    color: T.sub,
+  },
 
   /* Price row (side-by-side cards) */
   priceRow: { flexDirection: "row", gap: 12, marginBottom: 16 },

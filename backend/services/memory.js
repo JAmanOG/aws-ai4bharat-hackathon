@@ -32,6 +32,9 @@ const MAX_FACTS = 30;
 async function storeTurn(userId, sessionId, role, text, metadata = {}) {
     const timestamp = new Date().toISOString();
     const turnId = `${sessionId}#${timestamp}#${uuid().slice(0, 8)}`;
+    const entities = metadata.entities && typeof metadata.entities === 'object'
+        ? metadata.entities
+        : null;
 
     await dynamoDB.send(new PutCommand({
         TableName: CONVERSATIONS_TABLE,
@@ -47,6 +50,10 @@ async function storeTurn(userId, sessionId, role, text, metadata = {}) {
             audioKey: metadata.audioKey || '',
             createdAt: timestamp,
             ttl: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60), // 30-day TTL
+            ...(metadata.intent ? { intent: metadata.intent } : {}),
+            ...(entities && Object.keys(entities).length > 0 ? { entities } : {}),
+            ...(metadata.followUp ? { followUp: metadata.followUp } : {}),
+            ...(metadata.provider ? { provider: metadata.provider } : {}),
         },
     }));
 
@@ -64,16 +71,23 @@ async function getSessionHistory(userId, sessionId, limit = MAX_HISTORY_TURNS) {
             ':uid': userId,
             ':sid': `${sessionId}#`,
         },
-        ScanIndexForward: true, // chronological
+        ScanIndexForward: false, // fetch latest turns first
         Limit: limit,
     }));
 
-    return (result.Items || []).map(item => ({
+    return (result.Items || [])
+        .slice()
+        .reverse()
+        .map(item => ({
         role: item.role,
         text: item.text,
         language: item.language,
         timestamp: item.createdAt,
         intentDomain: item.intentDomain,
+        intent: item.intent || '',
+        entities: item.entities || {},
+        followUp: item.followUp || null,
+        provider: item.provider || '',
     }));
 }
 
@@ -201,7 +215,7 @@ async function extractFacts(conversationSnippet) {
         });
 
         // Parse JSON from response
-        const jsonStr = result.content.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        const jsonStr = extractJsonObject(result.content);
         const facts = JSON.parse(jsonStr);
 
         // Filter out empty values
@@ -216,6 +230,22 @@ async function extractFacts(conversationSnippet) {
         console.warn('[Memory] Fact extraction failed:', err.message);
         return {};
     }
+}
+
+function extractJsonObject(raw = '') {
+    const cleaned = String(raw || '')
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+        return cleaned.slice(start, end + 1);
+    }
+
+    return cleaned;
 }
 
 /**
@@ -298,6 +328,7 @@ module.exports = {
     extractFacts,
     extractAndStoreFacts,
     buildContextMessages,
+    extractJsonObject,
     // Expose table names for provisioning
     CONVERSATIONS_TABLE,
     FACTS_TABLE,

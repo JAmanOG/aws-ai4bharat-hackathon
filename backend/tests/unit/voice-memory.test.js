@@ -28,6 +28,7 @@ jest.mock('../../services/llm', () => ({
 }));
 
 const memory = require('../../services/memory');
+const llm = require('../../services/llm');
 
 describe('Voice Memory Service', () => {
   beforeEach(() => {
@@ -54,17 +55,18 @@ describe('Voice Memory Service', () => {
   });
 
   describe('getSessionHistory', () => {
-    test('queries session turns sorted by turnId', async () => {
+    test('queries latest session turns and returns them in chronological order', async () => {
       mockSend.mockResolvedValueOnce({
         Items: [
-          { turnId: 'session-abc#001', role: 'user', text: 'hello' },
           { turnId: 'session-abc#002', role: 'assistant', text: 'hi' },
+          { turnId: 'session-abc#001', role: 'user', text: 'hello' },
         ],
       });
 
       const result = await memory.getSessionHistory('user-123', 'session-abc');
 
       expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend.mock.calls[0][0].input.ScanIndexForward).toBe(false);
       expect(result).toHaveLength(2);
       expect(result[0].role).toBe('user');
       expect(result[1].role).toBe('assistant');
@@ -129,6 +131,19 @@ describe('Voice Memory Service', () => {
       expect(facts).toBeDefined();
       expect(facts.user_name).toBe('Ramesh');
       expect(facts.location_state).toBe('Maharashtra');
+    });
+
+    test('strips think tags and extra wrapper text before parsing JSON', async () => {
+      llm.generateResponse.mockResolvedValueOnce({
+        content: '<think>\ninternal\n</think>\nHere are the facts:\n{"user_name":"Sita","location_state":"Bihar"}',
+        provider: 'sarvam-m',
+        usage: {},
+      });
+
+      const facts = await memory.extractFacts('My name is Sita and I farm in Bihar');
+
+      expect(facts.user_name).toBe('Sita');
+      expect(facts.location_state).toBe('Bihar');
     });
   });
 

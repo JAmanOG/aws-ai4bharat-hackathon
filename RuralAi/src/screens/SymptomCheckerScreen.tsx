@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -6,14 +6,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
-import { healthApi, type SymptomCheckResult } from "../services/api";
+import { type SymptomCheckResult } from "../services/api";
+import { useScreenContext } from "../context/ScreenContext";
+import { useVoice } from "../voice/VoiceContext";
+import { useVoiceService, type ChatResult } from "../services/voice";
 
 const PALETTE = {
   screen: "#F7F0E2",
@@ -31,85 +33,300 @@ const PALETTE = {
   high: "#B54B31",
   critical: "#952A20",
   shadow: "rgba(126, 92, 31, 0.18)",
+  assistantBubble: "#FFF8E7",
+  userBubble: "#F0E3BD",
 };
 
-const QUICK_SYMPTOMS = [
-  "fever",
-  "cough",
-  "headache",
-  "chest pain",
-  "breathing issue",
-  "vomiting",
-];
+type QaTurn = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
+function toBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 8192;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...Array.from(bytes.subarray(i, Math.min(i + chunkSize, bytes.length))));
+  }
+
+  return btoa(binary);
+}
+
+function buildIntroTurn(): QaTurn {
+  return {
+    id: `assistant-intro-${Date.now()}`,
+    role: "assistant",
+    text: "Namaste. I am your AI Doctor. Tell me the main symptoms first. I will then ask the age and gender before giving the health screening result.",
+  };
+}
+
+function humanizeSlot(slot?: string | null) {
+  switch (slot) {
+    case "symptoms":
+      return "Describe symptoms";
+    case "age":
+      return "Tell age";
+    case "gender":
+      return "Tell gender";
+    default:
+      return "Voice answer";
+  }
+}
+
+function buildHeroCopy(
+  voiceState: string,
+  stage: string,
+  missingField: string | null,
+  hasResult: boolean,
+) {
+  if (voiceState === "listening") {
+    return "Listening. Answer the AI Doctor clearly in your preferred language.";
+  }
+  if (voiceState === "processing") {
+    return "AI Doctor is reviewing the latest answer and preparing the next step.";
+  }
+  if (voiceState === "speaking") {
+    return "The health agent is speaking the next question or screening result.";
+  }
+  if (hasResult || stage === "complete") {
+    return "Screening complete. Review the result below or restart the consultation for another patient.";
+  }
+  if (missingField) {
+    return `Next step: ${humanizeSlot(missingField)}. No typing is needed on this screen.`;
+  }
+  return "Start by telling the symptoms. The AI Doctor will collect the rest by voice.";
+}
+
+function riskToneFromResult(result: SymptomCheckResult | null) {
+  const risk = String(result?.risk_level || "").toLowerCase();
+  if (risk === "critical") return PALETTE.critical;
+  if (risk === "high") return PALETTE.high;
+  if (risk === "medium" || risk === "moderate") return PALETTE.medium;
+  return PALETTE.low;
+}
 
 export default function SymptomCheckerScreen() {
   const nav = useNavigation<any>();
+  const { update: updateScreen, toPromptContext } = useScreenContext();
+  const voiceService = useVoiceService();
+  const {
+    state,
+    setState,
+    language,
+    sessionId,
+    setSessionId,
+    lastCommand,
+    processResult,
+    clearVisualization,
+  } = useVoice();
 
-  const [symptoms, setSymptoms] = useState("");
-  const [age, setAge] = useState("");
-  const [gender, setGender] = useState<"male" | "female" | "other">("female");
-  const [loading, setLoading] = useState(false);
-  const [isListening, setIsListening] = useState(true);
+  const mountedRef = useRef(true);
+  const sessionRef = useRef(
+    lastCommand?.domain === "health" && lastCommand.intent?.includes("symptom") && sessionId
+      ? sessionId
+      : `symptom-${Date.now()}`
+  );
+
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
+  const [qaTurns, setQaTurns] = useState<QaTurn[]>([buildIntroTurn()]);
   const [result, setResult] = useState<SymptomCheckResult | null>(null);
+  const [capturedSymptoms, setCapturedSymptoms] = useState("");
+  const [capturedAge, setCapturedAge] = useState("");
+  const [capturedGender, setCapturedGender] = useState("");
+  const [conversationStage, setConversationStage] = useState("ready");
+  const [missingField, setMissingField] = useState<string | null>("symptoms");
 
-  const riskTone = useMemo(() => {
-    const risk = String(result?.risk_level || "").toLowerCase();
-    if (risk === "critical") return PALETTE.critical;
-    if (risk === "high") return PALETTE.high;
-    if (risk === "medium" || risk === "moderate") return PALETTE.medium;
-    return PALETTE.low;
-  }, [result?.risk_level]);
+  const riskTone = useMemo(() => riskToneFromResult(result), [result]);
+  const loading = state === "processing";
+  const hasResult = !!result;
+  const heroCopy = buildHeroCopy(state, conversationStage, missingField, hasResult);
+  const completionCount = [capturedSymptoms, capturedAge, capturedGender].filter(Boolean).length;
 
-  const handleToggleQuickSymptom = (label: string) => {
-    const current = symptoms
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
+  const appendTurn = useCallback((turn: QaTurn) => {
+    setQaTurns((prev) => [...prev, turn].slice(-10));
+  }, []);
 
-    const exists = current.some((entry) => entry.toLowerCase() === label.toLowerCase());
-    const next = exists
-      ? current.filter((entry) => entry.toLowerCase() !== label.toLowerCase())
-      : [...current, label];
-
-    setSymptoms(next.join(", "));
-  };
-
-  const handleMicPress = () => {
-    setIsListening((current) => !current);
-  };
-
-  const handleCheckSymptoms = async () => {
-    const symptomList = symptoms
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-    const parsedAge = Number(age);
-    if (symptomList.length === 0) {
-      Alert.alert("Symptoms required", "Describe at least one symptom before checking.");
-      return;
-    }
-    if (!parsedAge || parsedAge <= 0) {
-      Alert.alert("Age required", "Enter a valid age so the AI triage can assess risk correctly.");
-      return;
-    }
-
-    setLoading(true);
+  const resetConsultation = useCallback(() => {
+    sessionRef.current = `symptom-${Date.now()}`;
+    setSessionId(sessionRef.current);
+    setQaTurns([buildIntroTurn()]);
     setResult(null);
-    try {
-      const response = await healthApi.checkSymptoms({
-        symptoms: symptomList,
-        age: parsedAge,
-        gender,
+    setCapturedSymptoms("");
+    setCapturedAge("");
+    setCapturedGender("");
+    setConversationStage("ready");
+    setMissingField("symptoms");
+    clearVisualization();
+    setState("idle");
+    voiceService.cancelRecording().catch(() => {});
+    voiceService.stopPlayback().catch(() => {});
+  }, [clearVisualization, setSessionId, setState, voiceService]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    setSessionId(sessionRef.current);
+    voiceService.requestMicPermission().then(setHasMicPermission).catch(() => setHasMicPermission(false));
+
+    return () => {
+      mountedRef.current = false;
+      voiceService.cancelRecording().catch(() => {});
+      voiceService.stopPlayback().catch(() => {});
+      setState("idle");
+    };
+  }, []);
+
+  useEffect(() => {
+    updateScreen({
+      screen: "SymptomChecker",
+      tab: hasResult ? "results" : "consultation",
+      meta: {
+        availableActions: "Start voice consultation, answer AI Doctor, restart consultation",
+        consultationMode: "voice_only",
+        conversationStage,
+        missingField: missingField ? humanizeSlot(missingField) : "None",
+        capturedSymptoms: capturedSymptoms || "None",
+        capturedAge: capturedAge || "None",
+        capturedGender: capturedGender || "None",
+        turnCount: qaTurns.length,
+        resultReady: hasResult ? "Yes" : "No",
+        riskLevel: result?.risk_level || "None",
+        urgency: result?.urgency || "None",
+        possibleConditions: (result?.possible_conditions || []).join(", ") || "None",
+      },
+    });
+  }, [
+    capturedAge,
+    capturedGender,
+    capturedSymptoms,
+    conversationStage,
+    hasResult,
+    missingField,
+    qaTurns.length,
+    result,
+    updateScreen,
+  ]);
+
+  const handleResult = useCallback(
+    async (chatResult: ChatResult) => {
+      processResult(chatResult);
+
+      if (chatResult.transcript) {
+        appendTurn({
+          id: `user-${Date.now()}`,
+          role: "user",
+          text: chatResult.transcript,
+        });
+      }
+
+      appendTurn({
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        text: chatResult.response_text,
       });
-      setResult(response);
-      setIsListening(false);
-    } catch (error: any) {
-      Alert.alert("Unable to check symptoms", error?.message ?? "Please try again.");
-    } finally {
-      setLoading(false);
+
+      const metadata = (chatResult.metadata ?? {}) as {
+        symptomIntake?: { symptoms?: string; age?: string | number; gender?: string };
+        triage_result?: SymptomCheckResult;
+        conversationStage?: string;
+        followUp?: { pendingSlot?: string };
+      };
+
+      const intake = metadata.symptomIntake;
+      if (intake?.symptoms) setCapturedSymptoms(String(intake.symptoms));
+      if (intake?.age != null) setCapturedAge(String(intake.age));
+      if (intake?.gender) setCapturedGender(String(intake.gender));
+
+      if (metadata.followUp?.pendingSlot) {
+        setMissingField(metadata.followUp.pendingSlot);
+      } else {
+        setMissingField(null);
+      }
+
+      if (metadata.conversationStage) {
+        setConversationStage(metadata.conversationStage);
+      } else if (metadata.triage_result) {
+        setConversationStage("complete");
+      } else {
+        setConversationStage("collecting");
+      }
+
+      if (metadata.triage_result) {
+        setResult(metadata.triage_result);
+      }
+
+      if (!chatResult.audio_base64) {
+        if (mountedRef.current) setState("visualizing");
+        return;
+      }
+
+      if (mountedRef.current) setState("speaking");
+
+      try {
+        await voiceService.playBase64Audio(chatResult.audio_base64);
+      } finally {
+        if (mountedRef.current) setState("visualizing");
+      }
+    },
+    [appendTurn, processResult, setState, voiceService],
+  );
+
+  const startListening = useCallback(async () => {
+    if (hasMicPermission === false) {
+      Alert.alert("Microphone permission needed", "Allow microphone access to speak with the AI Doctor.");
+      return;
     }
-  };
+
+    try {
+      clearVisualization();
+      setConversationStage((current) => (current === "complete" ? "collecting" : current));
+      await voiceService.startRecording();
+      if (mountedRef.current) setState("listening");
+    } catch {
+      if (mountedRef.current) setState("idle");
+    }
+  }, [clearVisualization, hasMicPermission, setState, voiceService]);
+
+  const stopAndSend = useCallback(async () => {
+    if (mountedRef.current) setState("processing");
+
+    try {
+      const uri = await voiceService.stopRecording();
+      if (!uri) {
+        if (mountedRef.current) setState("idle");
+        return;
+      }
+
+      const response = await fetch(uri);
+      const buffer = await response.arrayBuffer();
+      const base64 = toBase64(new Uint8Array(buffer));
+      if (!base64) {
+        if (mountedRef.current) setState("idle");
+        return;
+      }
+
+      const chatResult = await voiceService.chatWithAudio(base64, {
+        language_code: language,
+        session_id: sessionId ?? sessionRef.current,
+        screen_context: toPromptContext(),
+      });
+      await handleResult(chatResult);
+    } catch (error: any) {
+      Alert.alert("Unable to continue", error?.message ?? "Please try speaking again.");
+      if (mountedRef.current) setState("idle");
+      setConversationStage("error");
+    }
+  }, [handleResult, language, sessionId, setState, toPromptContext, voiceService]);
+
+  const handleMicPress = useCallback(async () => {
+    if (state === "processing" || state === "speaking") return;
+    if (state === "listening") {
+      await stopAndSend();
+      return;
+    }
+    await startListening();
+  }, [startListening, state, stopAndSend]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -124,17 +341,17 @@ export default function SymptomCheckerScreen() {
           <Text style={styles.title}>Symptom Checker</Text>
         </View>
 
-        <Text style={styles.eyebrow}>AI HEALTH SCREENING</Text>
+        <Text style={styles.eyebrow}>AI DOCTOR CONSULTATION</Text>
 
-        <Pressable style={styles.micButton} onPress={handleMicPress}>
-          <Ionicons name={isListening ? "mic" : "mic-outline"} size={54} color={PALETTE.card} />
+        <Pressable style={[styles.micButton, state === "listening" && styles.micButtonActive]} onPress={handleMicPress}>
+          {loading ? (
+            <ActivityIndicator size="small" color={PALETTE.card} />
+          ) : (
+            <Ionicons name={state === "listening" ? "stop" : "mic"} size={54} color={PALETTE.card} />
+          )}
         </Pressable>
 
-        <Text style={styles.heroCopy}>
-          {isListening
-            ? "AI Assistant is listening. Describe your symptoms, age, and gender."
-            : "Tap the mic again or type your symptoms, age, and gender below."}
-        </Text>
+        <Text style={styles.heroCopy}>{heroCopy}</Text>
 
         <View style={styles.visualRow}>
           <View style={styles.waveCard}>
@@ -143,14 +360,14 @@ export default function SymptomCheckerScreen() {
 
           <View style={styles.summaryColumn}>
             <SummaryTile
-              title="Possible Conditions"
-              loading={loading}
-              value={result ? `${(result.possible_conditions || []).length} found` : "Waiting"}
+              title="Collected"
+              loading={false}
+              value={`${completionCount}/3 details`}
             />
             <SummaryTile
-              title="Recommendations"
+              title="Next Step"
               loading={loading}
-              value={result ? `${Math.max((result.home_remedies || []).length, 1)} steps` : "Waiting"}
+              value={missingField ? humanizeSlot(missingField) : hasResult ? "Review result" : "Start speaking"}
             />
           </View>
         </View>
@@ -160,81 +377,45 @@ export default function SymptomCheckerScreen() {
             style={[
               styles.progressFill,
               {
-                width: loading ? "58%" : result ? "100%" : "38%",
+                width: hasResult ? "100%" : `${Math.max(26, completionCount * 28)}%`,
               },
             ]}
           />
         </View>
 
-        <View style={styles.formCard}>
-          <Text style={styles.inputLabel}>Symptoms</Text>
-          <TextInput
-            value={symptoms}
-            onChangeText={setSymptoms}
-            placeholder="e.g. fever, cough, body pain"
-            placeholderTextColor={PALETTE.dim}
-            multiline
-            style={styles.symptomInput}
-          />
-
-          <View style={styles.quickRow}>
-            {QUICK_SYMPTOMS.map((label) => {
-              const active = symptoms.toLowerCase().includes(label.toLowerCase());
-              return (
-                <Pressable
-                  key={label}
-                  onPress={() => handleToggleQuickSymptom(label)}
-                  style={[styles.quickChip, active && styles.quickChipActive]}
-                >
-                  <Text style={[styles.quickChipText, active && styles.quickChipTextActive]}>
-                    {label}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        <View style={styles.statusCard}>
+          <View style={styles.statusPillRow}>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>Symptoms: {capturedSymptoms || "Waiting"}</Text>
+            </View>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>Age: {capturedAge || "Waiting"}</Text>
+            </View>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>Gender: {capturedGender || "Waiting"}</Text>
+            </View>
           </View>
 
-          <View style={styles.formRow}>
-            <View style={styles.ageWrap}>
-              <Text style={styles.inputLabel}>Age</Text>
-              <TextInput
-                value={age}
-                onChangeText={setAge}
-                keyboardType="number-pad"
-                placeholder="28"
-                placeholderTextColor={PALETTE.dim}
-                style={styles.ageInput}
-              />
-            </View>
-
-            <View style={styles.genderWrap}>
-              <Text style={styles.inputLabel}>Gender</Text>
-              <View style={styles.genderRow}>
-                {(["female", "male", "other"] as const).map((option) => {
-                  const active = gender === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      onPress={() => setGender(option)}
-                      style={[styles.genderChip, active && styles.genderChipActive]}
-                    >
-                      <Text style={[styles.genderChipText, active && styles.genderChipTextActive]}>
-                        {option.charAt(0).toUpperCase() + option.slice(1)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+          <Text style={styles.sectionTitle}>AI Doctor vs Patient</Text>
+          <View style={styles.conversationStack}>
+            {qaTurns.map((turn) => (
+              <View
+                key={turn.id}
+                style={[
+                  styles.turnBubble,
+                  turn.role === "assistant" ? styles.assistantBubble : styles.userBubble,
+                ]}
+              >
+                <Text style={styles.turnRole}>{turn.role === "assistant" ? "AI Doctor" : "Patient"}</Text>
+                <Text style={styles.turnText}>{turn.text}</Text>
               </View>
-            </View>
+            ))}
           </View>
         </View>
 
-        <Pressable style={styles.ctaButton} onPress={handleCheckSymptoms} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator size="small" color={PALETTE.ink} />
-          ) : (
-            <Text style={styles.ctaText}>CHECK SYMPTOMS</Text>
-          )}
+        <Pressable style={styles.secondaryButton} onPress={resetConsultation}>
+          <Ionicons name="refresh" size={16} color={PALETTE.ink} />
+          <Text style={styles.secondaryButtonText}>Restart consultation</Text>
         </Pressable>
 
         {result ? (
@@ -277,7 +458,7 @@ export default function SymptomCheckerScreen() {
         ) : null}
 
         <Text style={styles.disclaimer}>
-          Disclaimer: This result is useful for symptom screening only. It is not a confirmed medical diagnosis. If symptoms worsen, contact a certified healthcare professional immediately.
+          Disclaimer: This is AI-assisted symptom screening only. It is not a confirmed diagnosis. For urgent symptoms, contact a certified healthcare professional, nearby PHC, or emergency services immediately.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -431,6 +612,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 5,
   },
+  micButtonActive: {
+    backgroundColor: PALETTE.goldDeep,
+  },
   heroCopy: {
     marginTop: 26,
     textAlign: "center",
@@ -492,7 +676,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: PALETTE.gold,
   },
-  formCard: {
+  statusCard: {
     marginTop: 18,
     backgroundColor: PALETTE.paper,
     borderRadius: 22,
@@ -500,113 +684,75 @@ const styles = StyleSheet.create({
     borderColor: "#E4D7B6",
     padding: 16,
   },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginBottom: 8,
-  },
-  symptomInput: {
-    minHeight: 88,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E0D2AD",
-    backgroundColor: PALETTE.card,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    lineHeight: 20,
-    color: PALETTE.ink,
-    textAlignVertical: "top",
-  },
-  quickRow: {
+  statusPillRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 12,
   },
-  quickChip: {
+  statusPill: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: "#F1E4BC",
   },
-  quickChipActive: {
-    backgroundColor: PALETTE.gold,
-  },
-  quickChipText: {
+  statusPillText: {
     fontSize: 11,
     fontWeight: "800",
     color: PALETTE.muted,
   },
-  quickChipTextActive: {
+  sectionTitle: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: "900",
     color: PALETTE.ink,
   },
-  formRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
+  conversationStack: {
+    marginTop: 12,
+    gap: 10,
   },
-  ageWrap: {
-    width: 86,
-  },
-  ageInput: {
-    height: 48,
-    borderRadius: 16,
+  turnBubble: {
+    borderRadius: 18,
+    padding: 14,
     borderWidth: 1,
     borderColor: "#E0D2AD",
-    backgroundColor: PALETTE.card,
-    paddingHorizontal: 12,
+  },
+  assistantBubble: {
+    backgroundColor: PALETTE.assistantBubble,
+    marginRight: 28,
+  },
+  userBubble: {
+    backgroundColor: PALETTE.userBubble,
+    marginLeft: 28,
+  },
+  turnRole: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: PALETTE.dim,
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  turnText: {
     fontSize: 15,
-    color: PALETTE.ink,
+    lineHeight: 22,
+    color: PALETTE.muted,
   },
-  genderWrap: {
-    flex: 1,
-  },
-  genderRow: {
+  secondaryButton: {
+    marginTop: 18,
+    minHeight: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+    backgroundColor: PALETTE.card,
+    alignItems: "center",
+    justifyContent: "center",
     flexDirection: "row",
     gap: 8,
   },
-  genderChip: {
-    flex: 1,
-    height: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E0D2AD",
-    backgroundColor: PALETTE.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  genderChipActive: {
-    backgroundColor: PALETTE.goldSoft,
-    borderColor: PALETTE.gold,
-  },
-  genderChipText: {
-    fontSize: 12,
+  secondaryButtonText: {
+    fontSize: 14,
     fontWeight: "800",
-    color: PALETTE.dim,
-  },
-  genderChipTextActive: {
     color: PALETTE.ink,
-  },
-  ctaButton: {
-    marginTop: 18,
-    minHeight: 64,
-    borderRadius: 32,
-    backgroundColor: PALETTE.gold,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: PALETTE.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  ctaText: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    letterSpacing: 0.4,
   },
   resultCard: {
     marginTop: 20,

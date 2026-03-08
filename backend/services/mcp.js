@@ -18,18 +18,21 @@
  *                    ↓
  *               Sarvam AI
  *
- * Three MCP Tools:
+ * Four MCP Tools:
  *   1. domain_agent    – AI Agents with domain logic (Sarvam-M, fast & free)
- *   2. deep_reasoning  – AWS Bedrock Claude (complex / sensitive queries)
- *   3. fallback_llm    – Google Gemini (last resort)
+ *   2. weather_lookup  – Live weather + AQI lookup
+ *   3. deep_reasoning  – AWS Bedrock Claude (complex / sensitive queries)
+ *   4. fallback_llm    – Google Gemini (last resort)
  *
  * Tool Selection Rules:
+ *   live weather / AQI    → weather_lookup
  *   complex queries       → deep_reasoning (Claude)
  *   health queries        → deep_reasoning (Claude, safety)
  *   schemes moderate+     → deep_reasoning (Claude, accuracy)
  *   simple/moderate       → domain_agent (Sarvam-M)
  *
  * Cascading Fallback:
+ *   weather_lookup fails → domain_agent → deep_reasoning → fallback_llm
  *   domain_agent fails → deep_reasoning (Claude) → fallback_llm (Gemini)
  *   deep_reasoning fails → domain_agent → fallback_llm (Gemini)
  *
@@ -38,6 +41,15 @@
 
 const agentRegistry = require('./agents');
 const llm = require('./llm');
+const weatherAqi = require('./weather-aqi');
+
+const HEALTH_AGENT_INTENTS = new Set([
+    'symptom_guidance',
+    'medical_report_analysis',
+    'health_platform_help',
+    'health_scheme',
+    'facility_referral',
+]);
 
 /* ─── Structured logger ─── */
 function log(level, msg, data = {}) {
@@ -66,6 +78,17 @@ const TOOL_DEFINITIONS = [
                 complexity: { type: 'string', enum: ['simple', 'moderate', 'complex'] },
             },
             required: ['domain'],
+        },
+    },
+    {
+        name: 'weather_lookup',
+        description: 'Live weather and AQI lookup for a city using Open-Meteo APIs',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                intent: { type: 'string', enum: ['weather_info', 'air_quality_info'] },
+                entities: { type: 'object' },
+            },
         },
     },
     {
@@ -100,7 +123,7 @@ const DOMAIN_CONTEXT = {
     agriculture: 'You are an expert Indian agricultural advisor. Provide practical advice on crops, soil, irrigation, pests, farming techniques, and seasonal planning. Use units farmers understand (bigha, quintal). Reference government schemes when relevant.',
     market: 'You are an expert on Indian agricultural markets. Cover mandi prices (₹/quintal), MSP, price trends, buyer connections, supply chain, and logistics. Reference specific APMCs when possible.',
     schemes: 'You are an expert on Indian government schemes for farmers. Cover PM-KISAN, PMFBY, PKVY, KCC, subsidies, eligibility criteria, required documents, and deadlines. Direct users to CSC for offline help.',
-    health: 'You provide rural health guidance for Indian communities. CRITICAL: NEVER diagnose conditions — always recommend professional medical consultation. For emergencies, direct to 108 (ambulance) or 112. Cover nutrition, maternal/child health, first aid, heat prevention.',
+    health: 'You provide rural health guidance for Indian communities. CRITICAL: NEVER diagnose conditions — always recommend professional medical consultation. For emergencies, direct to 108 (ambulance) or 112. Cover nutrition, maternal/child health, first aid, heat prevention. When current app context mentions HealthDashboard or SymptomChecker, anchor responses to the exact on-screen features such as Start Screening, Upload Report, Get Insights, schemes, and consultation providers.',
     general: 'You are a friendly assistant for rural Indian communities. Help with general knowledge, digital literacy, and connecting to available services.',
     knowledge: 'You are a learning resource assistant for rural Indian farmers. Help find educational videos, articles, courses, and training content. Reference government training portals (ICAR, KVK, PMKVY) when relevant. Always provide actual resource links and titles.',
 };
@@ -116,22 +139,32 @@ const DOMAIN_CONTEXT = {
  * @returns {{ tool: string, reason: string }}
  */
 function selectTool({ domain, complexity, intent }) {
-    // 1. Complex queries → Bedrock Claude (deep reasoning)
+    // 1. Live weather / AQI always uses the live tool first
+    if (intent === 'weather_info' || intent === 'air_quality_info') {
+        return { tool: 'weather_lookup', reason: 'Live weather/AQI request → weather lookup tool' };
+    }
+
+    // 2. Health platform/help/report/symptom flows → health agent first
+    if (domain === 'health' && HEALTH_AGENT_INTENTS.has(String(intent || ''))) {
+        return { tool: 'domain_agent', reason: 'Health platform/report flow → health agent' };
+    }
+
+    // 3. Complex queries → Bedrock Claude (deep reasoning)
     if (complexity === 'complex') {
         return { tool: 'deep_reasoning', reason: 'Complex query → Claude deep reasoning' };
     }
 
-    // 2. Health domain → Claude (accuracy & safety required)
+    // 4. Health domain → Claude (accuracy & safety required)
     if (domain === 'health') {
         return { tool: 'deep_reasoning', reason: 'Health domain → Claude for accuracy/safety' };
     }
 
-    // 3. Schemes with moderate complexity → Claude (factual accuracy)
+    // 5. Schemes with moderate complexity → Claude (factual accuracy)
     if (domain === 'schemes' && complexity === 'moderate') {
         return { tool: 'deep_reasoning', reason: 'Scheme details → Claude for accuracy' };
     }
 
-    // 4. Everything else → domain-specific AI agent (Sarvam-M, fast & free)
+    // 6. Everything else → domain-specific AI agent (Sarvam-M, fast & free)
     return { tool: 'domain_agent', reason: `Simple/moderate → ${domain} agent (Sarvam-M)` };
 }
 
@@ -144,7 +177,7 @@ function selectTool({ domain, complexity, intent }) {
  * Agents use Sarvam-M (fast, free) as their primary LLM.
  */
 async function executeDomainAgent(params) {
-    const { domain, intent, entities, complexity, messages, userId } = params;
+    const { domain, intent, entities, complexity, messages, userId, screenContext } = params;
     const agent = agentRegistry.getAgent(domain);
 
     log('info', `🔧 [domain_agent] → ${agent.name || domain} agent`, {
@@ -159,6 +192,7 @@ async function executeDomainAgent(params) {
         entities: entities || {},
         complexity: complexity || 'simple',
         userId,
+        screenContext: screenContext || '',
     };
 
     const result = await agent.handle(ctx, { llm });
@@ -168,6 +202,28 @@ async function executeDomainAgent(params) {
         route: 'agent',
         agent: domain,
         tool: 'domain_agent',
+    };
+}
+
+async function executeWeatherLookup(params) {
+    const { intent, entities, messages, screenContext } = params;
+    log('info', '🔧 [weather_lookup] → Open-Meteo live data', {
+        intent,
+        entityKeys: Object.keys(entities || {}),
+    });
+
+    const result = await weatherAqi.getWeatherAndAqi({
+        intent,
+        entities: entities || {},
+        messages: messages || [],
+        screenContext: screenContext || '',
+    });
+
+    return {
+        ...result,
+        route: 'weather_lookup',
+        agent: 'weather-live',
+        tool: 'weather_lookup',
     };
 }
 
@@ -260,6 +316,7 @@ async function _executeWithFallback(primaryFn, fallback1Fn, fallback2Fn, primary
  *
  * MCP selects the best tool based on domain/complexity/intent,
  * executes it, and handles cascading fallbacks:
+ *   weather_lookup → domain_agent → deep_reasoning → fallback_llm
  *   domain_agent → deep_reasoning (Claude) → fallback_llm (Gemini)
  *   deep_reasoning → domain_agent → fallback_llm (Gemini)
  *
@@ -273,7 +330,7 @@ async function _executeWithFallback(primaryFn, fallback1Fn, fallback2Fn, primary
  * @returns {Promise<{response: string, provider: string, route: string, agent: string, tool: string}>}
  */
 async function routeToAgent(params) {
-    const { domain, intent, entities, complexity, messages, userId } = params;
+    const { domain, intent, entities, complexity, messages, userId, screenContext } = params;
 
     // ── Step 1: MCP Tool Selection ──
     const selected = selectTool({ domain, complexity, intent });
@@ -290,16 +347,30 @@ async function routeToAgent(params) {
         // Primary: Claude → Fallback 1: AI Agent → Fallback 2: Gemini
         return _executeWithFallback(
             () => executeDeepReasoning(messages, domain, intent),
-            () => executeDomainAgent(params),
+            () => executeDomainAgent({ domain, intent, entities, complexity, messages, userId, screenContext }),
             () => executeFallback(messages, domain),
             'deep_reasoning',
+        );
+    }
+
+    if (selected.tool === 'weather_lookup') {
+        return _executeWithFallback(
+            () => executeWeatherLookup({ domain, intent, entities, messages, screenContext }),
+            () => _executeWithFallback(
+                () => executeDomainAgent({ domain, intent, entities, complexity, messages, userId, screenContext }),
+                () => executeDeepReasoning(messages, domain, intent),
+                () => executeFallback(messages, domain),
+                'domain_agent',
+            ),
+            () => executeFallback(messages, domain),
+            'weather_lookup',
         );
     }
 
     // Default: domain_agent
     // Primary: AI Agent → Fallback 1: Claude → Fallback 2: Gemini
     return _executeWithFallback(
-        () => executeDomainAgent(params),
+        () => executeDomainAgent({ domain, intent, entities, complexity, messages, userId, screenContext }),
         () => executeDeepReasoning(messages, domain, intent),
         () => executeFallback(messages, domain),
         'domain_agent',
@@ -313,7 +384,7 @@ async function routeToAgent(params) {
 /**
  * Execute a named tool via MCP.
  *
- * @param {string} toolName  – 'domain_agent' | 'deep_reasoning' | 'fallback_llm'
+ * @param {string} toolName  – 'domain_agent' | 'weather_lookup' | 'deep_reasoning' | 'fallback_llm'
  * @param {object} input     – Tool-specific input
  * @param {Array}  messages  – Conversation messages
  * @returns {Promise<object>}
@@ -322,6 +393,8 @@ async function executeTool(toolName, input, messages) {
     switch (toolName) {
         case 'domain_agent':
             return executeDomainAgent({ ...input, messages });
+        case 'weather_lookup':
+            return executeWeatherLookup({ ...input, messages });
         case 'deep_reasoning':
             return executeDeepReasoning(messages, input.domain, input.intent);
         case 'fallback_llm':

@@ -4,6 +4,7 @@ const MARKET_CROPS = [
   "tomato",
   "onion",
   "potato",
+  "brinjal",
   "soybean",
   "cotton",
   "sugarcane",
@@ -44,6 +45,16 @@ export const MARKET_CROP_ALIASES: Record<string, string> = {
   kanda: "onion",
   aloo: "potato",
   aaloo: "potato",
+  brinjal: "brinjal",
+  brinjals: "brinjal",
+  eggplant: "brinjal",
+  eggplants: "brinjal",
+  baingan: "brinjal",
+  baigan: "brinjal",
+  bagan: "brinjal",
+  begun: "brinjal",
+  began: "brinjal",
+  bengan: "brinjal",
   tamatar: "tomato",
   sarson: "mustard",
   sarso: "mustard",
@@ -183,7 +194,7 @@ export function normalizeMarketCropName(raw?: string, fallback = "wheat"): strin
   const prefixMatch = Array.from(MARKET_CROP_SET).find(
     (crop) => crop.startsWith(name) || name.startsWith(crop)
   );
-  return prefixMatch ?? fallback;
+  return prefixMatch ?? name;
 }
 
 export function formatMarketCropLabel(raw?: string) {
