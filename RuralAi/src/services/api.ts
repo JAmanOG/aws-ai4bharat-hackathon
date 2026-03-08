@@ -348,8 +348,14 @@ export const supplyChainApi = {
   verifyBuyer: (id: string) =>
     api.post(`/agriculture/buyers/${id}/verify`),
 
-  createOrder: (listingId: string, body: { quantity_kg: number; offered_price: number; [k: string]: unknown }) =>
-    api.post(`/agriculture/listings/${listingId}/order`, body),
+  createOrder: (
+    listingId: string,
+    body: { quantity_kg: number; agreed_price_per_kg?: number; offered_price?: number; [k: string]: unknown }
+  ) =>
+    api.post(`/agriculture/listings/${listingId}/order`, {
+      ...body,
+      agreed_price_per_kg: body.agreed_price_per_kg ?? body.offered_price,
+    }),
 
   getOrders: (params?: { role?: string; status?: string }) =>
     api.get('/agriculture/orders', params),

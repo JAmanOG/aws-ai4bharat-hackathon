@@ -1,5 +1,6 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const { sanitizeModelOutput } = require('./llm');
+const { APP_NAME } = require('./brand');
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
 
@@ -22,7 +23,7 @@ const ALLOWED_KINDS = new Set([
 const ALLOWED_DOMAINS = new Set(['agriculture', 'health', 'general']);
 
 function buildVisionPrompt({ fileName = '', source = '', userPrompt = '' }) {
-    return `You are analyzing one farmer-uploaded attachment for the Rural Ecosystem Platform.
+    return `You are analyzing one farmer-uploaded attachment for ${APP_NAME}.
 
 Context:
 - File name: ${fileName || 'unknown'}

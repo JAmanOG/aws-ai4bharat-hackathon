@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../contexts/AuthContext";
+import { APP_LOGO, APP_NAME_UPPER } from "../theme/brand";
 import { askDomains, ruralPalette as P } from "../theme/ruralPalette";
 import { APP_LANGUAGES, readStoredLanguagePreference } from "../utils/languagePreference";
 
@@ -26,6 +28,10 @@ export default function LoginScreen() {
   const [pin, setPin] = useState("");
   const [name, setName] = useState("");
   const [language, setLanguage] = useState("hi");
+  const [state, setState] = useState("");
+  const [district, setDistrict] = useState("");
+  const [pincode, setPincode] = useState("");
+  const [village, setVillage] = useState("");
   const [loading, setLoading] = useState(false);
   const pinRef = useRef<TextInput>(null);
 
@@ -54,7 +60,7 @@ export default function LoginScreen() {
       if (mode === "login") {
         await login(phone, pin);
       } else {
-        await register({ phone, pin, name, language });
+        await register({ phone, pin, name, language, state, district, pincode, village });
       }
     } catch (err: any) {
       Alert.alert(
@@ -71,14 +77,14 @@ export default function LoginScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
-            <Text style={styles.brand}>RURAL ECOSYSTEM PLATFORM</Text>
+            <Text style={styles.brand}>{APP_NAME_UPPER}</Text>
             <Text style={styles.hindi}>आवाज़ से भरोसेमंद ग्रामीण मार्गदर्शन</Text>
 
             <View style={styles.logoWrap}>
               <View style={styles.logoHalo} />
               <View style={styles.logoRing}>
                 <View style={styles.logoCore}>
-                  <Ionicons name="mic" size={34} color={P.surface} />
+                  <Image source={APP_LOGO} style={styles.logoImage} resizeMode="contain" />
                 </View>
               </View>
             </View>
@@ -139,6 +145,63 @@ export default function LoginScreen() {
                   value={name}
                   onChangeText={setName}
                   autoCapitalize="words"
+                />
+              </View>
+            ) : null}
+
+            {mode === "register" ? (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>State</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your state"
+                  placeholderTextColor={P.muted}
+                  value={state}
+                  onChangeText={setState}
+                  autoCapitalize="words"
+                />
+              </View>
+            ) : null}
+
+            {mode === "register" ? (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>District</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your district"
+                  placeholderTextColor={P.muted}
+                  value={district}
+                  onChangeText={setDistrict}
+                  autoCapitalize="words"
+                />
+              </View>
+            ) : null}
+
+            {mode === "register" ? (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Village</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Village or town"
+                  placeholderTextColor={P.muted}
+                  value={village}
+                  onChangeText={setVillage}
+                  autoCapitalize="words"
+                />
+              </View>
+            ) : null}
+
+            {mode === "register" ? (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Pincode</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="6-digit pincode"
+                  placeholderTextColor={P.muted}
+                  value={pincode}
+                  onChangeText={(value) => setPincode(value.replace(/[^0-9]/g, ""))}
+                  keyboardType="number-pad"
+                  maxLength={10}
                 />
               </View>
             ) : null}
@@ -302,6 +365,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: P.gold,
+  },
+  logoImage: {
+    width: 58,
+    height: 58,
   },
   title: {
     marginTop: 18,

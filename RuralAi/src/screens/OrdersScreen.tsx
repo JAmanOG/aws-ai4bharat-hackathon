@@ -1,180 +1,414 @@
-/**
- * Orders Screen — view trade orders, create listings, manage orders.
- * Integrates: GET /agriculture/orders, POST listings/:id/order, PUT orders/:id
- */
-
-import React, { useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
   ActivityIndicator,
   Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
-import { colors } from "../theme/colors";
-import { useOrders, useMyListings, useHealthCheck } from "../hooks/useData";
+import { RouteProp, useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import type { HomeStackParamList } from "../navigation/HomeStack";
+import {
+  MarketListingsView,
+  coerceMarketDashboardModel,
+  type MarketActiveListing,
+  type MarketBuyerCard,
+  type MarketDashboardModel,
+} from "../components/MarketListingsResponse";
+import {
+  useBuyers,
+  useMarketListingsSearch,
+  useMyListings,
+  useUnifiedProfile,
+} from "../hooks/useData";
 import { supplyChainApi } from "../services/api";
+import { useScreenContext } from "../context/ScreenContext";
+import { useVoice } from "../voice/VoiceContext";
+
+const S = {
+  bg: "#F7F0E3",
+  headerInk: "#2B1B10",
+  headerMuted: "#876B48",
+  headerCard: "#F5E7C8",
+  line: "#E8D6B2",
+};
+
+type OrdersRoute = RouteProp<HomeStackParamList, "Orders">;
+
+function toNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function toStringValue(value: unknown): string {
+  return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+
+function capitalizeWords(value?: string): string {
+  return toStringValue(value)
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function firstCropValue(value: unknown): string {
+  if (Array.isArray(value)) return toStringValue(value[0]);
+  return toStringValue(value);
+}
+
+function normalizeListing(raw: any): MarketActiveListing | null {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    id: toStringValue(raw.id ?? raw.listing_id),
+    cropType: toStringValue(raw.crop_type),
+    title: `${capitalizeWords(raw.crop_type)} - ${Math.round(toNumber(raw.quantity_kg))}kg`,
+    quantityKg: toNumber(raw.quantity_kg),
+    pricePerKg: toNumber(raw.price_per_kg),
+    pricePerQuintal: toNumber(raw.price_per_kg) ? Math.round(toNumber(raw.price_per_kg) * 100) : 0,
+    qualityGrade: toStringValue(raw.quality_grade),
+    visibilityLabel: toStringValue(raw.status).toLowerCase() === "active" ? "Visible to buyers" : capitalizeWords(raw.status),
+    locationState: toStringValue(raw.location_state),
+    locationDistrict: toStringValue(raw.location_district),
+    status: toStringValue(raw.status || "active"),
+    description: toStringValue(raw.description),
+  };
+}
+
+function normalizeBuyer(raw: any, cropHint: string): MarketBuyerCard {
+  return {
+    id: toStringValue(raw?.id),
+    kind: "buyer",
+    title: toStringValue(raw?.business_name || "Verified buyer"),
+    subtitle: capitalizeWords(raw?.business_type || "buyer"),
+    demandKg: 0,
+    offerPricePerKg: 0,
+    offerPricePerQuintal: 0,
+    trustScore: toNumber(raw?.trust_score),
+    verified: !!raw?.is_verified,
+    locationLabel: [toStringValue(raw?.location_district), toStringValue(raw?.location_state)].filter(Boolean).join(", "),
+    interestLabel: cropHint ? `Interested in ${capitalizeWords(cropHint)}` : "Interested buyer nearby",
+    contactPhone: toStringValue(raw?.contact_phone),
+    contactEmail: toStringValue(raw?.contact_email),
+  };
+}
+
+function normalizeNearby(raw: any) {
+  return {
+    id: toStringValue(raw?.id),
+    cropType: toStringValue(raw?.crop_type),
+    quantityKg: toNumber(raw?.quantity_kg),
+    pricePerKg: toNumber(raw?.price_per_kg),
+    pricePerQuintal: toNumber(raw?.price_per_kg) ? Math.round(toNumber(raw?.price_per_kg) * 100) : 0,
+    locationLabel: [toStringValue(raw?.location_district), toStringValue(raw?.location_state)].filter(Boolean).join(", "),
+    qualityGrade: toStringValue(raw?.quality_grade),
+  };
+}
+
+function buildLiveModel({
+  routeCrop,
+  routeLocation,
+  voiceModel,
+  profile,
+  listings,
+  buyers,
+  nearby,
+}: {
+  routeCrop: string;
+  routeLocation: string;
+  voiceModel: MarketDashboardModel | null;
+  profile: any;
+  listings: any[];
+  buyers: any[];
+  nearby: any[];
+}): MarketDashboardModel {
+  const activeListings = listings.filter((listing) => toStringValue(listing.status).toLowerCase() === "active");
+  const pickedListing = activeListings.find((listing) => {
+    if (!routeCrop) return false;
+    return toStringValue(listing.crop_type).toLowerCase() === routeCrop.toLowerCase();
+  }) ?? activeListings[0] ?? null;
+
+  const activeListing = normalizeListing(pickedListing) ?? voiceModel?.activeListing ?? null;
+  const focusCrop = routeCrop || activeListing?.cropType || voiceModel?.focusCrop || firstCropValue(profile?.crops) || "";
+  const focusState = routeLocation || activeListing?.locationState || voiceModel?.focusState || toStringValue(profile?.state) || "";
+  const focusDistrict = activeListing?.locationDistrict || voiceModel?.focusDistrict || toStringValue(profile?.district) || "";
+
+  const buyerRequests = buyers.length > 0
+    ? buyers.map((buyer) => normalizeBuyer(buyer, focusCrop)).filter((buyer) => buyer.id)
+    : (voiceModel?.buyerRequests ?? []);
+
+  const nearbyListings = nearby.length > 0
+    ? nearby
+        .filter((listing) => toStringValue(listing.farmer_id) !== toStringValue(profile?.userId))
+        .map(normalizeNearby)
+        .filter((listing) => listing.id && listing.id !== activeListing?.id)
+    : (voiceModel?.nearbyListings ?? []);
+
+  const missingFields = [
+    !toStringValue(profile?.name) ? "name" : "",
+    !toStringValue(profile?.phone) ? "phone" : "",
+    !toStringValue(profile?.state) ? "state" : "",
+    !toStringValue(profile?.district) ? "district" : "",
+    !toStringValue(profile?.pincode) ? "pincode" : "",
+  ].filter(Boolean);
+
+  const summary = voiceModel?.summary
+    || [
+      activeListing ? `Active listing: ${capitalizeWords(activeListing.cropType)}` : "No active listing yet",
+      buyerRequests.length ? `${buyerRequests.length} buyer matches ready` : "No buyer matches yet",
+      nearbyListings.length ? `${nearbyListings.length} nearby seller listings visible` : "",
+      missingFields.length ? `Profile missing ${missingFields.join(", ")}` : "",
+    ].filter(Boolean).join(". ");
+
+  return {
+    prompt: voiceModel?.prompt || "Tap and hold the mic.",
+    examples: voiceModel?.examples?.length
+      ? voiceModel.examples
+      : [
+          "I want to sell 1000kg of wheat",
+          "Are there buyers nearby?",
+        ],
+    summary,
+    focusCrop,
+    focusState,
+    focusDistrict,
+    activeListing,
+    buyerRequests,
+    buyerSectionTitle: voiceModel?.buyerSectionTitle || "Verified Buyers Nearby",
+    nearbyListings,
+    contactProfile: {
+      name: toStringValue(profile?.name),
+      phone: toStringValue(profile?.phone),
+      state: toStringValue(profile?.state),
+      district: toStringValue(profile?.district),
+      pincode: toStringValue(profile?.pincode),
+      village: toStringValue(profile?.village),
+      missingFields,
+      readinessLabel: missingFields.length === 0 ? "Saved seller profile ready" : `Missing ${missingFields.join(", ")}`,
+    },
+  };
+}
 
 export default function OrdersScreen() {
   const nav = useNavigation<any>();
-  const health = useHealthCheck();
-  const orders = useOrders("farmer");
+  const route = useRoute<OrdersRoute>();
+  const { currentVisualization } = useVoice();
+  const screenContext = useScreenContext();
+
+  const voiceModel = useMemo(
+    () => coerceMarketDashboardModel(currentVisualization?.data?.metadata?.market),
+    [currentVisualization],
+  );
+
+  const routeCrop = toStringValue(route.params?.crop);
+  const routeLocation = toStringValue(route.params?.location);
+
+  const profile = useUnifiedProfile();
   const listings = useMyListings();
-  const isOnline = health.data?.status === "ok";
-  const [tab, setTab] = useState<"orders" | "listings">("orders");
 
-  const orderList = (orders.data as any)?.orders ?? [];
-  const listingList = (listings.data as any)?.listings ?? [];
+  const profileData = ((profile.data as any)?.profile ?? {}) as any;
+  const listingsData = (((listings.data as any)?.listings ?? []) as any[]);
 
-  const handleUpdateOrder = useCallback(async (orderId: string, status: string) => {
-    try {
-      await supplyChainApi.updateOrder(orderId, { status });
-      Alert.alert("Updated", `Order ${status}`);
-      orders.refresh();
-    } catch (e: any) {
-      Alert.alert("Error", e.message ?? "Could not update");
-    }
-  }, []);
+  const fallbackCrop = routeCrop
+    || voiceModel?.focusCrop
+    || toStringValue(listingsData.find((item) => toStringValue(item.status).toLowerCase() === "active")?.crop_type)
+    || firstCropValue(profileData?.crops);
+  const fallbackState = routeLocation || voiceModel?.focusState || toStringValue(profileData?.state);
 
-  const handleUpdateListing = useCallback(async (listingId: string, status: string) => {
-    try {
-      await supplyChainApi.updateListingStatus(listingId, status);
-      Alert.alert("Updated", `Listing marked ${status}`);
+  const buyers = useBuyers({
+    ...(fallbackCrop ? { crop_type: fallbackCrop } : {}),
+    ...(fallbackState ? { state: fallbackState } : {}),
+    verified: true,
+    limit: 4,
+  });
+
+  const nearbyListings = useMarketListingsSearch({
+    ...(fallbackCrop ? { crop_type: fallbackCrop } : {}),
+    ...(fallbackState ? { state: fallbackState } : {}),
+    limit: 6,
+  });
+
+  const buyerData = (((buyers.data as any)?.buyers ?? []) as any[]);
+  const nearbyData = (((nearbyListings.data as any)?.listings ?? []) as any[]);
+
+  const model = useMemo(
+    () => buildLiveModel({
+      routeCrop,
+      routeLocation,
+      voiceModel,
+      profile: profileData,
+      listings: listingsData,
+      buyers: buyerData,
+      nearby: nearbyData,
+    }),
+    [buyerData, listingsData, nearbyData, profileData, routeCrop, routeLocation, voiceModel],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      profile.refresh();
       listings.refresh();
-    } catch (e: any) {
-      Alert.alert("Error", e.message ?? "Could not update");
+      buyers.refresh();
+      nearbyListings.refresh();
+    }, [buyers, listings, nearbyListings, profile]),
+  );
+
+  useEffect(() => {
+    screenContext.set({
+      screen: "Orders",
+      crop: model.focusCrop || undefined,
+      location: model.focusState || undefined,
+      meta: {
+        availableActions: "create listing, contact buyer, mark sold, remove listing, refresh market",
+        activeListingCrop: model.activeListing?.cropType || "none",
+        buyerMatchCount: String(model.buyerRequests.length),
+      },
+    });
+  }, [model.activeListing?.cropType, model.buyerRequests.length, model.focusCrop, model.focusState, screenContext]);
+
+  const handleRefresh = useCallback(() => {
+    profile.refresh();
+    listings.refresh();
+    buyers.refresh();
+    nearbyListings.refresh();
+  }, [buyers, listings, nearbyListings, profile]);
+
+  const handleListingAction = useCallback(async (listing: MarketActiveListing, status: "sold" | "cancelled") => {
+    try {
+      await supplyChainApi.updateListingStatus(listing.id, status);
+      Alert.alert("Updated", status === "sold" ? "Listing marked as sold." : "Listing removed from buyers.");
+      handleRefresh();
+    } catch (error: any) {
+      Alert.alert("Update failed", error?.message ?? "Could not update the listing right now.");
     }
+  }, [handleRefresh]);
+
+  const handleBuyerPress = useCallback(async (buyer: MarketBuyerCard) => {
+    const actions = [];
+    if (buyer.contactPhone) {
+      actions.push({
+        text: "Call",
+        onPress: () => {
+          void Linking.openURL(`tel:${buyer.contactPhone}`);
+        },
+      });
+    }
+    if (buyer.contactEmail) {
+      actions.push({
+        text: "Email",
+        onPress: () => {
+          void Linking.openURL(`mailto:${buyer.contactEmail}`);
+        },
+      });
+    }
+    actions.push({ text: "Close", style: "cancel" as const });
+
+    Alert.alert(
+      buyer.title,
+      [buyer.contactPhone, buyer.contactEmail, buyer.locationLabel].filter(Boolean).join("\n"),
+      actions,
+    );
   }, []);
+
+  const isInitialLoading = profile.loading || listings.loading || buyers.loading || nearbyListings.loading;
+  const hasData = !!model.activeListing || model.buyerRequests.length > 0 || model.nearbyListings.length > 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12}>
-          <Ionicons name="arrow-back" size={22} color={colors.ink} />
+        <Pressable onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate("HomeMain"))} hitSlop={12} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={S.headerInk} />
         </Pressable>
-        <Text style={styles.headerTitle}>Orders & Listings</Text>
-        <View style={[styles.dot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>My Listings & Market</Text>
+          <Text style={styles.headerSub}>
+            Voice can create listings, show buyers, and update your sell status.
+          </Text>
+        </View>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        <Pressable style={[styles.tab, tab === "orders" && styles.tabActive]} onPress={() => setTab("orders")}>
-          <Text style={[styles.tabText, tab === "orders" && styles.tabTextActive]}>Orders ({orderList.length})</Text>
-        </Pressable>
-        <Pressable style={[styles.tab, tab === "listings" && styles.tabActive]} onPress={() => setTab("listings")}>
-          <Text style={[styles.tabText, tab === "listings" && styles.tabTextActive]}>My Listings ({listingList.length})</Text>
-        </Pressable>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {tab === "orders" ? (
-          orders.loading ? (
-            <ActivityIndicator color={colors.primary} style={{ padding: 40 }} />
-          ) : orderList.length > 0 ? orderList.map((o: any) => (
-            <View key={o.order_id ?? o.id} style={styles.card}>
-              <View style={styles.cardRow}>
-                <View style={[styles.statusBadge, { backgroundColor: o.status === "confirmed" ? colors.successTint : o.status === "pending" ? colors.warnTint : colors.primaryTint }]}>
-                  <Text style={[styles.statusText, { color: o.status === "confirmed" ? colors.success : o.status === "pending" ? colors.warn : colors.primary }]}>
-                    {(o.status ?? "pending").toUpperCase()}
-                  </Text>
-                </View>
-                <Text style={styles.cardDate}>{o.created_at ? new Date(o.created_at).toLocaleDateString() : ""}</Text>
-              </View>
-              <Text style={styles.cardTitle}>{o.crop_type ?? "Produce"} — {o.quantity_kg ?? 0}kg</Text>
-              <Text style={styles.cardSub}>₹{o.offered_price ?? o.price ?? 0}/q • Buyer: {o.buyer_name ?? "Unknown"}</Text>
-              {o.status === "pending" && (
-                <View style={styles.actionRow}>
-                  <Pressable style={[styles.actionBtn, { backgroundColor: colors.successTint }]} onPress={() => handleUpdateOrder(o.order_id ?? o.id, "confirmed")}>
-                    <Ionicons name="checkmark" size={14} color={colors.success} />
-                    <Text style={[styles.actionText, { color: colors.success }]}>Accept</Text>
-                  </Pressable>
-                  <Pressable style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]} onPress={() => handleUpdateOrder(o.order_id ?? o.id, "rejected")}>
-                    <Ionicons name="close" size={14} color={colors.danger} />
-                    <Text style={[styles.actionText, { color: colors.danger }]}>Reject</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          )) : (
-            <View style={styles.emptyWrap}>
-              <Ionicons name="receipt-outline" size={40} color={colors.muted} />
-              <Text style={styles.emptyTitle}>No orders yet</Text>
-              <Text style={styles.emptySub}>Create a listing to receive orders from buyers</Text>
-            </View>
-          )
-        ) : (
-          listings.loading ? (
-            <ActivityIndicator color={colors.primary} style={{ padding: 40 }} />
-          ) : listingList.length > 0 ? listingList.map((l: any) => (
-            <View key={l.listing_id ?? l.id} style={styles.card}>
-              <View style={styles.cardRow}>
-                <View style={[styles.statusBadge, { backgroundColor: l.status === "active" ? colors.successTint : colors.warnTint }]}>
-                  <Text style={[styles.statusText, { color: l.status === "active" ? colors.success : colors.warn }]}>
-                    {(l.status ?? "active").toUpperCase()}
-                  </Text>
-                </View>
-                <Text style={styles.cardDate}>{l.created_at ? new Date(l.created_at).toLocaleDateString() : ""}</Text>
-              </View>
-              <Text style={styles.cardTitle}>{l.crop_type} — {l.quantity_kg}kg</Text>
-              <Text style={styles.cardSub}>₹{l.price_per_kg ?? l.asking_price ?? 0}/kg • {l.quality_grade ?? "Standard"}</Text>
-              {l.status === "active" && (
-                <Pressable
-                  style={[styles.actionBtn, { backgroundColor: "#FEE2E2", alignSelf: "flex-start" }]}
-                  onPress={() => handleUpdateListing(l.listing_id ?? l.id, "cancelled")}
-                >
-                  <Ionicons name="close-circle" size={14} color={colors.danger} />
-                  <Text style={[styles.actionText, { color: colors.danger }]}>Cancel</Text>
-                </Pressable>
-              )}
-            </View>
-          )) : (
-            <View style={styles.emptyWrap}>
-              <Ionicons name="storefront-outline" size={40} color={colors.muted} />
-              <Text style={styles.emptyTitle}>No listings</Text>
-              <Text style={styles.emptySub}>Create a produce listing to start selling</Text>
-            </View>
-          )
-        )}
-
-        {/* Create listing CTA */}
-        <Pressable style={styles.cta} onPress={() => nav.navigate("CreateListing")}>
-          <Ionicons name="add-circle" size={20} color="#FFF" />
-          <Text style={styles.ctaText}>Create New Listing</Text>
-        </Pressable>
-      </ScrollView>
+      {isInitialLoading && !hasData ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={S.headerMuted} size="large" />
+          <Text style={styles.loadingText}>Loading your market dashboard...</Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <MarketListingsView
+            model={model}
+            onBuyerPress={handleBuyerPress}
+            onListingAction={handleListingAction}
+            onRefreshPress={handleRefresh}
+          />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: "900", color: colors.ink },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  tabs: { flexDirection: "row", paddingHorizontal: 16, paddingTop: 10, gap: 8 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
-  tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  tabText: { fontSize: 12, fontWeight: "800", color: colors.muted },
-  tabTextActive: { color: "#FFF" },
-  content: { padding: 16, paddingBottom: 100 },
-  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: colors.border, gap: 8 },
-  cardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardTitle: { fontSize: 14, fontWeight: "900", color: colors.ink },
-  cardSub: { fontSize: 11, fontWeight: "600", color: colors.muted },
-  cardDate: { fontSize: 10, fontWeight: "600", color: colors.muted },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.4 },
-  actionRow: { flexDirection: "row", gap: 10, marginTop: 4 },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
-  actionText: { fontSize: 12, fontWeight: "800" },
-  emptyWrap: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: "900", color: colors.ink },
-  emptySub: { fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center" },
-  cta: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 16, shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
-  ctaText: { fontSize: 15, fontWeight: "900", color: "#FFF" },
+  safe: {
+    flex: 1,
+    backgroundColor: S.bg,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 8,
+    backgroundColor: S.headerCard,
+    borderBottomWidth: 1,
+    borderBottomColor: S.line,
+  },
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FAF1DD",
+  },
+  headerCopy: {
+    flex: 1,
+    paddingTop: 2,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: S.headerInk,
+  },
+  headerSub: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 18,
+    color: S.headerMuted,
+    fontWeight: "600",
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: S.headerMuted,
+  },
+  content: {
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 140,
+  },
 });

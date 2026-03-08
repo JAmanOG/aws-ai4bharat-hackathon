@@ -37,11 +37,13 @@ const SALT_ROUNDS = 10;
  * @param {string} [data.language]  – Preferred language code (default: 'hi')
  * @param {string} [data.state]
  * @param {string} [data.district]
+ * @param {string} [data.pincode]
+ * @param {string} [data.village]
  * @param {string} [data.registered_via] – 'app' | 'voice' | 'web'
  * @returns {Promise<{user: object, token: string}>}
  */
 async function register(data) {
-    const { phone, pin, name, language, state, district, registered_via } = data;
+    const { phone, pin, name, language, state, district, pincode, village, registered_via } = data;
 
     if (!phone || !pin) {
         throw Object.assign(new Error('Phone and PIN are required'), { status: 400 });
@@ -69,6 +71,8 @@ async function register(data) {
         preferredLanguage: language || 'hi',
         state: state || '',
         district: district || '',
+        pincode: pincode || '',
+        village: village || '',
         registeredVia: registered_via || 'app',
         // DigiLocker verification
         isVerified: false,
@@ -165,6 +169,7 @@ async function getProfile(userId) {
 async function updateProfile(userId, updates) {
     const allowedFields = [
         'name', 'preferredLanguage', 'state', 'district',
+        'pincode', 'village',
         'profileComplete', 'onboardingDone',
     ];
 
@@ -235,6 +240,8 @@ async function getUnifiedProfile(userId) {
         name: user.name || facts.user_name || '',
         state: user.state || facts.location_state || '',
         district: user.district || facts.location_district || '',
+        village: user.village || facts.location_village || '',
+        pincode: user.pincode || facts.location_pincode || '',
     };
 }
 

@@ -15,6 +15,7 @@ You help with:
 - Nearest mandi locations and timings
 - Buyer connections and fair pricing
 - Supply chain and logistics
+- Voice-first produce listings, sell orders, and listing management
 
 Guidelines:
 - Quote prices in ₹/quintal or ₹/kg as appropriate
@@ -35,6 +36,10 @@ const SUPPORTED_INTENTS = [
     'sell_timing',
     'buyer_connection',
     'supply_chain',
+    'create_listing',
+    'orders',
+    'listing_management',
+    'contact_buyer',
     'msp_info',
     'transport_logistics',
 ];

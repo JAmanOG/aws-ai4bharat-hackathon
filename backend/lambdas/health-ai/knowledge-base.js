@@ -22,13 +22,20 @@ const bedrock = new BedrockRuntimeClient({
 /**
  * List articles by topic, with pagination.
  */
-async function listArticles(topic, limit = 10) {
+async function listArticles(topicOrOpts, limit = 10) {
+  // Accept either (topic, limit) or ({ topic, language, page, limit })
+  let topic = topicOrOpts;
+  if (topicOrOpts && typeof topicOrOpts === 'object') {
+    topic = topicOrOpts.topic;
+    limit = topicOrOpts.limit || limit;
+  }
+
   const params = {
     TableName: TABLE_NAMES.HEALTH_ARTICLES,
     Limit: limit,
   };
 
-  if (topic) {
+  if (topic && typeof topic === 'string') {
     params.IndexName = 'ByTopic';
     params.KeyConditionExpression = 'topic = :t';
     params.ExpressionAttributeValues = { ':t': topic.toLowerCase() };

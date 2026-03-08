@@ -13,8 +13,9 @@
 const { searchKnowledgeResources } = require('../knowledge-search');
 const courses = require('../../lambdas/knowledge-api/courses');
 const govtIntegration = require('../../lambdas/knowledge-api/govt-integration');
+const { APP_NAME } = require('../brand');
 
-const SYSTEM_PROMPT = `You are a helpful learning assistant for rural Indian farmers.
+const SYSTEM_PROMPT = `You are a helpful learning assistant inside ${APP_NAME} for rural Indian farmers.
 You help find educational videos, articles, courses, and training resources.
 
 When a user asks for videos, articles, or courses:

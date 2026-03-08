@@ -17,6 +17,7 @@
  */
 
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { APP_NAME, APP_CONTEXT } = require('./brand');
 
 // Nova may not be in ap-south-1 yet; use cross-region if needed
 const NOVA_REGION = process.env.NOVA_REGION || process.env.AWS_REGION || 'us-east-1';
@@ -27,7 +28,7 @@ const novaClient = new BedrockRuntimeClient({ region: NOVA_REGION });
 const fallbackClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
 
 /* ─── Analysis prompt — single LLM call for translate + understand + route + direct answer ─── */
-const ANALYSIS_PROMPT = `You are an AI router for a rural Indian agriculture platform voice assistant.
+const ANALYSIS_PROMPT = `You are the AI router for ${APP_NAME}. ${APP_CONTEXT}
 
 Given a user's spoken input (possibly in Hindi, Tamil, Telugu, etc.), perform these tasks:
 
@@ -40,16 +41,18 @@ Given a user's spoken input (possibly in Hindi, Tamil, Telugu, etc.), perform th
 
 Available domains:
 - agriculture: crop advice, soil, weather, irrigation, pest/disease, farming techniques
-- market: crop prices, mandi info, price trends, sell timing, MSP, buyers
+- market: crop prices, mandi info, price trends, sell timing, MSP, buyers, create produce listing, manage listing, contact buyer, orders
 - schemes: government schemes, subsidies, loans, insurance, eligibility, documents
 - health: symptoms, symptom screening, AI doctor follow-up questions, nutrition, maternal health, first aid, facility referral, medical report upload, medical report insights, scan analysis, health dashboard guidance
 - knowledge: requests for videos, articles, courses, training content, learning resources, educational material, "show me a video", "find articles about", "courses on"
 - general: greetings, general questions, app help, digital literacy, city weather, AQI, air quality
 
+IMPORTANT: If the user asks the app name, platform name, or what this assistant is called, treat it as domain="general", intent="app_help", and recognize the app name as ${APP_NAME}.
 IMPORTANT: When a user asks to see, watch, or find videos, articles, courses, or learning content, ALWAYS use domain="knowledge" and NEVER set can_answer_directly=true. These requests require fetching actual resources.
 IMPORTANT: When a user asks about uploading a medical report, analyzing an MRI or X-ray or CT or ultrasound or lab report, or asks what they can do on the health screening screen, use domain="health", intent="medical_report_analysis" or "health_platform_help", and NEVER set can_answer_directly=true.
 IMPORTANT: When a user describes symptoms, asks for symptom screening, starts an AI doctor consultation, or answers a doctor follow-up with age, gender, or additional symptoms, use domain="health", intent="symptom_guidance", and NEVER set can_answer_directly=true.
 IMPORTANT: When a user asks for current weather, temperature, rainfall, forecast, AQI, air quality, or pollution for a city or place, use domain="general", intent="weather_info" or "air_quality_info", extract the location, and NEVER set can_answer_directly=true. Only use agriculture domain for crop-specific weather impact or farming weather advice.
+IMPORTANT: When a user says they want to sell produce, list produce, post a sell order, create a listing, mark a listing sold, cancel a listing, contact a buyer, or review buyer requests/orders, use domain="market" with one of these intents: "create_listing", "listing_management", "contact_buyer", "orders", or "buyer_connection". NEVER set can_answer_directly=true for these workflows because the app should open the market screen and use saved profile data.
 
 Respond ONLY with valid JSON (no markdown, no explanation):
 {
@@ -225,6 +228,10 @@ function normalizeIntentAlias(intent) {
     if (key === 'insurance_information' || key === 'insurance_details' || key === 'claim_status') return 'insurance_claim';
     if (key === 'saving_plan' || key === 'savings_overview' || key === 'financial_overview' || key === 'profit_cost') return 'financial_aid';
     if (key === 'eligibility_check') return 'scheme_eligibility';
+    if (key === 'sell_produce' || key === 'sell_order' || key === 'create_sell_order' || key === 'listing_creation' || key === 'listing_create') return 'create_listing';
+    if (key === 'buyer_requests' || key === 'market_orders' || key === 'order_status' || key === 'show_orders') return 'orders';
+    if (key === 'listing_update' || key === 'cancel_listing' || key === 'mark_sold') return 'listing_management';
+    if (key === 'buyer_contact' || key === 'connect_buyer') return 'contact_buyer';
     return key;
 }
 
@@ -247,6 +254,11 @@ function basicRoute(text, detectedLang) {
     const aqiKeywords = /\baqi\b|air quality|pollution|smog|pm2\.?5|pm10|hawa/i;
     const greetingKeywords = /^(hello|hi|namaste|namaskar|vanakkam|kaise ho|how are)/i;
 
+    const listingCreateKeywords = /sell|listing|list my|post listing|sell order|sale order|buyer request|खरीदार|बेचना|लिस्टिंग/i;
+    const listingManageKeywords = /cancel listing|remove listing|delete listing|mark.*sold|sold.*listing|close listing|बंद लिस्टिंग|हटा लिस्टिंग/i;
+    const contactBuyerKeywords = /contact buyer|call buyer|buyer number|buyer phone|connect buyer|buyer details/i;
+    const ordersKeywords = /orders|my orders|order updates|request order|buyer requests|ऑर्डर|रिक्वेस्ट/i;
+
     if (greetingKeywords.test(lower)) {
         domain = 'general';
         intent = 'greeting';
@@ -263,6 +275,18 @@ function basicRoute(text, detectedLang) {
     } else if (agriKeywords.test(lower)) {
         domain = 'agriculture';
         intent = weatherKeywords.test(lower) ? 'weather_impact' : 'crop_advice';
+    } else if (listingManageKeywords.test(lower)) {
+        domain = 'market';
+        intent = 'listing_management';
+    } else if (contactBuyerKeywords.test(lower)) {
+        domain = 'market';
+        intent = 'contact_buyer';
+    } else if (ordersKeywords.test(lower)) {
+        domain = 'market';
+        intent = 'orders';
+    } else if (listingCreateKeywords.test(lower)) {
+        domain = 'market';
+        intent = 'create_listing';
     } else if (marketKeywords.test(lower)) {
         domain = 'market';
         intent = 'crop_prices';

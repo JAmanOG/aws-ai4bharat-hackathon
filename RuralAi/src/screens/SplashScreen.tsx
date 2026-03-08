@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { askDomains, ruralPalette as P } from "../theme/ruralPalette";
+import { APP_LOGO, APP_NAME_UPPER } from "../theme/brand";
 
 export default function SplashScreen() {
   const progress = useRef(new Animated.Value(0)).current;
@@ -23,14 +24,14 @@ export default function SplashScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <Text style={styles.eyebrow}>RURAL ECOSYSTEM PLATFORM</Text>
+        <Text style={styles.eyebrow}>{APP_NAME_UPPER}</Text>
         <Text style={styles.hindi}>आवाज़ से चलने वाला ग्रामीण सहायक</Text>
 
         <View style={styles.heroWrap}>
           <View style={styles.heroHalo} />
           <View style={styles.heroRing}>
             <View style={styles.heroCore}>
-              <Ionicons name="mic" size={54} color={P.surface} />
+              <Image source={APP_LOGO} style={styles.heroLogo} resizeMode="contain" />
             </View>
           </View>
         </View>
@@ -122,6 +123,10 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
+  },
+  heroLogo: {
+    width: 112,
+    height: 112,
   },
   title: {
     marginTop: 14,

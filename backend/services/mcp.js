@@ -41,6 +41,7 @@
 
 const agentRegistry = require('./agents');
 const llm = require('./llm');
+const marketplaceTool = require('./marketplace-tool');
 const weatherAqi = require('./weather-aqi');
 
 const HEALTH_AGENT_INTENTS = new Set([
@@ -49,6 +50,15 @@ const HEALTH_AGENT_INTENTS = new Set([
     'health_platform_help',
     'health_scheme',
     'facility_referral',
+]);
+
+const MARKETPLACE_TOOL_INTENTS = new Set([
+    'buyer_connection',
+    'supply_chain',
+    'create_listing',
+    'orders',
+    'listing_management',
+    'contact_buyer',
 ]);
 
 /* ─── Structured logger ─── */
@@ -76,6 +86,19 @@ const TOOL_DEFINITIONS = [
                 intent: { type: 'string' },
                 entities: { type: 'object' },
                 complexity: { type: 'string', enum: ['simple', 'moderate', 'complex'] },
+            },
+            required: ['domain'],
+        },
+    },
+    {
+        name: 'marketplace_tool',
+        description: 'Voice-first market workflow for creating listings, surfacing buyer matches, and managing listing status',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                domain: { type: 'string', enum: ['market'] },
+                intent: { type: 'string' },
+                entities: { type: 'object' },
             },
             required: ['domain'],
         },
@@ -149,22 +172,27 @@ function selectTool({ domain, complexity, intent }) {
         return { tool: 'domain_agent', reason: 'Health platform/report flow → health agent' };
     }
 
-    // 3. Complex queries → Bedrock Claude (deep reasoning)
+    // 3. Market voice workflow → marketplace tool first
+    if (domain === 'market' && MARKETPLACE_TOOL_INTENTS.has(String(intent || ''))) {
+        return { tool: 'marketplace_tool', reason: 'Market listing / buyer workflow → marketplace tool' };
+    }
+
+    // 4. Complex queries → Bedrock Claude (deep reasoning)
     if (complexity === 'complex') {
         return { tool: 'deep_reasoning', reason: 'Complex query → Claude deep reasoning' };
     }
 
-    // 4. Health domain → Claude (accuracy & safety required)
+    // 5. Health domain → Claude (accuracy & safety required)
     if (domain === 'health') {
         return { tool: 'deep_reasoning', reason: 'Health domain → Claude for accuracy/safety' };
     }
 
-    // 5. Schemes with moderate complexity → Claude (factual accuracy)
+    // 6. Schemes with moderate complexity → Claude (factual accuracy)
     if (domain === 'schemes' && complexity === 'moderate') {
         return { tool: 'deep_reasoning', reason: 'Scheme details → Claude for accuracy' };
     }
 
-    // 6. Everything else → domain-specific AI agent (Sarvam-M, fast & free)
+    // 7. Everything else → domain-specific AI agent (Sarvam-M, fast & free)
     return { tool: 'domain_agent', reason: `Simple/moderate → ${domain} agent (Sarvam-M)` };
 }
 
@@ -225,6 +253,21 @@ async function executeWeatherLookup(params) {
         agent: 'weather-live',
         tool: 'weather_lookup',
     };
+}
+
+async function executeMarketplaceTool(params) {
+    const { intent, entities, messages, userId } = params;
+    log('info', '🔧 [marketplace_tool] → market listings and buyer workflow', {
+        intent,
+        entityKeys: Object.keys(entities || {}),
+    });
+
+    return marketplaceTool.handleMarketplaceRequest({
+        intent,
+        entities: entities || {},
+        messages: messages || [],
+        userId,
+    });
 }
 
 /**
@@ -367,6 +410,20 @@ async function routeToAgent(params) {
         );
     }
 
+    if (selected.tool === 'marketplace_tool') {
+        return _executeWithFallback(
+            () => executeMarketplaceTool({ domain, intent, entities, messages, userId, screenContext }),
+            () => _executeWithFallback(
+                () => executeDomainAgent({ domain, intent, entities, complexity, messages, userId, screenContext }),
+                () => executeDeepReasoning(messages, domain, intent),
+                () => executeFallback(messages, domain),
+                'domain_agent',
+            ),
+            () => executeFallback(messages, domain),
+            'marketplace_tool',
+        );
+    }
+
     // Default: domain_agent
     // Primary: AI Agent → Fallback 1: Claude → Fallback 2: Gemini
     return _executeWithFallback(
@@ -393,6 +450,8 @@ async function executeTool(toolName, input, messages) {
     switch (toolName) {
         case 'domain_agent':
             return executeDomainAgent({ ...input, messages });
+        case 'marketplace_tool':
+            return executeMarketplaceTool({ ...input, messages });
         case 'weather_lookup':
             return executeWeatherLookup({ ...input, messages });
         case 'deep_reasoning':

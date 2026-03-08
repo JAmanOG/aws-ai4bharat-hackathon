@@ -62,7 +62,7 @@ async function saveComplaint(data, userId) {
   return result.rows[0];
 }
 
-async function listComplaints(userId, { page = 1, limit = 10 }) {
+async function listComplaints(userId, { page = 1, limit = 10 } = {}) {
   const countResult = await query('SELECT COUNT(*) as total FROM saved_complaints WHERE user_id = $1', [userId]);
   const total = parseInt(countResult.rows[0].total);
 

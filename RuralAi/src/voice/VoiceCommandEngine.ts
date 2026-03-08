@@ -21,6 +21,7 @@ export interface VoiceCommand {
   audioBase64?: string;
   metadata?: {
     action?: string;
+    ui_target?: string;
     roomId?: string;
     roomTitle?: string;
     topic?: string;
@@ -78,9 +79,13 @@ const NAVIGATION_MAP: Record<string, Record<string, string>> = {
     price_trend: "AgriMarket",
     sell_timing: "AgriMarket",
     buyers: "Orders",
+    buyer_connection: "Orders",
     msp_info: "AgriMarket",
-    create_listing: "CreateListing",
+    create_listing: "Orders",
     orders: "Orders",
+    supply_chain: "Orders",
+    listing_management: "Orders",
+    contact_buyer: "Orders",
     bargaining: "BargainingGroups",
     transport: "Logistics",
     default: "AgriMarket",
@@ -146,7 +151,12 @@ const VISUALIZATION_MAP: Record<string, Record<string, string>> = {
     mandi_info: "price_chart",
     price_trend: "price_chart",
     buyers: "order_list",
+    buyer_connection: "order_list",
+    create_listing: "order_list",
     orders: "order_list",
+    supply_chain: "order_list",
+    listing_management: "order_list",
+    contact_buyer: "order_list",
     bargaining: "peer_groups",
     transport: "transport_options",
     default: "price_chart",
@@ -185,6 +195,10 @@ function normalizeIntentKey(intent?: string): string {
   const key = intent?.toLowerCase().replace(/\s+/g, "_") ?? "default";
   if (key === "crop_price_query" || key === "crop_price" || /crop.*price/.test(key)) return "crop_prices";
   if (key === "mandi_price_query" || key === "mandi_prices" || /mandi.*(price|info)/.test(key)) return "mandi_info";
+  if (key === "buyer_requests" || key === "show_buyers") return "buyer_connection";
+  if (key === "market_orders" || key === "order_status" || key === "show_orders") return "orders";
+  if (key === "listing_update" || key === "cancel_listing" || key === "mark_sold") return "listing_management";
+  if (key === "buyer_contact" || key === "connect_buyer") return "contact_buyer";
   if (key === "scheme_eligibility" || key === "eligibility_check") return "eligibility";
   if (
     key === "loan_info"
@@ -228,6 +242,7 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
 
   // Determine target screen
   const screen = knowledgeResourceTarget?.screen
+    ?? (typeof metadata?.ui_target === "string" ? metadata.ui_target : null)
     ?? getVoiceRoomScreen(cmd)
     ?? domainNav?.[intentKey]
     ?? domainNav?.["default"]
@@ -277,6 +292,7 @@ export function resolveCommand(cmd: VoiceCommand): CommandAction {
  */
 export function shouldAutoNavigate(cmd: VoiceCommand): boolean {
   if (getKnowledgeResourceTarget(cmd)) return true;
+  if (typeof cmd.metadata?.ui_target === "string" && cmd.metadata.ui_target.length > 0) return true;
   if (cmd.metadata?.action === "create_room" || cmd.metadata?.action === "join_room") return true;
   const intentKey = normalizeIntentKey(cmd.intent);
   if (
@@ -294,6 +310,12 @@ export function shouldAutoNavigate(cmd: VoiceCommand): boolean {
       intentKey === "health_scheme" ||
       intentKey === "facility_referral"
     )
+  ) {
+    return true;
+  }
+  if (
+    cmd.domain === "market" &&
+    ["buyer_connection", "create_listing", "orders", "listing_management", "contact_buyer", "supply_chain"].includes(intentKey)
   ) {
     return true;
   }
@@ -323,6 +345,9 @@ function buildTitle(domain: string, intent: string, entities: Record<string, str
   switch (domain) {
     case "agriculture":
     case "market":
+      if (intent?.includes("listing") || intent?.includes("buyer") || intent?.includes("order") || intent?.includes("supply_chain")) {
+        return "My Listings & Market";
+      }
       if (crop && location) return `${capitalize(crop)} prices in ${location}`;
       if (crop) return `${capitalize(crop)} Market Info`;
       if (intent?.includes("weather")) return "Weather Advisory";
@@ -397,6 +422,14 @@ function buildNavParams(screen: string, entities: Record<string, string>, intent
       break;
     case "MarketPrices":
       params.moduleTitle = "AGRICULTURE";
+      break;
+    case "Orders":
+      if (entities?.crop) {
+        params.crop = normalizeMarketCropName(entities.crop, entities.crop);
+      }
+      if (entities?.location) {
+        params.location = normalizeMarketStateName(entities.location) ?? entities.location;
+      }
       break;
     case "SchemeDetail":
       if (entities?.scheme_id) params.schemeId = entities.scheme_id;

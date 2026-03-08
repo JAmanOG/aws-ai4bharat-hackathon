@@ -45,6 +45,10 @@ const INTENT_DOMAIN_MAP = {
     sell_timing: 'market',
     buyer_connection: 'market',
     supply_chain: 'market',
+    create_listing: 'market',
+    orders: 'market',
+    listing_management: 'market',
+    contact_buyer: 'market',
     msp_info: 'market',
     transport_logistics: 'market',
 

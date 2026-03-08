@@ -24,7 +24,7 @@ export default function ActionScreen() {
     logger.info("ActionScreen", `Fetching AI info for ${actionTitle} in ${moduleTitle}`);
     setLoading(true);
     setAsked(true);
-    const prompt = `Give me a brief overview and key actions available for the "${actionTitle}" section under "${moduleTitle}" module in the Rural Ecosystem Platform. Answer in 3-5 bullet points.`;
+    const prompt = `Give me a brief overview and key actions available for the "${actionTitle}" section under "${moduleTitle}" module in Rugro. Answer in 3-5 bullet points.`;
     setMessages((prev) => [...prev, { role: "user", text: prompt }]);
     try {
       const res = await chatWithText(prompt, { language: "en" });

@@ -84,11 +84,12 @@ export default function ProfileScreen() {
   }, [factsMap, user?.name]);
 
   const profileSubtitle = useMemo(() => {
+    const village = String((user as any)?.village || factsMap.location_village || factsMap.village || "").trim();
     const district = String(user?.district || factsMap.location_district || factsMap.district || "").trim();
     const state = String(user?.state || factsMap.location_state || factsMap.state || "").trim();
-    const parts = [district, state].filter(Boolean);
+    const parts = [village, district, state].filter(Boolean);
     return parts.length ? parts.join(", ") : "Voice-first rural assistant profile";
-  }, [factsMap, user?.district, user?.state]);
+  }, [factsMap, user]);
 
   const currentLanguageCode = normalizeAppLanguage(user?.preferredLanguage || language);
   const currentLanguageLabel = useMemo(

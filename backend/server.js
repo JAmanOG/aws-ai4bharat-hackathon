@@ -22,6 +22,7 @@ const openDataRoutes = require('./routes/open-data');
 const voiceRoomRoutes = require('./routes/voice-room');
 const visionRoutes = require('./routes/vision');
 const liveMarketFetcher = require('./services/market-data-fetcher');
+const { APP_NAME } = require('./services/brand');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -132,7 +133,7 @@ async function buildServer() {
 
     app.get('/', { config: { rateLimit: false } }, async () => {
         return {
-            name: 'Rural Ecosystem Platform API',
+            name: `${APP_NAME} API`,
             version: '2.0.0',
             modules: ['auth', 'knowledge', 'agriculture', 'precision-agriculture', 'economics', 'voice', 'community', 'business', 'government', 'livelihood', 'health', 'vision', 'open-data', 'voice-rooms'],
             docs: '/health',
@@ -188,7 +189,7 @@ async function start() {
     try {
         await app.listen({ port: PORT, host: HOST });
         stopMarketSync = startMarketSync(app);
-        app.log.info(`🚀 Rural Ecosystem Platform API running on http://${HOST}:${PORT}`);
+        app.log.info(`🚀 ${APP_NAME} API running on http://${HOST}:${PORT}`);
         app.log.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);
         app.log.info(`   Health check: http://${HOST}:${PORT}/health`);
     } catch (err) {

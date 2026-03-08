@@ -29,6 +29,8 @@ export interface User {
   preferredLanguage: string;
   state: string;
   district: string;
+  pincode?: string;
+  village?: string;
   isVerified: boolean;
   profileComplete: boolean;
   onboardingDone: boolean;
@@ -59,6 +61,8 @@ interface RegisterData {
   language?: string;
   state?: string;
   district?: string;
+  pincode?: string;
+  village?: string;
 }
 
 const TOKEN_KEY = 'rural_ai_token';
@@ -196,6 +200,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           preferredLanguage,
           state: '',
           district: '',
+          pincode: '',
+          village: '',
           isVerified: false,
           profileComplete: false,
           onboardingDone: false,
@@ -215,6 +221,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           preferredLanguage: 'hi',
           state: '',
           district: '',
+          pincode: '',
+          village: '',
           isVerified: false,
           profileComplete: false,
           onboardingDone: false,

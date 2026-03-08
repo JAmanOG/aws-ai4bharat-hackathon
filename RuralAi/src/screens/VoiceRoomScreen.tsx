@@ -228,7 +228,7 @@ export default function VoiceRoomScreen() {
     if (!room) return;
     try {
       await Share.share({
-        message: `Join "${room.title}" on Rural AI voice rooms.`,
+        message: `Join "${room.title}" on Rugro voice rooms.`,
       });
     } catch {
       // no-op

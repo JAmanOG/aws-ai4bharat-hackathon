@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { APP_LANGUAGES } from "../utils/languagePreference";
+import { APP_LOGO, APP_NAME_UPPER } from "../theme/brand";
 import { ruralPalette as P } from "../theme/ruralPalette";
 
 export default function LanguageSelectScreen({
@@ -17,7 +18,7 @@ export default function LanguageSelectScreen({
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <Text style={styles.brand}>RURAL ECOSYSTEM PLATFORM</Text>
+        <Text style={styles.brand}>{APP_NAME_UPPER}</Text>
         <Text style={styles.hindi}>अपनी भाषा चुनें</Text>
         <Text style={styles.subtitle}>Choose the language you want to use across voice and onboarding.</Text>
         <View style={styles.scrollHintRow}>
@@ -29,7 +30,7 @@ export default function LanguageSelectScreen({
           <View style={styles.heroHalo} />
           <View style={styles.heroRing}>
             <View style={styles.heroCore}>
-              <Ionicons name="language" size={44} color={P.surface} />
+              <Image source={APP_LOGO} style={styles.heroLogo} resizeMode="contain" />
             </View>
           </View>
         </View>
@@ -144,6 +145,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: P.gold,
+  },
+  heroLogo: {
+    width: 72,
+    height: 72,
   },
   languageScroll: {
     flex: 1,

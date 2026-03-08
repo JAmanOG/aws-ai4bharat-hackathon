@@ -26,6 +26,7 @@ const dynamoDB = DynamoDBDocumentClient.from(ddbClient, {
 
 // ── Aurora PostgreSQL ──
 let pgPool = null;
+const pgAvailable = !!(process.env.PG_HOST && process.env.PG_HOST.trim());
 
 function getPostgresPool() {
     if (!pgPool) {
@@ -45,9 +46,21 @@ function getPostgresPool() {
 }
 
 async function query(text, params) {
-    const pool = getPostgresPool();
-    const result = await pool.query(text, params);
-    return result;
+    // Graceful fallback when PostgreSQL is not configured
+    if (!pgAvailable) {
+        return { rows: [], rowCount: 0, fields: [] };
+    }
+    try {
+        const pool = getPostgresPool();
+        const result = await pool.query(text, params);
+        return result;
+    } catch (err) {
+        if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
+            console.warn('[PG] Connection failed, returning empty result:', err.message);
+            return { rows: [], rowCount: 0, fields: [] };
+        }
+        throw err;
+    }
 }
 
 // ── Table Names (from environment) ──

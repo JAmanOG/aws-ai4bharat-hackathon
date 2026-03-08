@@ -49,7 +49,7 @@ export type HomeStackParamList = {
   Saved: undefined;
   SavedDetail: { itemId: string };
   BargainingGroups: undefined;
-  Orders: undefined;
+  Orders: { crop?: string; location?: string } | undefined;
   Logistics: undefined;
   CourseDetail: { courseId: string; courseName?: string; enrolled?: boolean };
   PeerGroupDetail: { groupId: string; groupName?: string; isMember?: boolean };

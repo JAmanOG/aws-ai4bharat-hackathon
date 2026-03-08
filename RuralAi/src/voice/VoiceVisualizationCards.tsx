@@ -18,6 +18,10 @@ import {
   useInsuranceModel,
   useLoanEligibilityModel,
 } from "../components/EconomicsResponses";
+import {
+  MarketListingsView,
+  coerceMarketDashboardModel,
+} from "../components/MarketListingsResponse";
 
 /* ─── Master card renderer ─── */
 
@@ -218,6 +222,11 @@ function EligibilityCard({ card }: { card: VisualizationCard }) {
 /* ─── Order Card ─── */
 
 function OrderCard({ card }: { card: VisualizationCard }) {
+  const model = coerceMarketDashboardModel(card.data?.metadata?.market);
+  if (model) {
+    return <MarketListingsView model={model} compact />;
+  }
+
   return (
     <View style={[styles.card, { borderLeftColor: "#1565C0", borderLeftWidth: 4 }]}>
       <View style={styles.cardHeader}>

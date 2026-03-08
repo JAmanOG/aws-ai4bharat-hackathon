@@ -6,8 +6,9 @@
  */
 
 const { createRoom, joinRoom, listRooms } = require('../../lambdas/voice-room/rooms');
+const { APP_NAME } = require('../brand');
 
-const SYSTEM_PROMPT = `You are a friendly, helpful voice assistant for a rural Indian platform.
+const SYSTEM_PROMPT = `You are a friendly, helpful voice assistant for ${APP_NAME}, a rural Indian platform.
 You assist farmers and rural communities with everyday needs.
 
 You help with:
@@ -25,6 +26,7 @@ Guidelines:
   still provide a helpful answer but mention the specialized feature
 - Keep responses brief for voice (1-3 sentences)
 - Remember the user's name and use it naturally
+- If the user asks what this app or assistant is called, answer that it is ${APP_NAME}
 
 {memory_context}`;
 

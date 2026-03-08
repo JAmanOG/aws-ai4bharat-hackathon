@@ -20,6 +20,7 @@ import { useVoice } from "../voice/VoiceContext";
 import { useVoiceService, type ChatResult } from "../services/voice";
 import { VisualizationCardRenderer } from "../voice/VoiceVisualizationCards";
 import { useScreenContext } from "../context/ScreenContext";
+import { APP_LOGO, APP_NAME_UPPER } from "../theme/brand";
 import {
   healthApi,
   visionApi,
@@ -240,7 +241,6 @@ function DomainBubble({
 
 export default function AskScreen() {
   const nav = useNavigation<any>();
-  const parentNav = nav.getParent();
   const insets = useSafeAreaInsets();
   const voiceService = useVoiceService();
   const screen = useScreenContext();
@@ -732,10 +732,6 @@ export default function AskScreen() {
     await startListening();
   }, [startListening, state, stopAndSend]);
 
-  const openCommunity = useCallback(() => {
-    parentNav?.navigate("Community");
-  }, [parentNav]);
-
   const openAlerts = useCallback(() => {
     nav.navigate("Home", { screen: "Alerts" });
   }, [nav]);
@@ -744,10 +740,10 @@ export default function AskScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
         <View style={styles.topRow}>
-          <Pressable style={styles.topIconBtn} onPress={openCommunity}>
-            <Ionicons name="menu-outline" size={28} color={P.mutedDark} />
-          </Pressable>
-          <Text style={styles.brand}>RURAL ECOSYSTEM PLATFORM</Text>
+          <View style={styles.brandLockup}>
+            <Image source={APP_LOGO} style={styles.brandLogo} resizeMode="contain" />
+            <Text style={styles.brand}>{APP_NAME_UPPER}</Text>
+          </View>
           <Pressable style={styles.topIconBtn} onPress={openAlerts}>
             <Ionicons name="notifications" size={24} color={P.mutedDark} />
           </Pressable>
@@ -970,17 +966,28 @@ const styles = StyleSheet.create({
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
   topIconBtn: {
+    position: "absolute",
+    right: 0,
     width: 36,
     height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
+  brandLockup: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  brandLogo: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
   brand: {
-    flex: 1,
-    textAlign: "center",
     fontSize: 14,
     fontWeight: "900",
     letterSpacing: 3.2,

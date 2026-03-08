@@ -5,13 +5,16 @@
  * voice routing can stay grounded in what the user is actually seeing.
  */
 
+const { APP_NAME } = require('./brand');
+
 const SCREEN_CAPABILITY_HINTS = {
-    Ask: 'This is the main Ask screen with voice-first entry into Agriculture, Health, Knowledge, Infrastructure, and Economics modules. The user may also have a selected photo or report attachment that should ground the next answer.',
+    Ask: `This is ${APP_NAME}'s main Ask screen with voice-first entry into Agriculture, Health, Knowledge, Infrastructure, and Economics modules. The user may also have a selected photo or report attachment that should ground the next answer.`,
     AgriMarket: 'This screen shows agriculture market data for the currently selected crop and location, including crop tabs and historical data.',
     MarketPrices: 'This screen shows detailed mandi prices for the currently selected crop and location.',
     Eligibility: 'This is the economics loan eligibility screen. It shows loan readiness, required document status, and the best matching loan schemes.',
     SavingsNudge: 'This is the financial overview screen. It shows harvest income, planned costs, savings target, emergency fund, next-season investment, and insurance protection.',
     InsuranceClaims: 'This is the insurance and claims screen. It shows insurance coverage, claim readiness, recent claim status, and the exact crop-claim process.',
+    Orders: 'This is the My Listings & Market screen. It shows the farmer’s active sell listing, verified buyer matches or buyer requests, nearby seller listings, and saved contact details that the app can reuse for voice-based listing creation and updates.',
     HealthDashboard: 'This is the AI Health Screening dashboard. The exact on-screen actions include Start Screening, Upload Report, Get Insights, View All Schemes, Visit Site for telemedicine, and Explore Providers. Medical Report Insights supports MRI, X-ray, CT, ultrasound, and lab reports.',
     SymptomChecker: 'This is the Symptom Checker. It is a voice-first AI Doctor consultation flow. The assistant should ask for symptoms, then age, then gender if missing, and once enough detail is collected it should return possible conditions, urgency, recommended action, home remedies, and warning signs. This is guidance only, not a diagnosis.',
     KnowledgeDashboard: 'This screen helps the user discover videos, articles, courses, and other learning resources.',
@@ -180,6 +183,7 @@ function enrichAnalysisWithScreenContext(analysis, originalText = '', screenCont
     const asksLoan = /loan|credit|kcc|eligib|bank|interest|limit|finance|कर्ज|लोन|ब्याज|पात्र/.test(combined);
     const asksSavings = /save|saving|income|profit|cost|expense|harvest|budget|cash flow|margin|बचत|आय|खर्च|मुनाफ/.test(combined);
     const asksInsurance = /insurance|claim|coverage|damage|bima|rain|hail|flood|drought|बीमा|क्लेम|नुकसान|मुआव/.test(combined);
+    const asksMarketListing = /sell|listing|post listing|create listing|sell order|list produce|mark sold|cancel listing|buyer|buyers|orders|contact buyer|buyer requests|खरीदार|लिस्टिंग|बेचना|ऑर्डर/.test(combined);
     const attachmentType = String(parsed.values.selectedAttachmentType || '').toLowerCase();
     const attachmentStatus = String(parsed.values.selectedAttachmentStatus || '').toLowerCase();
     const hasAttachment = attachmentStatus === 'ready';
@@ -247,6 +251,24 @@ function enrichAnalysisWithScreenContext(analysis, originalText = '', screenCont
         next.complexity = 'simple';
         next.can_answer_directly = false;
         return { analysis: next, reason: 'economics-insurance-screen' };
+    }
+
+    if (parsed.screen === 'Orders' && (asksScreenHelp || asksMarketListing)) {
+        next.domain = 'market';
+        if (/mark sold|sold/.test(combined) || /cancel listing|remove listing|delete listing/.test(combined)) {
+            next.intent = 'listing_management';
+        } else if (/contact buyer|call buyer|buyer number|buyer phone/.test(combined)) {
+            next.intent = 'contact_buyer';
+        } else if (/orders|buyer requests|request/.test(combined)) {
+            next.intent = 'orders';
+        } else if (/sell|create listing|post listing|list produce|बेचना|लिस्टिंग/.test(combined)) {
+            next.intent = 'create_listing';
+        } else {
+            next.intent = 'buyer_connection';
+        }
+        next.complexity = 'simple';
+        next.can_answer_directly = false;
+        return { analysis: next, reason: 'market-screen-workflow' };
     }
 
     if (parsed.screen === 'Ask' && hasAttachment && attachmentType.includes('medical') && (asksAttachmentQuestion || asksReportInsights || asksDoctorAccess)) {

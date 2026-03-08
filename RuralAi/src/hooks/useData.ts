@@ -92,6 +92,13 @@ export function useMyListings(status?: string) {
   );
 }
 
+export function useMarketListingsSearch(params?: Record<string, string | number | boolean | undefined>) {
+  return useApi(
+    () => supplyChainApi.searchListings(params),
+    [JSON.stringify(params)],
+  );
+}
+
 export function useOrders(role?: string, status?: string) {
   return useApi(
     () => supplyChainApi.getOrders({ role, status }),

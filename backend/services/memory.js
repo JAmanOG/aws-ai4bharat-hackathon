@@ -15,6 +15,7 @@ const { v4: uuid } = require('uuid');
 const { PutCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { dynamoDB, TABLE_NAMES } = require('../utils/db');
 const { generateResponse } = require('./llm');
+const { APP_NAME, APP_CONTEXT } = require('./brand');
 
 const CONVERSATIONS_TABLE = TABLE_NAMES.VOICE_CONVERSATIONS;
 const FACTS_TABLE = TABLE_NAMES.USER_MEMORY_FACTS;
@@ -181,7 +182,7 @@ async function deleteFact(userId, factKey) {
 /*  Fact Extraction (LLM-powered)                          */
 /* ═══════════════════════════════════════════════════════ */
 
-const FACT_EXTRACTION_PROMPT = `You are a fact extractor for a rural agriculture platform. From the conversation below, extract any NEW user facts.
+const FACT_EXTRACTION_PROMPT = `You are a fact extractor for ${APP_NAME}. ${APP_CONTEXT} From the conversation below, extract any NEW user facts.
 
 Return ONLY a JSON object with extracted facts. Use these keys:
 - user_name: User's name
@@ -270,12 +271,12 @@ async function extractAndStoreFacts(userId, userText, assistantText) {
 /*  Context Builder (inject memory into system prompt)     */
 /* ═══════════════════════════════════════════════════════ */
 
-const SYSTEM_PROMPT = `You are a helpful voice assistant for a rural Indian agriculture platform.
-You help farmers with agriculture advice, market prices, government schemes, health guidance, and learning.
+const SYSTEM_PROMPT = `You are the helpful voice assistant inside ${APP_NAME}. ${APP_CONTEXT}
 Keep responses brief (1-3 sentences) since your output will be spoken aloud via TTS.
 Be warm, respectful, and use simple language. If the user speaks Hindi or another Indian language, respond in the same language.
 Do not use special characters, markdown, or emojis — your response must be plain spoken text.
 When you know the user's name, use it naturally in conversation.
+If the user asks the app name or platform name, answer that the app is called ${APP_NAME}.
 
 {memory_context}`;
 
