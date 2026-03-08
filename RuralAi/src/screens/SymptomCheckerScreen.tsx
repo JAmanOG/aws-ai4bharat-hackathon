@@ -115,6 +115,8 @@ export default function SymptomCheckerScreen() {
     state,
     setState,
     language,
+    ttsEnabled,
+    lowDataMode,
     sessionId,
     setSessionId,
     lastCommand,
@@ -256,7 +258,7 @@ export default function SymptomCheckerScreen() {
         setResult(metadata.triage_result);
       }
 
-      if (!chatResult.audio_base64) {
+      if (!ttsEnabled || !chatResult.audio_base64) {
         if (mountedRef.current) setState("visualizing");
         return;
       }
@@ -269,7 +271,7 @@ export default function SymptomCheckerScreen() {
         if (mountedRef.current) setState("visualizing");
       }
     },
-    [appendTurn, processResult, setState, voiceService],
+    [appendTurn, processResult, setState, ttsEnabled, voiceService],
   );
 
   const startListening = useCallback(async () => {
@@ -310,6 +312,7 @@ export default function SymptomCheckerScreen() {
         language_code: language,
         session_id: sessionId ?? sessionRef.current,
         screen_context: toPromptContext(),
+        generate_audio: ttsEnabled && !lowDataMode,
       });
       await handleResult(chatResult);
     } catch (error: any) {
@@ -317,7 +320,7 @@ export default function SymptomCheckerScreen() {
       if (mountedRef.current) setState("idle");
       setConversationStage("error");
     }
-  }, [handleResult, language, sessionId, setState, toPromptContext, voiceService]);
+  }, [handleResult, language, lowDataMode, sessionId, setState, toPromptContext, ttsEnabled, voiceService]);
 
   const handleMicPress = useCallback(async () => {
     if (state === "processing" || state === "speaking") return;

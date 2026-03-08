@@ -7,7 +7,7 @@ const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-be
 const { PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { v4: uuidv4 } = require('uuid');
 const { dynamoDB, TABLE_NAMES } = require('../../utils/db');
-const { BEDROCK_MODEL_ID, HEALTH_DISCLAIMER } = require('../../utils/constants');
+const { BEDROCK_MODEL_ID, GEMINI_MODEL, GEMINI_API_KEY, HEALTH_DISCLAIMER } = require('../../utils/constants');
 
 const bedrock = new BedrockRuntimeClient({
   region: process.env.AWS_REGION || 'ap-south-1',
@@ -34,9 +34,14 @@ async function checkSymptoms(symptoms, age, gender, medicalHistory, userId) {
   let result;
   try {
     result = await getBedrockTriage(normalizedSymptoms, age, gender, medicalHistory);
-  } catch (err) {
-    console.error('[SymptomChecker] Bedrock invocation failed:', err.message);
-    throw { statusCode: 503, message: `AI Analysis unavailable: ${err.message}` };
+  } catch (bedrockErr) {
+    console.warn('[SymptomChecker] Bedrock failed, trying Gemini fallback:', bedrockErr.message);
+    try {
+      result = await getGeminiTriage(normalizedSymptoms, age, gender, medicalHistory);
+    } catch (geminiErr) {
+      console.error('[SymptomChecker] Gemini fallback also failed:', geminiErr.message);
+      throw { statusCode: 503, message: `AI Analysis unavailable: Bedrock: ${bedrockErr.message}, Gemini: ${geminiErr.message}` };
+    }
   }
 
   result.disclaimer = HEALTH_DISCLAIMER;
@@ -130,3 +135,32 @@ async function logSymptomCheck(userId, symptoms, result) {
 }
 
 module.exports = { checkSymptoms, buildTriagePrompt, parseTriageResponse };
+
+/**
+ * Gemini fallback for symptom triage.
+ */
+async function getGeminiTriage(symptoms, age, gender, medicalHistory) {
+  const apiKey = GEMINI_API_KEY();
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+
+  const prompt = buildTriagePrompt(symptoms, age, gender, medicalHistory);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini error ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return parseTriageResponse(text);
+}

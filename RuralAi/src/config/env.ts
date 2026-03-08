@@ -19,7 +19,8 @@ const LOCALHOST =
 export const ENV = {
   /** Backend API base URL (no trailing slash) */
   API_BASE_URL:
-    process.env.EXPO_PUBLIC_API_URL ?? `http://${LOCALHOST}:3000`,
+    process.env.EXPO_PUBLIC_API_URL ??
+    'http://rural-alb-dev-2139845854.ap-south-1.elb.amazonaws.com',
 
   /** User ID header sent in dev/demo mode */
   DEMO_USER_ID: process.env.EXPO_PUBLIC_DEMO_USER_ID ?? 'demo-user',

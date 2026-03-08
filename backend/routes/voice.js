@@ -217,6 +217,7 @@ async function voiceRoutes(fastify) {
         let languageCode = 'unknown';
         let sessionId = uuid();
         let screenContext = '';
+        let generateAudio = true;
 
         if (req.isMultipart && req.isMultipart()) {
             const data = await req.file();
@@ -228,11 +229,13 @@ async function voiceRoutes(fastify) {
             if (fields?.language_code?.value) languageCode = fields.language_code.value;
             if (fields?.session_id?.value) sessionId = fields.session_id.value;
             if (fields?.screen_context?.value) screenContext = fields.screen_context.value;
+            if (fields?.generate_audio?.value) generateAudio = fields.generate_audio.value !== 'false';
         } else if (req.body?.audio_base64) {
             audioBuffer = Buffer.from(req.body.audio_base64, 'base64');
             languageCode = req.body.language_code || 'unknown';
             sessionId = req.body.session_id || sessionId;
             screenContext = req.body.screen_context || '';
+            generateAudio = req.body.generate_audio !== false;
         } else {
             return reply.status(400).send({ error: 'No audio data provided' });
         }
@@ -252,7 +255,7 @@ async function voiceRoutes(fastify) {
                 userId,
                 sessionId,
                 languageCode,
-                generateAudio: true,
+                generateAudio,
                 screenContext,
             });
 

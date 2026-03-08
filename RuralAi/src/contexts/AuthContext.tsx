@@ -7,11 +7,11 @@
  * - Falls back to demo mode when not authenticated (backward-compatible)
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { ENV } from '../config/env';
 import { logger } from '../utils/logger';
-import { setAuthCredentials } from '../services/api';
+import { setAuthCredentials, setUnauthorizedHandler } from '../services/api';
 import {
   normalizeAppLanguage,
   readStoredLanguagePreference,
@@ -48,6 +48,8 @@ interface AuthContextValue extends AuthState {
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
   skipAuth: () => void;
+  authNotice: string | null;
+  clearAuthNotice: () => void;
 }
 
 interface RegisterData {
@@ -75,6 +77,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
     isLoading: true,
   });
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const clearAuthNotice = useCallback(() => {
+    setAuthNotice(null);
+  }, []);
 
   // ── Restore persisted auth on mount ──
   useEffect(() => {
@@ -89,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const user: User = JSON.parse(storedUser);
           writeStoredLanguagePreference(user.preferredLanguage).catch(() => {});
           setAuthCredentials(storedToken, user.userId, user.name);
+          setAuthNotice(null);
           setState({ user, token: storedToken, isAuthenticated: true, isLoading: false });
           logger.info('Auth', 'Restored session', { userId: user.userId });
         } else {
@@ -120,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
 
     setAuthCredentials(token, user.userId, user.name);
+    setAuthNotice(null);
     setState({ user, token, isAuthenticated: true, isLoading: false });
     logger.info('Auth', 'Login successful', { userId: user.userId });
   }, []);
@@ -143,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
 
     setAuthCredentials(regToken, regUser.userId, regUser.name);
+    setAuthNotice(null);
     setState({ user: regUser, token: regToken, isAuthenticated: true, isLoading: false });
     logger.info('Auth', 'Registration successful', { userId: regUser.userId });
   }, []);
@@ -154,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       SecureStore.deleteItemAsync(USER_KEY),
     ]);
     setAuthCredentials(null);
+    setAuthNotice(null);
     setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
     logger.info('Auth', 'Logged out');
   }, []);
@@ -187,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         writeStoredLanguagePreference(demoUser.preferredLanguage).catch(() => {});
         setAuthCredentials(null, ENV.DEMO_USER_ID, demoUser.name);
+        setAuthNotice(null);
         setState({ user: demoUser, token: null, isAuthenticated: true, isLoading: false });
         logger.info('Auth', 'Demo mode activated');
       })
@@ -204,13 +221,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
         };
         setAuthCredentials(null, ENV.DEMO_USER_ID, demoUser.name);
+        setAuthNotice(null);
         setState({ user: demoUser, token: null, isAuthenticated: true, isLoading: false });
         logger.info('Auth', 'Demo mode activated');
       });
   }, []);
 
+  useEffect(() => {
+    setUnauthorizedHandler(({ status, message }) => {
+      const current = stateRef.current;
+      if (!current.isAuthenticated) {
+        return;
+      }
+
+      const needsLoginMessage = current.token
+        ? 'Your session expired or this action needs sign-in. Please log in again.'
+        : 'Guest mode cannot access this feature on this server. Please log in to continue.';
+
+      setAuthNotice(message && status === 403 ? `${needsLoginMessage} ${message}` : needsLoginMessage);
+      setAuthCredentials(null);
+      Promise.all([
+        SecureStore.deleteItemAsync(TOKEN_KEY),
+        SecureStore.deleteItemAsync(USER_KEY),
+      ]).catch(() => {});
+      logger.warn('Auth', 'Unauthorized API response forced login', { status, hadToken: !!current.token });
+      setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
+    });
+
+    return () => {
+      setUnauthorizedHandler(null);
+    };
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, updateUser, skipAuth }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout, updateUser, skipAuth, authNotice, clearAuthNotice }}>
       {children}
     </AuthContext.Provider>
   );

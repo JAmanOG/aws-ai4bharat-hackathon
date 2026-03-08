@@ -20,7 +20,7 @@ import { APP_LANGUAGES, readStoredLanguagePreference } from "../utils/languagePr
 type Mode = "login" | "register";
 
 export default function LoginScreen() {
-  const { login, register, skipAuth } = useAuth();
+  const { login, register, skipAuth, authNotice, clearAuthNotice } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
@@ -50,6 +50,7 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      clearAuthNotice();
       if (mode === "login") {
         await login(phone, pin);
       } else {
@@ -98,15 +99,30 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.formCard}>
+            {authNotice ? (
+              <View style={styles.noticeCard}>
+                <View style={styles.noticeIcon}>
+                  <Ionicons name="lock-closed" size={16} color={P.goldDark} />
+                </View>
+                <Text style={styles.noticeText}>{authNotice}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.modeToggle}>
               <Pressable
-                onPress={() => setMode("login")}
+                onPress={() => {
+                  clearAuthNotice();
+                  setMode("login");
+                }}
                 style={[styles.modeSegment, mode === "login" && styles.modeSegmentActive]}
               >
                 <Text style={[styles.modeText, mode === "login" && styles.modeTextActive]}>Login</Text>
               </Pressable>
               <Pressable
-                onPress={() => setMode("register")}
+                onPress={() => {
+                  clearAuthNotice();
+                  setMode("register");
+                }}
                 style={[styles.modeSegment, mode === "register" && styles.modeSegmentActive]}
               >
                 <Text style={[styles.modeText, mode === "register" && styles.modeTextActive]}>Register</Text>
@@ -192,13 +208,25 @@ export default function LoginScreen() {
               )}
             </Pressable>
 
-            <Pressable style={styles.switchModeBtn} onPress={() => setMode(mode === "login" ? "register" : "login")}>
+            <Pressable
+              style={styles.switchModeBtn}
+              onPress={() => {
+                clearAuthNotice();
+                setMode(mode === "login" ? "register" : "login");
+              }}
+            >
               <Text style={styles.switchModeText}>
                 {mode === "login" ? "Need a new account? Register" : "Already registered? Login"}
               </Text>
             </Pressable>
 
-            <Pressable style={styles.guestBtn} onPress={skipAuth}>
+            <Pressable
+              style={styles.guestBtn}
+              onPress={() => {
+                clearAuthNotice();
+                skipAuth();
+              }}
+            >
               <Ionicons name="play-circle" size={20} color={P.goldDark} />
               <Text style={styles.guestText}>Continue as Guest</Text>
             </Pressable>
@@ -332,6 +360,34 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
+  },
+  noticeCard: {
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: P.gold,
+    backgroundColor: P.bgWarm,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  noticeIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.goldTint,
+    marginTop: 1,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+    color: P.ink,
   },
   modeToggle: {
     flexDirection: "row",

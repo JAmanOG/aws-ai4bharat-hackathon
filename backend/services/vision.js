@@ -7,6 +7,7 @@ const BEDROCK_MODEL_ID = process.env.VISION_BEDROCK_MODEL_ID
     || process.env.BEDROCK_MODEL_ID
     || 'anthropic.claude-3-haiku-20240307-v1:0';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const BEDROCK_REGION = process.env.AWS_REGION || 'ap-south-1';
 
 const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png']);
 const ALLOWED_KINDS = new Set([
@@ -128,6 +129,27 @@ function normalizeVisionResponse(parsed, provider) {
     };
 }
 
+function summarizeVisionError(err) {
+    const httpStatus = err?.$metadata?.httpStatusCode || err?.statusCode || err?.status || null;
+    const requestId = err?.$metadata?.requestId || err?.requestId || null;
+    const code = err?.name || err?.code || err?.Code || null;
+
+    return {
+        message: String(err?.message || 'Unknown provider error'),
+        code,
+        httpStatus,
+        requestId,
+    };
+}
+
+function logVisionProviderFailure(providerName, err, context = {}) {
+    const errorSummary = summarizeVisionError(err);
+    console.warn(`[Vision] ${providerName} failed`, {
+        ...context,
+        ...errorSummary,
+    });
+}
+
 async function callBedrockVision({ fileBase64, fileType, prompt }) {
     const command = new InvokeModelCommand({
         modelId: BEDROCK_MODEL_ID,
@@ -218,12 +240,32 @@ async function analyzeAttachment({ fileBase64, fileType, fileName = '', source =
 
     const prompt = buildVisionPrompt({ fileName, source, userPrompt });
     let lastError;
+    const providerChain = [
+        {
+            name: 'bedrock-vision',
+            fn: callBedrockVision,
+            model: BEDROCK_MODEL_ID,
+            region: BEDROCK_REGION,
+        },
+        {
+            name: 'gemini-vision',
+            fn: callGeminiVision,
+            model: GEMINI_MODEL,
+        },
+    ];
 
-    for (const provider of [callBedrockVision, callGeminiVision]) {
+    for (const provider of providerChain) {
         try {
-            return await provider({ fileBase64, fileType, prompt });
+            return await provider.fn({ fileBase64, fileType, prompt });
         } catch (err) {
             lastError = err;
+            logVisionProviderFailure(provider.name, err, {
+                model: provider.model,
+                region: provider.region,
+                fileType,
+                fileName: fileName || 'unknown',
+                source: source || 'unknown',
+            });
         }
     }
 

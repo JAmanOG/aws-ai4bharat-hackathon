@@ -4,6 +4,7 @@
  */
 
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { GEMINI_MODEL, GEMINI_API_KEY } = require('../../utils/constants');
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
 const BEDROCK_MODEL_ID = process.env.PRECISION_BEDROCK_MODEL_ID
@@ -200,6 +201,34 @@ async function invokeBedrockAdvisory(payload) {
     return JSON.parse(jsonMatch[0]);
 }
 
+async function invokeGeminiAdvisory(payload) {
+    const apiKey = GEMINI_API_KEY();
+    if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+
+    const prompt = buildAdvisoryPrompt(payload);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 1200 },
+        }),
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Gemini error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Failed to parse Gemini advisory response');
+    return JSON.parse(jsonMatch[0]);
+}
+
 async function analyzeFarmImage(payload) {
     const fallback = runRuleBasedDiagnosis(payload);
 
@@ -219,13 +248,25 @@ async function analyzeFarmImage(payload) {
             engine: 'bedrock',
             generatedAt: new Date().toISOString(),
         };
-    } catch (err) {
-        return {
-            ...fallback,
-            engine: 'rules-fallback',
-            warning: `Bedrock advisory unavailable: ${err.message}`,
-            generatedAt: new Date().toISOString(),
-        };
+    } catch (bedrockErr) {
+        console.warn('[Advisory] Bedrock failed, trying Gemini fallback:', bedrockErr.message);
+        try {
+            const geminiResult = await invokeGeminiAdvisory(payload);
+            return {
+                ...fallback,
+                ...geminiResult,
+                engine: 'gemini',
+                generatedAt: new Date().toISOString(),
+            };
+        } catch (geminiErr) {
+            console.warn('[Advisory] Gemini fallback also failed:', geminiErr.message);
+            return {
+                ...fallback,
+                engine: 'rules-fallback',
+                warning: `AI advisory unavailable (Bedrock: ${bedrockErr.message}, Gemini: ${geminiErr.message}). Using rule-based analysis.`,
+                generatedAt: new Date().toISOString(),
+            };
+        }
     }
 }
 

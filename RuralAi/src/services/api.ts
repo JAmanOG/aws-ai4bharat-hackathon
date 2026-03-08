@@ -15,12 +15,19 @@ import { logger } from '../utils/logger';
 let _authToken: string | null = null;
 let _userId: string = ENV.DEMO_USER_ID;
 let _userName: string = 'Demo User';
+let _unauthorizedHandler: ((payload: { status: number; message: string; path: string }) => void) | null = null;
 
 /** Call from AuthContext when user logs in / out. */
 export function setAuthCredentials(token: string | null, userId?: string, userName?: string) {
   _authToken = token;
   _userId = userId || ENV.DEMO_USER_ID;
   _userName = userName || 'Demo User';
+}
+
+export function setUnauthorizedHandler(
+  handler: ((payload: { status: number; message: string; path: string }) => void) | null
+) {
+  _unauthorizedHandler = handler;
 }
 
 /* ────────────────────────────────────────────── */
@@ -111,6 +118,13 @@ async function request<T = unknown>(path: string, opts: RequestOptions = {}): Pr
         message: json?.error ?? json?.message ?? res.statusText,
         details: json?.details,
       };
+
+      if ((res.status === 401 || res.status === 403) && _unauthorizedHandler) {
+        try {
+          _unauthorizedHandler({ status: res.status, message: err.message, path });
+        } catch {}
+      }
+
       logger.error('API', `${method} ${path} → ${res.status} in ${elapsed}ms: ${err.message}`);
       throw err;
     }

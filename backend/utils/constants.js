@@ -232,6 +232,8 @@ const RECONNECT_WINDOW_MS = 30000;
 // ── Health AI Constants ──
 
 const BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_API_KEY = () => process.env.GEMINI_API_KEY || '';
 
 const METRIPORT = {
     apiKey: process.env.METRIPORT_API_KEY || '',
@@ -302,6 +304,8 @@ module.exports = {
     RECONNECT_WINDOW_MS,
     // Health
     BEDROCK_MODEL_ID,
+    GEMINI_MODEL,
+    GEMINI_API_KEY,
     METRIPORT,
     HEALTH_RISK_LEVELS,
     HEALTH_TOPICS,

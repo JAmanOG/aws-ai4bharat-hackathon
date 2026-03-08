@@ -32,6 +32,11 @@ import {
   toVoiceLanguageCode,
   writeStoredLanguagePreference,
 } from "../utils/languagePreference";
+import {
+  APP_PREFERENCE_KEYS,
+  readStoredBooleanPreference,
+  writeStoredBooleanPreference,
+} from "../utils/appPreferences";
 
 /* ─── Types ─── */
 
@@ -69,6 +74,14 @@ export interface VoiceContextValue {
   /** Auto-listen: after AI finishes speaking, start listening again */
   autoListen: boolean;
   setAutoListen: (v: boolean) => void;
+
+  /** Text-to-speech playback */
+  ttsEnabled: boolean;
+  setTtsEnabled: (v: boolean) => void;
+
+  /** Reduce audio-heavy responses */
+  lowDataMode: boolean;
+  setLowDataMode: (v: boolean) => void;
 
   /** Session tracking */
   sessionId: string | null;
@@ -115,7 +128,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [transcript, setTranscript] = useState("");
   const [responseText, setResponseText] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
-  const [autoListen, setAutoListen] = useState(true);
+  const [autoListen, setAutoListenState] = useState(true);
+  const [ttsEnabled, setTtsEnabledState] = useState(true);
+  const [lowDataMode, setLowDataModeState] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [language, setLanguageState] = useState("hi-IN");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -132,16 +147,37 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    readStoredLanguagePreference()
-      .then((stored) => {
-        if (stored) setLanguageState(toVoiceLanguageCode(stored));
-      })
-      .catch(() => {});
+    Promise.all([
+      readStoredLanguagePreference().catch(() => null),
+      readStoredBooleanPreference(APP_PREFERENCE_KEYS.autoListen, true).catch(() => true),
+      readStoredBooleanPreference(APP_PREFERENCE_KEYS.ttsEnabled, true).catch(() => true),
+      readStoredBooleanPreference(APP_PREFERENCE_KEYS.lowDataMode, false).catch(() => false),
+    ]).then(([storedLanguage, storedAutoListen, storedTtsEnabled, storedLowDataMode]) => {
+      if (storedLanguage) setLanguageState(toVoiceLanguageCode(storedLanguage));
+      setAutoListenState(storedAutoListen);
+      setTtsEnabledState(storedTtsEnabled);
+      setLowDataModeState(storedLowDataMode);
+    });
   }, []);
 
   const setLanguage = useCallback((nextLanguage: string) => {
     setLanguageState(toVoiceLanguageCode(nextLanguage));
     writeStoredLanguagePreference(nextLanguage).catch(() => {});
+  }, []);
+
+  const setAutoListen = useCallback((nextValue: boolean) => {
+    setAutoListenState(nextValue);
+    writeStoredBooleanPreference(APP_PREFERENCE_KEYS.autoListen, nextValue).catch(() => {});
+  }, []);
+
+  const setTtsEnabled = useCallback((nextValue: boolean) => {
+    setTtsEnabledState(nextValue);
+    writeStoredBooleanPreference(APP_PREFERENCE_KEYS.ttsEnabled, nextValue).catch(() => {});
+  }, []);
+
+  const setLowDataMode = useCallback((nextValue: boolean) => {
+    setLowDataModeState(nextValue);
+    writeStoredBooleanPreference(APP_PREFERENCE_KEYS.lowDataMode, nextValue).catch(() => {});
   }, []);
 
   const processResult = useCallback(
@@ -256,6 +292,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       navigateRef,
       autoListen,
       setAutoListen,
+      ttsEnabled,
+      setTtsEnabled,
+      lowDataMode,
+      setLowDataMode,
       sessionId,
       setSessionId,
       language,
@@ -275,6 +315,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       processResult,
       clearVisualization,
       autoListen,
+      setAutoListen,
+      ttsEnabled,
+      setTtsEnabled,
+      lowDataMode,
+      setLowDataMode,
       sessionId,
       language,
       history,

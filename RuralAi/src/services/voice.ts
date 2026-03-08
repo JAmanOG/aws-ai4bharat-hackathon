@@ -326,6 +326,7 @@ export async function chatWithAudio(
     language_code?: string;
     session_id?: string;
     screen_context?: string;
+    generate_audio?: boolean;
   } = {}
 ): Promise<ChatResult> {
   const start = Date.now();
@@ -342,6 +343,7 @@ export async function chatWithAudio(
     language_code: langCode,
     session_id: opts.session_id,
     screen_context: opts.screen_context,
+    generate_audio: opts.generate_audio ?? true,
   });
 
   const elapsed = Date.now() - start;

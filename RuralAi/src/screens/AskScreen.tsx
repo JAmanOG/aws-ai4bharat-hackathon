@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   Easing,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -251,6 +252,9 @@ export default function AskScreen() {
     currentVisualization,
     lastCommand,
     language,
+    autoListen,
+    ttsEnabled,
+    lowDataMode,
     sessionId,
     processResult,
     clearVisualization,
@@ -407,30 +411,6 @@ export default function AskScreen() {
       orbitSpin.setValue(0);
     };
   }, [hasResult, orbitSpin]);
-
-  const handleResult = useCallback(
-    (result: ChatResult) => {
-      processResult(result);
-      navigateForHealthResult(result);
-
-      if (!result.audio_base64) {
-        if (mountedRef.current) setState("visualizing");
-        return;
-      }
-
-      if (mountedRef.current) setState("speaking");
-
-      voiceService
-        .playBase64Audio(result.audio_base64)
-        .then(() => {
-          if (mountedRef.current) setState("visualizing");
-        })
-        .catch(() => {
-          if (mountedRef.current) setState("visualizing");
-        });
-    },
-    [navigateForHealthResult, processResult, setState, voiceService]
-  );
 
   const buildVoiceScreenContext = useCallback(() => {
     const baseContext = screen.toPromptContext();
@@ -684,6 +664,34 @@ export default function AskScreen() {
     }
   }, [clearVisualization, hasMicPermission, selectedAttachment?.status, setState, voiceService]);
 
+  const handleResult = useCallback(
+    (result: ChatResult) => {
+      processResult(result);
+      navigateForHealthResult(result);
+
+      if (!ttsEnabled || !result.audio_base64) {
+        if (mountedRef.current) setState("visualizing");
+        return;
+      }
+
+      if (mountedRef.current) setState("speaking");
+
+      voiceService
+        .playBase64Audio(result.audio_base64)
+        .then(async () => {
+          if (autoListen && mountedRef.current) {
+            await startListening();
+            return;
+          }
+          if (mountedRef.current) setState("visualizing");
+        })
+        .catch(() => {
+          if (mountedRef.current) setState("visualizing");
+        });
+    },
+    [autoListen, navigateForHealthResult, processResult, setState, startListening, ttsEnabled, voiceService]
+  );
+
   const stopAndSend = useCallback(async () => {
     if (mountedRef.current) setState("processing");
 
@@ -706,12 +714,13 @@ export default function AskScreen() {
         language_code: language,
         session_id: sessionId ?? undefined,
         screen_context: buildVoiceScreenContext(),
+        generate_audio: ttsEnabled && !lowDataMode,
       });
       handleResult(result);
     } catch {
       if (mountedRef.current) setState("idle");
     }
-  }, [buildVoiceScreenContext, handleResult, language, sessionId, setState, voiceService]);
+  }, [buildVoiceScreenContext, handleResult, language, lowDataMode, sessionId, setState, ttsEnabled, voiceService]);
 
   const handleHeroPress = useCallback(async () => {
     if (state === "processing" || state === "speaking") return;
@@ -839,16 +848,26 @@ export default function AskScreen() {
                     </Text>
                   ) : null}
                 </View>
-
-                <Text style={styles.attachmentSummary}>
-                  {selectedAttachment.status === "error"
-                    ? selectedAttachment.error || "This attachment could not be analyzed."
-                    : selectedAttachment.analysisSummary || "Attachment selected. Ask a question about it after the analysis finishes."}
-                </Text>
-
-                <Text style={styles.attachmentHint}>{buildAttachmentHint(selectedAttachment)}</Text>
               </View>
             </View>
+
+            {selectedAttachment.mimeType !== "application/pdf" ? (
+              <View style={styles.attachmentPreviewWrap}>
+                <Image
+                  source={{ uri: selectedAttachment.uri }}
+                  style={styles.attachmentPreview}
+                  resizeMode="cover"
+                />
+              </View>
+            ) : null}
+
+            <Text style={styles.attachmentSummary}>
+              {selectedAttachment.status === "error"
+                ? selectedAttachment.error || "This attachment could not be analyzed."
+                : selectedAttachment.analysisSummary || "Attachment selected. Ask a question about it after the analysis finishes."}
+            </Text>
+
+            <Text style={styles.attachmentHint}>{buildAttachmentHint(selectedAttachment)}</Text>
           </View>
         ) : null}
 
@@ -1087,6 +1106,19 @@ const styles = StyleSheet.create({
   },
   attachmentCopy: {
     flex: 1,
+  },
+  attachmentPreviewWrap: {
+    marginTop: 12,
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: P.lineSoft,
+    backgroundColor: P.surfaceSoft,
+  },
+  attachmentPreview: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    backgroundColor: P.surfaceSoft,
   },
   attachmentTopRow: {
     flexDirection: "row",

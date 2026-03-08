@@ -19,14 +19,11 @@ import CommunityScreen from "../screens/CommunityScreen";
 // Voice-first system
 import { VoiceProvider, useVoice } from "../voice/VoiceContext";
 import { ScreenProvider } from "../context/ScreenContext";
-import VoiceOverlay from "../voice/VoiceOverlay";
 import { normalizeAppLanguage, readStoredLanguagePreference, writeStoredLanguagePreference } from "../utils/languagePreference";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
-const FULLSCREEN_HOME_ROUTES = new Set(["VoiceRooms", "VoiceRoom"]);
 const TAB_BAR_HIDDEN_HOME_ROUTES = new Set(["VoiceRooms", "VoiceRoom", "SymptomChecker"]);
-const DEDICATED_VOICE_ROUTES = new Set(["Ask", "SymptomChecker"]);
 
 function shouldHideTabBar(state: { index: number; routes: Array<any> }) {
   const activeRoute = state.routes[state.index];
@@ -50,12 +47,6 @@ function Tabs() {
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
-}
-
-function OverlayHost({ activeRouteName }: { activeRouteName: string | null }) {
-  const hideForVoiceRoom = activeRouteName ? FULLSCREEN_HOME_ROUTES.has(activeRouteName) : false;
-  const hideForDedicatedVoice = activeRouteName ? DEDICATED_VOICE_ROUTES.has(activeRouteName) : false;
-  return <VoiceOverlay hidden={hideForVoiceRoom || hideForDedicatedVoice} cleanupOnHide={hideForVoiceRoom} />;
 }
 
 /**
@@ -92,9 +83,9 @@ function NavigationWirer() {
 }
 
 /**
- * AuthenticatedApp — main app with VoiceOverlay on top.
+ * AuthenticatedApp — main app shell.
  */
-function AuthenticatedApp({ activeRouteName }: { activeRouteName: string | null }) {
+function AuthenticatedApp() {
   return (
     <View style={{ flex: 1 }}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -102,7 +93,6 @@ function AuthenticatedApp({ activeRouteName }: { activeRouteName: string | null 
         <Stack.Screen name="Community" component={CommunityScreen} />
       </Stack.Navigator>
       <NavigationWirer />
-      <OverlayHost activeRouteName={activeRouteName} />
     </View>
   );
 }
@@ -198,7 +188,7 @@ export default function RootNavigator({ activeRouteName = null }: { activeRouteN
   return (
     <ScreenProvider>
     <VoiceProvider>
-      <AuthenticatedApp activeRouteName={activeRouteName} />
+      <AuthenticatedApp />
     </VoiceProvider>
     </ScreenProvider>
   );
