@@ -17,7 +17,7 @@ import { useAuth } from "../contexts/AuthContext";
 import CommunityScreen from "../screens/CommunityScreen";
 
 // Voice-first system
-import { VoiceProvider, useVoice } from "../voice/VoiceContext";
+import { VoiceProvider, VoiceServiceProvider, useVoice } from "../voice/VoiceContext";
 import { ScreenProvider } from "../context/ScreenContext";
 import { normalizeAppLanguage, readStoredLanguagePreference, writeStoredLanguagePreference } from "../utils/languagePreference";
 import { withScreenMotion } from "../components/motion/ScreenMotion";
@@ -227,11 +227,13 @@ export default function RootNavigator({ activeRouteName = null }: { activeRouteN
   // Authenticated → show main app with voice overlay
   return (
     <ScreenProvider>
+    <VoiceServiceProvider>
     <VoiceProvider>
     <DemoProviderWithEngine>
       <AuthenticatedApp />
     </DemoProviderWithEngine>
     </VoiceProvider>
+    </VoiceServiceProvider>
     </ScreenProvider>
   );
 }

@@ -45,7 +45,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
   const isHoldRecordingRef = useRef(false);
   const isStartingRef = useRef(false);
   const pendingReleaseRef = useRef(false);
-  const startedFromLongPressRef = useRef(false);
+  const startedFromPressInRef = useRef(false);
   const originScreenContextRef = useRef("");
 
   useEffect(() => {
@@ -130,6 +130,9 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
     isHoldRecordingRef.current = false;
     pendingReleaseRef.current = false;
+
+    // Navigate to Ask now that the finger is released (safe for gesture system)
+    navigation.navigate(askRoute.name);
     if (mountedRef.current) setState("processing");
 
     try {
@@ -157,47 +160,51 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
     } catch {
       if (mountedRef.current) setState("idle");
     }
-  }, [handleResult, language, lowDataMode, screenCtx, sessionId, setState, ttsEnabled, voiceService]);
+  }, [askRoute.name, handleResult, language, lowDataMode, navigation, screenCtx, sessionId, setState, ttsEnabled, voiceService]);
 
   const startHoldRecording = useCallback(async () => {
     if (voiceState === "processing" || voiceState === "speaking" || isStartingRef.current || isHoldRecordingRef.current) {
       return;
     }
 
-    startedFromLongPressRef.current = true;
+    startedFromPressInRef.current = true;
+    isStartingRef.current = true;
+    pendingReleaseRef.current = false;
     originScreenContextRef.current = screenCtx.toPromptContext();
 
     const hasPermission = await ensureMicPermission();
     if (!hasPermission) {
-      startedFromLongPressRef.current = false;
+      startedFromPressInRef.current = false;
+      isStartingRef.current = false;
+      pendingReleaseRef.current = false;
       return;
     }
 
     clearVisualization();
-    navigation.navigate(askRoute.name);
 
     try {
-      isStartingRef.current = true;
       await voiceService.startRecording();
       isStartingRef.current = false;
       isHoldRecordingRef.current = true;
       if (mountedRef.current) setState("listening");
+      // NOTE: Do NOT navigate here — navigating while the finger is held
+      // causes a re-render that kills the Pressable gesture, so onPressOut
+      // never fires (or fires immediately) and recording is lost.
+      // Navigation happens in stopAndSendHoldRecording instead.
 
       if (pendingReleaseRef.current) {
         void stopAndSendHoldRecording();
       }
     } catch {
+      startedFromPressInRef.current = false;
       isStartingRef.current = false;
       isHoldRecordingRef.current = false;
       pendingReleaseRef.current = false;
       if (mountedRef.current) setState("idle");
     }
   }, [
-    askRoute.name,
     clearVisualization,
     ensureMicPermission,
-    navigation,
-    screenCtx,
     setState,
     stopAndSendHoldRecording,
     voiceService,
@@ -205,18 +212,17 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
   ]);
 
   const handleAskPress = useCallback(() => {
-    if (startedFromLongPressRef.current) {
-      startedFromLongPressRef.current = false;
+    if (startedFromPressInRef.current) {
+      startedFromPressInRef.current = false;
       return;
     }
     pressTab(askRoute.name, askRoute.key, askFocused);
   }, [askFocused, askRoute.key, askRoute.name, pressTab]);
 
   const handleAskPressOut = useCallback(() => {
-    if (!startedFromLongPressRef.current && !isHoldRecordingRef.current && !isStartingRef.current) {
+    if (!isHoldRecordingRef.current && !isStartingRef.current) {
       return;
     }
-    startedFromLongPressRef.current = false;
     void stopAndSendHoldRecording();
   }, [stopAndSendHoldRecording]);
 
@@ -241,9 +247,8 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
         <View style={styles.askSlot}>
           <Pressable
-            delayLongPress={140}
             onPress={handleAskPress}
-            onLongPress={() => {
+            onPressIn={() => {
               void startHoldRecording();
             }}
             onPressOut={handleAskPressOut}

@@ -26,7 +26,7 @@ import {
   type VisualizationCard,
   type VoiceCommand,
 } from "./VoiceCommandEngine";
-import type { ChatResult } from "../services/voice";
+import { type ChatResult, useVoiceServiceInternal, VoiceServiceContext } from "../services/voice";
 import {
   readStoredLanguagePreference,
   toVoiceLanguageCode,
@@ -119,6 +119,15 @@ export function useVoice(): VoiceContextValue {
 }
 
 /* ─── Provider ─── */
+
+export function VoiceServiceProvider({ children }: { children: React.ReactNode }) {
+  const service = useVoiceServiceInternal();
+  return (
+    <VoiceServiceContext.Provider value={service}>
+      {children}
+    </VoiceServiceContext.Provider>
+  );
+}
 
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<VoiceState>("idle");

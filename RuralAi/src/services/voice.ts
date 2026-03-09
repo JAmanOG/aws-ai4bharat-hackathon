@@ -16,7 +16,7 @@ import {
 } from "expo-audio";
 
 import api from "./api";
-import { useRef } from "react";
+import React, { useRef } from "react";
 import { logger } from "../utils/logger";
 
 /* ────────────────────────────────────────────── */
@@ -137,7 +137,7 @@ export interface SessionTurn {
 /*  Voice Hook (Recording + Playback)             */
 /* ────────────────────────────────────────────── */
 
-export function useVoiceService() {
+export function useVoiceServiceInternal() {
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const player = useAudioPlayer();
@@ -155,6 +155,10 @@ export function useVoiceService() {
 
   async function _startRecording(): Promise<void> {
     try {
+      await AudioModule.setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
       await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
       recorder.record();
       isRecordingRef.current = true;
@@ -261,6 +265,16 @@ export function useVoiceService() {
     synthesize,
     translateText,
   };
+}
+
+export type VoiceServiceType = ReturnType<typeof useVoiceServiceInternal>;
+
+export const VoiceServiceContext = React.createContext<VoiceServiceType | null>(null);
+
+export function useVoiceService(): VoiceServiceType {
+  const ctx = React.useContext(VoiceServiceContext);
+  if (!ctx) throw new Error("useVoiceService must be used within a VoiceServiceProvider");
+  return ctx;
 }
 
 /* ────────────────────────────────────────────── */
