@@ -20,10 +20,24 @@ import CommunityScreen from "../screens/CommunityScreen";
 import { VoiceProvider, useVoice } from "../voice/VoiceContext";
 import { ScreenProvider } from "../context/ScreenContext";
 import { normalizeAppLanguage, readStoredLanguagePreference, writeStoredLanguagePreference } from "../utils/languagePreference";
+import { withScreenMotion } from "../components/motion/ScreenMotion";
+
+// Demo mode
+import { DemoProviderWithEngine } from "../demo/DemoContext";
+import DemoRunner from "../demo/DemoRunner";
+import DemoOverlay from "../demo/DemoOverlay";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const TAB_BAR_HIDDEN_HOME_ROUTES = new Set(["VoiceRooms", "VoiceRoom", "SymptomChecker"]);
+const SHOW_DEMO_OVERLAY = false;
+
+const AnimatedHomeStack = withScreenMotion(HomeStack);
+const AnimatedAskScreen = withScreenMotion(AskScreen);
+const AnimatedProfileScreen = withScreenMotion(ProfileScreen);
+const AnimatedCommunityScreen = withScreenMotion(CommunityScreen);
+const AnimatedLoginScreen = withScreenMotion(LoginScreen);
+const AnimatedLanguageSelectScreen = withScreenMotion(LanguageSelectScreen);
 
 function shouldHideTabBar(state: { index: number; routes: Array<any> }) {
   const activeRoute = state.routes[state.index];
@@ -42,9 +56,9 @@ function Tabs() {
       screenOptions={{ headerShown: false }}
       tabBar={(props) => (shouldHideTabBar(props.state) ? null : <CustomTabBar {...props} />)}
     >
-      <Tab.Screen name="Home" component={HomeStack} />
-      <Tab.Screen name="Ask" component={AskScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home" component={AnimatedHomeStack} />
+      <Tab.Screen name="Ask" component={AnimatedAskScreen} />
+      <Tab.Screen name="Profile" component={AnimatedProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -88,11 +102,19 @@ function NavigationWirer() {
 function AuthenticatedApp() {
   return (
     <View style={{ flex: 1 }}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Main" component={Tabs} />
-        <Stack.Screen name="Community" component={CommunityScreen} />
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+          animationDuration: 220,
+        }}
+      >
+      <Stack.Screen name="Main" component={Tabs} />
+      <Stack.Screen name="Community" component={AnimatedCommunityScreen} />
       </Stack.Navigator>
       <NavigationWirer />
+      <DemoRunner />
+      {SHOW_DEMO_OVERLAY ? <DemoOverlay /> : null}
     </View>
   );
 }
@@ -159,7 +181,13 @@ export default function RootNavigator({ activeRouteName = null }: { activeRouteN
   // Show splash while loading auth state or during splash timer
   if (isLoading || showSplash || !languageReady) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: "fade",
+          animationDuration: 200,
+        }}
+      >
         <Stack.Screen name="Splash" component={SplashScreen} />
       </Stack.Navigator>
     );
@@ -167,9 +195,15 @@ export default function RootNavigator({ activeRouteName = null }: { activeRouteN
 
   if (!languageJourneyDone) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+          animationDuration: 220,
+        }}
+      >
         <Stack.Screen name="LanguageSelect">
-          {() => <LanguageSelectScreen initialLanguage={initialLanguage} onContinue={handleLanguageContinue} />}
+          {() => <AnimatedLanguageSelectScreen initialLanguage={initialLanguage} onContinue={handleLanguageContinue} />}
         </Stack.Screen>
       </Stack.Navigator>
     );
@@ -178,8 +212,14 @@ export default function RootNavigator({ activeRouteName = null }: { activeRouteN
   // Not authenticated → show Login screen
   if (!isAuthenticated) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+          animationDuration: 220,
+        }}
+      >
+        <Stack.Screen name="Login" component={AnimatedLoginScreen} />
       </Stack.Navigator>
     );
   }
@@ -188,7 +228,9 @@ export default function RootNavigator({ activeRouteName = null }: { activeRouteN
   return (
     <ScreenProvider>
     <VoiceProvider>
+    <DemoProviderWithEngine>
       <AuthenticatedApp />
+    </DemoProviderWithEngine>
     </VoiceProvider>
     </ScreenProvider>
   );

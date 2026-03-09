@@ -18,16 +18,19 @@
  *                    ↓
  *               Sarvam AI
  *
- * Four MCP Tools:
+ * Five MCP Tools:
  *   1. domain_agent    – AI Agents with domain logic (Sarvam-M, fast & free)
- *   2. weather_lookup  – Live weather + AQI lookup
- *   3. deep_reasoning  – AWS Bedrock Claude (complex / sensitive queries)
- *   4. fallback_llm    – Google Gemini (last resort)
+ *   2. marketplace_tool – Voice-first market workflow execution
+ *   3. weather_lookup  – Live weather + AQI lookup
+ *   4. deep_reasoning  – AWS Bedrock Claude (complex / sensitive queries)
+ *   5. fallback_llm    – Google Gemini (last resort)
  *
  * Tool Selection Rules:
  *   live weather / AQI    → weather_lookup
+ *   market workflows      → marketplace_tool
+ *   health platform flows → domain_agent (health agent)
  *   complex queries       → deep_reasoning (Claude)
- *   health queries        → deep_reasoning (Claude, safety)
+ *   other health queries  → deep_reasoning (Claude, safety)
  *   schemes moderate+     → deep_reasoning (Claude, accuracy)
  *   simple/moderate       → domain_agent (Sarvam-M)
  *
@@ -42,6 +45,7 @@
 const agentRegistry = require('./agents');
 const llm = require('./llm');
 const marketplaceTool = require('./marketplace-tool');
+const nova = require('./nova');
 const weatherAqi = require('./weather-aqi');
 
 const HEALTH_AGENT_INTENTS = new Set([
@@ -60,6 +64,30 @@ const MARKETPLACE_TOOL_INTENTS = new Set([
     'listing_management',
     'contact_buyer',
 ]);
+
+const HIGH_CONFIDENCE_HEURISTIC_INTENTS = new Set([
+    'weather_info',
+    'air_quality_info',
+    'medical_report_analysis',
+    'health_platform_help',
+    'symptom_guidance',
+    'request_video',
+    'request_article',
+    'request_course',
+    'learning_content',
+    'crop_prices',
+    'loan_info',
+    'insurance_claim',
+    'scheme_eligibility',
+    'create_listing',
+    'listing_management',
+    'contact_buyer',
+    'orders',
+    'buyer_connection',
+]);
+
+const VALID_DOMAINS = ['agriculture', 'market', 'schemes', 'health', 'knowledge', 'general'];
+const VALID_COMPLEXITIES = ['simple', 'moderate', 'complex'];
 
 /* ─── Structured logger ─── */
 function log(level, msg, data = {}) {
@@ -151,6 +179,98 @@ const DOMAIN_CONTEXT = {
     knowledge: 'You are a learning resource assistant for rural Indian farmers. Help find educational videos, articles, courses, and training content. Reference government training portals (ICAR, KVK, PMKVY) when relevant. Always provide actual resource links and titles.',
 };
 
+function normalizeDomain(domain) {
+    const normalized = String(domain || '').trim().toLowerCase();
+    return VALID_DOMAINS.includes(normalized) ? normalized : 'general';
+}
+
+function normalizeComplexity(complexity) {
+    const normalized = String(complexity || '').trim().toLowerCase();
+    return VALID_COMPLEXITIES.includes(normalized) ? normalized : 'simple';
+}
+
+function getLatestUserText(messages = []) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+        if (messages[i]?.role === 'user' && typeof messages[i].content === 'string') {
+            return messages[i].content;
+        }
+    }
+    return '';
+}
+
+function shouldUseHeuristicRoute(current, heuristic) {
+    if (!heuristic || heuristic.intent === 'general_question') {
+        return false;
+    }
+
+    if (current.intent === heuristic.intent && current.domain === heuristic.domain) {
+        return false;
+    }
+
+    const currentIntentDomain = agentRegistry.resolveDomain(current.intent);
+    const currentIsWeak = current.intent === 'unknown'
+        || current.intent === 'general_question'
+        || (current.domain === 'general' && currentIntentDomain === 'general');
+
+    if (currentIsWeak) {
+        return true;
+    }
+
+    if (HIGH_CONFIDENCE_HEURISTIC_INTENTS.has(heuristic.intent)) {
+        return true;
+    }
+
+    return heuristic.domain !== 'general' && current.domain === 'general';
+}
+
+function normalizeRoutingParams(params = {}) {
+    const messages = Array.isArray(params.messages) ? params.messages : [];
+    const latestUserText = getLatestUserText(messages);
+    const normalized = {
+        ...params,
+        domain: normalizeDomain(params.domain),
+        intent: String(params.intent || '').trim() || 'unknown',
+        entities: params.entities && typeof params.entities === 'object' ? { ...params.entities } : {},
+        complexity: normalizeComplexity(params.complexity),
+        messages,
+        screenContext: params.screenContext || '',
+    };
+    const reasons = [];
+
+    const intentDomain = agentRegistry.resolveDomain(normalized.intent);
+    if (intentDomain !== 'general' && normalized.domain !== intentDomain) {
+        normalized.domain = intentDomain;
+        reasons.push(`intent-domain:${normalized.intent}`);
+    }
+
+    const heuristic = latestUserText ? nova.basicRoute(latestUserText, 'unknown') : null;
+    if (shouldUseHeuristicRoute(normalized, heuristic)) {
+        normalized.domain = heuristic.domain;
+        normalized.intent = heuristic.intent;
+        if (heuristic.entities?.location && !normalized.entities.location) {
+            normalized.entities.location = heuristic.entities.location;
+        }
+        reasons.push(`text-heuristic:${heuristic.intent}`);
+    } else if (
+        heuristic?.entities?.location
+        && !normalized.entities.location
+        && (normalized.intent === 'weather_info' || normalized.intent === 'air_quality_info')
+    ) {
+        normalized.entities.location = heuristic.entities.location;
+        reasons.push('text-location');
+    }
+
+    if ((normalized.intent === 'weather_info' || normalized.intent === 'air_quality_info') && normalized.domain !== 'general') {
+        normalized.domain = 'general';
+        reasons.push('weather-domain:general');
+    }
+
+    return {
+        ...normalized,
+        normalizationReason: reasons.join(', ') || null,
+    };
+}
+
 /* ═══════════════════════════════════════════════════════ */
 /*  MCP Tool Selection                                     */
 /* ═══════════════════════════════════════════════════════ */
@@ -162,6 +282,11 @@ const DOMAIN_CONTEXT = {
  * @returns {{ tool: string, reason: string }}
  */
 function selectTool({ domain, complexity, intent }) {
+    const normalized = normalizeRoutingParams({ domain, complexity, intent });
+    domain = normalized.domain;
+    complexity = normalized.complexity;
+    intent = normalized.intent;
+
     // 1. Live weather / AQI always uses the live tool first
     if (intent === 'weather_info' || intent === 'air_quality_info') {
         return { tool: 'weather_lookup', reason: 'Live weather/AQI request → weather lookup tool' };
@@ -262,12 +387,19 @@ async function executeMarketplaceTool(params) {
         entityKeys: Object.keys(entities || {}),
     });
 
-    return marketplaceTool.handleMarketplaceRequest({
+    const result = await marketplaceTool.handleMarketplaceRequest({
         intent,
         entities: entities || {},
         messages: messages || [],
         userId,
     });
+
+    return {
+        ...result,
+        route: 'marketplace_tool',
+        agent: 'marketplace-workflow',
+        tool: 'marketplace_tool',
+    };
 }
 
 /**
@@ -373,15 +505,26 @@ async function _executeWithFallback(primaryFn, fallback1Fn, fallback2Fn, primary
  * @returns {Promise<{response: string, provider: string, route: string, agent: string, tool: string}>}
  */
 async function routeToAgent(params) {
-    const { domain, intent, entities, complexity, messages, userId, screenContext } = params;
+    const normalizedParams = normalizeRoutingParams(params);
+    const {
+        domain,
+        intent,
+        entities,
+        complexity,
+        messages,
+        userId,
+        screenContext,
+        normalizationReason,
+    } = normalizedParams;
 
     // ── Step 1: MCP Tool Selection ──
-    const selected = selectTool({ domain, complexity, intent });
+    const selected = selectTool(normalizedParams);
     log('info', `🎯 Tool selected: ${selected.tool}`, {
         reason: selected.reason,
         domain,
         complexity,
         intent,
+        normalizationReason,
         contextMessages: messages.length,
     });
 
@@ -447,17 +590,19 @@ async function routeToAgent(params) {
  * @returns {Promise<object>}
  */
 async function executeTool(toolName, input, messages) {
+    const normalizedInput = normalizeRoutingParams({ ...input, messages });
+
     switch (toolName) {
         case 'domain_agent':
-            return executeDomainAgent({ ...input, messages });
+            return executeDomainAgent(normalizedInput);
         case 'marketplace_tool':
-            return executeMarketplaceTool({ ...input, messages });
+            return executeMarketplaceTool(normalizedInput);
         case 'weather_lookup':
-            return executeWeatherLookup({ ...input, messages });
+            return executeWeatherLookup(normalizedInput);
         case 'deep_reasoning':
-            return executeDeepReasoning(messages, input.domain, input.intent);
+            return executeDeepReasoning(normalizedInput.messages, normalizedInput.domain, normalizedInput.intent);
         case 'fallback_llm':
-            return executeFallback(messages, input.domain);
+            return executeFallback(normalizedInput.messages, normalizedInput.domain);
         default:
             throw new Error(`[MCP] Unknown tool: ${toolName}`);
     }
@@ -466,6 +611,7 @@ async function executeTool(toolName, input, messages) {
 module.exports = {
     routeToAgent,
     selectTool,
+    normalizeRoutingParams,
     executeTool,
     TOOL_DEFINITIONS,
     DOMAIN_CONTEXT,

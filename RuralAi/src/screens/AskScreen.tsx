@@ -28,6 +28,7 @@ import {
   type VisionAttachmentAnalysis,
 } from "../services/api";
 import { askDomains, ruralPalette as P } from "../theme/ruralPalette";
+import { useDemo } from "../demo/DemoContext";
 const HERO_SIZE = 120;
 
 type AskAttachmentMimeType = "application/pdf" | "image/jpeg" | "image/png";
@@ -260,6 +261,7 @@ export default function AskScreen() {
     clearVisualization,
   } = useVoice();
 
+  const { isActive: isDemoActive, startDemo } = useDemo();
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [selectedAttachment, setSelectedAttachment] = useState<AskAttachment | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
@@ -744,6 +746,12 @@ export default function AskScreen() {
             <Image source={APP_LOGO} style={styles.brandLogo} resizeMode="contain" />
             <Text style={styles.brand}>{APP_NAME_UPPER}</Text>
           </View>
+          {!isDemoActive && (
+            <Pressable style={styles.demoBtnAsk} onPress={startDemo} hitSlop={8}>
+              <Ionicons name="videocam" size={14} color="#EF4444" />
+              <Text style={styles.demoBtnAskText}>DEMO</Text>
+            </Pressable>
+          )}
           <Pressable style={styles.topIconBtn} onPress={openAlerts}>
             <Ionicons name="notifications" size={24} color={P.mutedDark} />
           </Pressable>
@@ -975,6 +983,23 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: "center",
     justifyContent: "center",
+  },
+  demoBtnAsk: {
+    position: "absolute",
+    right: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "rgba(239,68,68,0.10)",
+  },
+  demoBtnAskText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#EF4444",
+    letterSpacing: 0.6,
   },
   brandLockup: {
     flexDirection: "row",

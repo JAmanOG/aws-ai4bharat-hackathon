@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -17,6 +17,7 @@ import {
   useInsuranceModel,
 } from "../components/EconomicsResponses";
 import { useScreenContext } from "../context/ScreenContext";
+import { useDemoScreenActions } from "../demo/DemoActions";
 import { economicsApi } from "../services/api";
 import { ruralPalette as P } from "../theme/ruralPalette";
 
@@ -31,6 +32,17 @@ export default function InsuranceClaimsScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const model = useInsuranceModel();
+
+  const demoActions = useMemo(
+    () => ({
+      showForm: () => setShowForm(true),
+      hideForm: () => setShowForm(false),
+      toggleForm: () => setShowForm((value) => !value),
+    }),
+    [],
+  );
+
+  useDemoScreenActions("InsuranceClaims", demoActions);
 
   useEffect(() => {
     screen.update({

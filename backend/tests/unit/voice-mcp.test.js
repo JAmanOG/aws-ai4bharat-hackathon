@@ -16,7 +16,23 @@ jest.mock('../../services/agents', () => ({
     handle: mockAgentHandle,
   })),
   resolveDomain: jest.fn((intent) => {
-    const map = { crop_advice: 'agriculture', get_prices: 'market', greeting: 'general' };
+    const map = {
+      crop_advice: 'agriculture',
+      get_prices: 'market',
+      crop_prices: 'market',
+      create_listing: 'market',
+      listing_management: 'market',
+      contact_buyer: 'market',
+      orders: 'market',
+      scheme_eligibility: 'schemes',
+      symptom_guidance: 'health',
+      medical_report_analysis: 'health',
+      health_platform_help: 'health',
+      weather_info: 'general',
+      air_quality_info: 'general',
+      request_video: 'knowledge',
+      greeting: 'general',
+    };
     return map[intent] || 'general';
   }),
 }));
@@ -51,7 +67,16 @@ jest.mock('../../services/weather-aqi', () => ({
   })),
 }));
 
+jest.mock('../../services/marketplace-tool', () => ({
+  handleMarketplaceRequest: jest.fn(async () => ({
+    response: 'Marketplace workflow result',
+    provider: 'marketplace-tool',
+    metadata: { domain: 'market' },
+  })),
+}));
+
 const mcp = require('../../services/mcp');
+const marketplaceTool = require('../../services/marketplace-tool');
 const weatherAqi = require('../../services/weather-aqi');
 
 describe('MCP Layer', () => {
@@ -80,6 +105,28 @@ describe('MCP Layer', () => {
     test('defines fallback_llm tool', () => {
       const tool = mcp.TOOL_DEFINITIONS.find(t => t.name === 'fallback_llm');
       expect(tool).toBeDefined();
+    });
+  });
+
+  describe('selectTool', () => {
+    test('aligns mismatched market workflow intent to marketplace_tool', () => {
+      const result = mcp.selectTool({
+        domain: 'general',
+        intent: 'create_listing',
+        complexity: 'simple',
+      });
+
+      expect(result.tool).toBe('marketplace_tool');
+    });
+
+    test('aligns mismatched weather intent to live weather tool', () => {
+      const result = mcp.selectTool({
+        domain: 'market',
+        intent: 'weather_info',
+        complexity: 'simple',
+      });
+
+      expect(result.tool).toBe('weather_lookup');
     });
   });
 
@@ -166,6 +213,36 @@ describe('MCP Layer', () => {
       expect(result.tool).toBe('domain_agent');
       expect(result.route).toBe('agent');
       expect(mockAgentHandle).toHaveBeenCalledTimes(1);
+    });
+
+    test('corrects weather false positives before tool selection', async () => {
+      const result = await mcp.routeToAgent({
+        domain: 'market',
+        intent: 'crop_prices',
+        messages: [{ role: 'user', content: 'What is the weather in Pune today?' }],
+        entities: {},
+        complexity: 'simple',
+        userId: 'u-1',
+      });
+
+      expect(weatherAqi.getWeatherAndAqi).toHaveBeenCalledTimes(1);
+      expect(result.tool).toBe('weather_lookup');
+      expect(result.route).toBe('weather_lookup');
+    });
+
+    test('corrects weak general intents into marketplace workflow routing', async () => {
+      const result = await mcp.routeToAgent({
+        domain: 'general',
+        intent: 'unknown',
+        messages: [{ role: 'user', content: 'Please create a listing for my onion crop' }],
+        entities: { crop: 'onion' },
+        complexity: 'simple',
+        userId: 'u-1',
+      });
+
+      expect(marketplaceTool.handleMarketplaceRequest).toHaveBeenCalledTimes(1);
+      expect(result.tool).toBe('marketplace_tool');
+      expect(result.provider).toBe('marketplace-tool');
     });
 
     test('routes complex health symptom guidance to domain agent before deep reasoning', async () => {

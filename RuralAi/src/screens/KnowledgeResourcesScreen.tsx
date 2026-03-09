@@ -23,6 +23,7 @@ import {
   useKnowledgeResourceSearch,
 } from "../hooks/useData";
 import { buildKnowledgeContent, type KnowledgeResource } from "../utils/knowledgeResources";
+import { useDemoScreenActions } from "../demo/DemoActions";
 
 const palette = {
   bg: "#F5EEDD",
@@ -63,12 +64,31 @@ export default function KnowledgeResourcesScreen() {
     setLanguage(nextLanguage);
   }, [route.params?.initialTab, route.params?.query, route.params?.language]);
 
+  const demoActions = useMemo(
+    () => ({
+      showAll: () => setTab("all"),
+      showVideos: () => setTab("videos"),
+      showArticles: () => setTab("articles"),
+      updateSearch: (payload?: Record<string, any>) => {
+        const nextQuery = normalizeQuery(payload?.query);
+        const nextLanguage = normalizeLanguage(payload?.language);
+        if (!nextQuery) return;
+        setQueryInput(nextQuery);
+        setQuery(nextQuery);
+        setLanguage(nextLanguage);
+      },
+    }),
+    [],
+  );
+
+  useDemoScreenActions("KnowledgeResources", demoActions);
+
   const content = useMemo(
     () =>
       buildKnowledgeContent({
         govtCourses: govtList,
         externalSearch: liveResults.data,
-        strictExternalOnly: true,
+        strictRealDataOnly: true,
       }),
     [govtList, liveResults.data],
   );
@@ -178,7 +198,7 @@ export default function KnowledgeResourcesScreen() {
             ) : liveResults.loading ? null : (
               <EmptyStateCard
                 title={liveResults.error ? "Live streams unavailable" : "No live streams found"}
-                subtitle={liveResults.error ? "Could not fetch live results. Try again in a moment." : `No active livestreams matched "${query}".`}
+                subtitle={liveResults.error ? "Could not fetch live results. Try again in a moment." : `No active livestreams matched "${query}". This screen only shows real live sessions.`}
                 onPress={liveResults.refresh}
                 actionLabel={liveResults.error ? "Try Again" : undefined}
               />
@@ -205,7 +225,7 @@ export default function KnowledgeResourcesScreen() {
             ) : liveResults.loading ? null : (
               <EmptyStateCard
                 title={liveResults.error ? "Videos unavailable" : "No videos found"}
-                subtitle={liveResults.error ? "Could not fetch video results. Try again in a moment." : `No YouTube videos matched "${query}".`}
+                subtitle={liveResults.error ? "Could not fetch video results. Try again in a moment." : `No YouTube videos matched "${query}". Only real search results are shown here.`}
                 onPress={liveResults.refresh}
                 actionLabel={liveResults.error ? "Try Again" : undefined}
               />
@@ -232,7 +252,7 @@ export default function KnowledgeResourcesScreen() {
             ) : liveResults.loading ? null : (
               <EmptyStateCard
                 title={liveResults.error ? "Articles unavailable" : "No articles found"}
-                subtitle={liveResults.error ? "Could not fetch article sources. Try again in a moment." : `No article sources matched "${query}".`}
+                subtitle={liveResults.error ? "Could not fetch article sources. Try again in a moment." : `No article sources matched "${query}". Only real article links are shown here.`}
                 onPress={liveResults.refresh}
                 actionLabel={liveResults.error ? "Try Again" : undefined}
               />

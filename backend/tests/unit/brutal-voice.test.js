@@ -225,9 +225,9 @@ describe('MCP – selectTool routing rules', () => {
     expect(s.tool).toBe('deep_reasoning');
   });
 
-  test('health symptom guidance → deep_reasoning', () => {
+  test('health symptom guidance → domain_agent', () => {
     const s = mcp.selectTool({ domain: 'health', complexity: 'simple', intent: 'symptom_guidance' });
-    expect(s.tool).toBe('deep_reasoning');
+    expect(s.tool).toBe('domain_agent');
   });
 
   test('health report insights → domain_agent', () => {
@@ -269,16 +269,27 @@ describe('MCP – selectTool routing rules', () => {
     const s = mcp.selectTool({ domain: 'general', complexity: 'moderate', intent: 'air_quality_info' });
     expect(s.tool).toBe('weather_lookup');
   });
+
+  test('create_listing intent wins over wrong domain labels', () => {
+    const s = mcp.selectTool({ domain: 'general', complexity: 'simple', intent: 'create_listing' });
+    expect(s.tool).toBe('marketplace_tool');
+  });
+
+  test('weather intent wins over wrong domain labels', () => {
+    const s = mcp.selectTool({ domain: 'market', complexity: 'simple', intent: 'weather_info' });
+    expect(s.tool).toBe('weather_lookup');
+  });
 });
 
 describe('MCP – TOOL_DEFINITIONS', () => {
-  test('has exactly 4 MCP tools', () => {
-    expect(mcp.TOOL_DEFINITIONS).toHaveLength(4);
+  test('has exactly 5 MCP tools', () => {
+    expect(mcp.TOOL_DEFINITIONS).toHaveLength(5);
   });
 
-  test('tool names include domain_agent, weather_lookup, deep_reasoning, fallback_llm', () => {
+  test('tool names include domain_agent, marketplace_tool, weather_lookup, deep_reasoning, fallback_llm', () => {
     const names = mcp.TOOL_DEFINITIONS.map(t => t.name);
     expect(names).toContain('domain_agent');
+    expect(names).toContain('marketplace_tool');
     expect(names).toContain('weather_lookup');
     expect(names).toContain('deep_reasoning');
     expect(names).toContain('fallback_llm');
@@ -294,11 +305,12 @@ describe('MCP – TOOL_DEFINITIONS', () => {
 });
 
 describe('MCP – DOMAIN_CONTEXT', () => {
-  test('has context for all 5 domains', () => {
+  test('has context for all 6 domains', () => {
     expect(mcp.DOMAIN_CONTEXT.agriculture).toBeDefined();
     expect(mcp.DOMAIN_CONTEXT.market).toBeDefined();
     expect(mcp.DOMAIN_CONTEXT.schemes).toBeDefined();
     expect(mcp.DOMAIN_CONTEXT.health).toBeDefined();
+    expect(mcp.DOMAIN_CONTEXT.knowledge).toBeDefined();
     expect(mcp.DOMAIN_CONTEXT.general).toBeDefined();
   });
 

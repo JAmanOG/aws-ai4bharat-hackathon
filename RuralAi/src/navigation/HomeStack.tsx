@@ -31,6 +31,7 @@ import LivelihoodScreen from "../screens/LivelihoodScreen";
 import VoiceRoomsScreen from "../screens/VoiceRoomsScreen";
 import VoiceRoomScreen from "../screens/VoiceRoomScreen";
 import KnowledgeResourcesScreen from "../screens/KnowledgeResourcesScreen";
+import { withScreenMotion } from "../components/motion/ScreenMotion";
 
 export type HomeStackParamList = {
   HomeMain: undefined;
@@ -68,40 +69,79 @@ export type HomeStackParamList = {
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
 
+const AnimatedHomeScreen = withScreenMotion(HomeScreen);
+const AnimatedModuleScreen = withScreenMotion(ModuleScreen);
+const AnimatedActionScreen = withScreenMotion(ActionScreen);
+const AnimatedMarketPricesScreen = withScreenMotion(MarketPricesScreen);
+const AnimatedSchemesListScreen = withScreenMotion(SchemesListScreen);
+const AnimatedSchemeDetailScreen = withScreenMotion(SchemeDetailScreen);
+const AnimatedSymptomCheckerScreen = withScreenMotion(SymptomCheckerScreen);
+const AnimatedAlertsScreen = withScreenMotion(AlertsScreen);
+const AnimatedAgriMarketScreen = withScreenMotion(AgriMarketScreen);
+const AnimatedKnowledgeDashboardScreen = withScreenMotion(KnowledgeDashboardScreen);
+const AnimatedSavingsNudgeScreen = withScreenMotion(SavingsNudgeScreen);
+const AnimatedEligibilityScreen = withScreenMotion(EligibilityScreen);
+const AnimatedSyncStatusScreen = withScreenMotion(SyncStatusScreen);
+const AnimatedSavedScreen = withScreenMotion(SavedScreen);
+const AnimatedSavedDetailScreen = withScreenMotion(SavedDetailScreen);
+const AnimatedBargainingGroupsScreen = withScreenMotion(BargainingGroupsScreen);
+const AnimatedOrdersScreen = withScreenMotion(OrdersScreen);
+const AnimatedLogisticsScreen = withScreenMotion(LogisticsScreen);
+const AnimatedCourseDetailScreen = withScreenMotion(CourseDetailScreen);
+const AnimatedPeerGroupDetailScreen = withScreenMotion(PeerGroupDetailScreen);
+const AnimatedInsuranceClaimsScreen = withScreenMotion(InsuranceClaimsScreen);
+const AnimatedPracticeLogScreen = withScreenMotion(PracticeLogScreen);
+const AnimatedCreateListingScreen = withScreenMotion(CreateListingScreen);
+const AnimatedVoiceDrivenScreen = withScreenMotion(VoiceDrivenScreen);
+const AnimatedBusinessDirectoryScreen = withScreenMotion(BusinessDirectoryScreen);
+const AnimatedGovtPortalsScreen = withScreenMotion(GovtPortalsScreen);
+const AnimatedHealthDashboardScreen = withScreenMotion(HealthDashboardScreen);
+const AnimatedLivelihoodScreen = withScreenMotion(LivelihoodScreen);
+const AnimatedKnowledgeResourcesScreen = withScreenMotion(KnowledgeResourcesScreen);
+const AnimatedVoiceRoomsScreen = withScreenMotion(VoiceRoomsScreen);
+const AnimatedVoiceRoomScreen = withScreenMotion(VoiceRoomScreen);
+
 export default function HomeStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} />
-      <Stack.Screen name="Module" component={ModuleScreen} />
-      <Stack.Screen name="MarketPrices" component={MarketPricesScreen} />
-      <Stack.Screen name="SchemesList" component={SchemesListScreen} />
-      <Stack.Screen name="SchemeDetail" component={SchemeDetailScreen} />
-      <Stack.Screen name="SymptomChecker" component={SymptomCheckerScreen} />
-      <Stack.Screen name="Alerts" component={AlertsScreen} />
-      <Stack.Screen name="Action" component={ActionScreen} />
-      <Stack.Screen name="AgriMarket" component={AgriMarketScreen} />
-      <Stack.Screen name="KnowledgeDashboard" component={KnowledgeDashboardScreen} />
-      <Stack.Screen name="SavingsNudge" component={SavingsNudgeScreen} />
-      <Stack.Screen name="Eligibility" component={EligibilityScreen} />
-      <Stack.Screen name="SyncStatus" component={SyncStatusScreen} />
-      <Stack.Screen name="Saved" component={SavedScreen} />
-      <Stack.Screen name="SavedDetail" component={SavedDetailScreen} />
-      <Stack.Screen name="BargainingGroups" component={BargainingGroupsScreen} />
-      <Stack.Screen name="Orders" component={OrdersScreen} />
-      <Stack.Screen name="Logistics" component={LogisticsScreen} />
-      <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
-      <Stack.Screen name="PeerGroupDetail" component={PeerGroupDetailScreen} />
-      <Stack.Screen name="InsuranceClaims" component={InsuranceClaimsScreen} />
-      <Stack.Screen name="PracticeLog" component={PracticeLogScreen} />
-      <Stack.Screen name="CreateListing" component={CreateListingScreen} />
-      <Stack.Screen name="VoiceDriven" component={VoiceDrivenScreen} />
-      <Stack.Screen name="BusinessDirectory" component={BusinessDirectoryScreen} />
-      <Stack.Screen name="GovtPortals" component={GovtPortalsScreen} />
-      <Stack.Screen name="HealthDashboard" component={HealthDashboardScreen} />
-      <Stack.Screen name="Livelihood" component={LivelihoodScreen} />
-      <Stack.Screen name="KnowledgeResources" component={KnowledgeResourcesScreen} />
-      <Stack.Screen name="VoiceRooms" component={VoiceRoomsScreen} />
-      <Stack.Screen name="VoiceRoom" component={VoiceRoomScreen} />
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: "slide_from_right",
+        animationDuration: 240,
+        gestureEnabled: true,
+      }}
+    >
+      <Stack.Screen name="HomeMain" component={AnimatedHomeScreen} />
+      <Stack.Screen name="Module" component={AnimatedModuleScreen} />
+      <Stack.Screen name="MarketPrices" component={AnimatedMarketPricesScreen} />
+      <Stack.Screen name="SchemesList" component={AnimatedSchemesListScreen} />
+      <Stack.Screen name="SchemeDetail" component={AnimatedSchemeDetailScreen} />
+      <Stack.Screen name="SymptomChecker" component={AnimatedSymptomCheckerScreen} />
+      <Stack.Screen name="Alerts" component={AnimatedAlertsScreen} />
+      <Stack.Screen name="Action" component={AnimatedActionScreen} />
+      <Stack.Screen name="AgriMarket" component={AnimatedAgriMarketScreen} />
+      <Stack.Screen name="KnowledgeDashboard" component={AnimatedKnowledgeDashboardScreen} />
+      <Stack.Screen name="SavingsNudge" component={AnimatedSavingsNudgeScreen} />
+      <Stack.Screen name="Eligibility" component={AnimatedEligibilityScreen} />
+      <Stack.Screen name="SyncStatus" component={AnimatedSyncStatusScreen} />
+      <Stack.Screen name="Saved" component={AnimatedSavedScreen} />
+      <Stack.Screen name="SavedDetail" component={AnimatedSavedDetailScreen} />
+      <Stack.Screen name="BargainingGroups" component={AnimatedBargainingGroupsScreen} />
+      <Stack.Screen name="Orders" component={AnimatedOrdersScreen} />
+      <Stack.Screen name="Logistics" component={AnimatedLogisticsScreen} />
+      <Stack.Screen name="CourseDetail" component={AnimatedCourseDetailScreen} />
+      <Stack.Screen name="PeerGroupDetail" component={AnimatedPeerGroupDetailScreen} />
+      <Stack.Screen name="InsuranceClaims" component={AnimatedInsuranceClaimsScreen} />
+      <Stack.Screen name="PracticeLog" component={AnimatedPracticeLogScreen} />
+      <Stack.Screen name="CreateListing" component={AnimatedCreateListingScreen} />
+      <Stack.Screen name="VoiceDriven" component={AnimatedVoiceDrivenScreen} />
+      <Stack.Screen name="BusinessDirectory" component={AnimatedBusinessDirectoryScreen} />
+      <Stack.Screen name="GovtPortals" component={AnimatedGovtPortalsScreen} />
+      <Stack.Screen name="HealthDashboard" component={AnimatedHealthDashboardScreen} />
+      <Stack.Screen name="Livelihood" component={AnimatedLivelihoodScreen} />
+      <Stack.Screen name="KnowledgeResources" component={AnimatedKnowledgeResourcesScreen} />
+      <Stack.Screen name="VoiceRooms" component={AnimatedVoiceRoomsScreen} />
+      <Stack.Screen name="VoiceRoom" component={AnimatedVoiceRoomScreen} />
     </Stack.Navigator>
   );
 }

@@ -17,6 +17,7 @@
  */
 
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const agentRegistry = require('./agents');
 const { APP_NAME, APP_CONTEXT } = require('./brand');
 
 // Nova may not be in ap-south-1 yet; use cross-region if needed
@@ -26,6 +27,33 @@ const FALLBACK_MODEL = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku
 
 const novaClient = new BedrockRuntimeClient({ region: NOVA_REGION });
 const fallbackClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+
+const DIRECT_ANSWER_BLOCKED_DOMAINS = new Set(['health', 'knowledge', 'market', 'schemes']);
+const DIRECT_ANSWER_BLOCKED_INTENTS = new Set([
+    'weather_info',
+    'air_quality_info',
+    'medical_report_analysis',
+    'health_platform_help',
+    'symptom_guidance',
+    'facility_referral',
+    'health_scheme',
+    'request_video',
+    'request_article',
+    'request_course',
+    'learning_content',
+    'knowledge_query',
+    'training_resources',
+    'show_resources',
+    'create_listing',
+    'listing_management',
+    'contact_buyer',
+    'orders',
+    'buyer_connection',
+    'crop_prices',
+    'mandi_info',
+    'price_trend',
+    'sell_timing',
+]);
 
 /* ─── Analysis prompt — single LLM call for translate + understand + route + direct answer ─── */
 const ANALYSIS_PROMPT = `You are the AI router for ${APP_NAME}. ${APP_CONTEXT}
@@ -187,22 +215,19 @@ function parseAnalysisResponse(text) {
 
     try {
         const parsed = JSON.parse(cleaned);
-        const normalizedIntent = normalizeIntentAlias(parsed.intent);
-
-        // Validate required fields with defaults
-        return {
+        return normalizeAnalysisResult({
             english_text: parsed.english_text || parsed.text || text,
-            original_language: parsed.original_language || 'unknown',
-            domain: validDomain(parsed.domain),
-            intent: normalizedIntent || 'unknown',
+            original_language: parsed.original_language || parsed.detected_language || 'unknown',
+            domain: parsed.domain,
+            intent: parsed.intent,
             entities: parsed.entities || {},
-            complexity: validComplexity(parsed.complexity),
+            complexity: parsed.complexity,
             summary: parsed.summary || '',
             can_answer_directly: !!parsed.can_answer_directly,
             direct_response: parsed.can_answer_directly ? (parsed.direct_response || null) : null,
-        };
+        });
     } catch {
-        console.warn('[Nova] Failed to parse analysis JSON, using basic routing');
+        console.warn('[Nova] Failed to parse analysis JSON, using safe defaults');
         return {
             english_text: text,
             original_language: 'unknown',
@@ -224,6 +249,14 @@ function normalizeIntentAlias(intent) {
         .replace(/\s+/g, '_');
 
     if (!key) return 'unknown';
+    if (key === 'prices' || key === 'price' || key === 'market_price' || key === 'price_info') return 'crop_prices';
+    if (key === 'weather' || key === 'weather_query') return 'weather_info';
+    if (key === 'aqi' || key === 'air_quality') return 'air_quality_info';
+    if (key === 'video' || key === 'videos') return 'request_video';
+    if (key === 'article' || key === 'articles') return 'request_article';
+    if (key === 'course' || key === 'courses' || key === 'training') return 'request_course';
+    if (key === 'symptoms' || key === 'symptom_check' || key === 'doctor_consultation') return 'symptom_guidance';
+    if (key === 'report_upload' || key === 'report_analysis' || key === 'scan_analysis') return 'medical_report_analysis';
     if (key === 'loan_information' || key === 'loan_details' || key === 'crop_loan') return 'loan_info';
     if (key === 'insurance_information' || key === 'insurance_details' || key === 'claim_status') return 'insurance_claim';
     if (key === 'saving_plan' || key === 'savings_overview' || key === 'financial_overview' || key === 'profit_cost') return 'financial_aid';
@@ -238,80 +271,274 @@ function normalizeIntentAlias(intent) {
 /* ─── Basic keyword routing (last-resort fallback) ─── */
 
 function basicRoute(text, detectedLang) {
-    const lower = text.toLowerCase();
+    return classifyTextWithFallback(text, detectedLang);
+}
 
-    let domain = 'general';
-    let intent = 'general_question';
-    let entities = {};
+function normalizeText(text = '') {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+}
 
-    // Simple keyword matching
-    const agriKeywords = /crop|farm|soil|seed|harvest|irrigat|pest|wheat|rice|cotton|fertiliz|khet|fasal|kheti/i;
-    const marketKeywords = /price|mandi|sell|buy|market|₹|rupee|rate|kilo|quintal|daam|bazaar|bhav/i;
-    const schemeKeywords = /scheme|yojana|subsid|loan|insurance|kisan|pm-kisan|bima|kcc|sarkar/i;
-    const healthKeywords = /health|doctor|hospital|pain|fever|symptom|medicine|nutrition|pregnant|tabiyat|bukhar|report|scan|xray|x-ray|\bmri\b|\bct\b|\bultrasound\b|\bpathology\b|upload/i;
-    const reportKeywords = /report|scan|xray|x-ray|\bmri\b|\bct\b|\bct scan\b|\bultrasound\b|\bpathology\b|lab report|medical report|upload/i;
-    const weatherKeywords = /weather|temperature|forecast|rain|humidity|wind|climate|mausam|baarish|barish|temp/i;
-    const aqiKeywords = /\baqi\b|air quality|pollution|smog|pm2\.?5|pm10|hawa/i;
-    const greetingKeywords = /^(hello|hi|namaste|namaskar|vanakkam|kaise ho|how are)/i;
+function collectIntentSignals(text = '') {
+    const normalized = normalizeText(text);
+    const wordCount = normalized ? normalized.split(/\s+/).filter(Boolean).length : 0;
+    const location = extractLocationEntity(normalized);
 
-    const listingCreateKeywords = /sell|listing|list my|post listing|sell order|sale order|buyer request|खरीदार|बेचना|लिस्टिंग/i;
-    const listingManageKeywords = /cancel listing|remove listing|delete listing|mark.*sold|sold.*listing|close listing|बंद लिस्टिंग|हटा लिस्टिंग/i;
-    const contactBuyerKeywords = /contact buyer|call buyer|buyer number|buyer phone|connect buyer|buyer details/i;
-    const ordersKeywords = /orders|my orders|order updates|request order|buyer requests|ऑर्डर|रिक्वेस्ट/i;
+    const greeting = wordCount <= 6
+        && /^(hello|hi|hey|namaste|namaskar|vanakkam|how are you|kaise ho|good morning|good evening)(\b|[!,.? ]|$)/i.test(normalized);
+    const appHelp = /\b(app name|platform name|assistant name|what(?:'s| is) your name|who are you|what is this app|how do i use (?:this )?app|help me use (?:the )?app)\b/i.test(normalized);
 
-    if (greetingKeywords.test(lower)) {
-        domain = 'general';
-        intent = 'greeting';
-    } else if (aqiKeywords.test(lower)) {
-        domain = 'general';
-        intent = 'air_quality_info';
-        const location = extractLocationEntity(text);
-        if (location) entities.location = location;
-    } else if (weatherKeywords.test(lower) && !agriKeywords.test(lower)) {
-        domain = 'general';
-        intent = 'weather_info';
-        const location = extractLocationEntity(text);
-        if (location) entities.location = location;
-    } else if (agriKeywords.test(lower)) {
-        domain = 'agriculture';
-        intent = weatherKeywords.test(lower) ? 'weather_impact' : 'crop_advice';
-    } else if (listingManageKeywords.test(lower)) {
-        domain = 'market';
-        intent = 'listing_management';
-    } else if (contactBuyerKeywords.test(lower)) {
-        domain = 'market';
-        intent = 'contact_buyer';
-    } else if (ordersKeywords.test(lower)) {
-        domain = 'market';
-        intent = 'orders';
-    } else if (listingCreateKeywords.test(lower)) {
-        domain = 'market';
-        intent = 'create_listing';
-    } else if (marketKeywords.test(lower)) {
-        domain = 'market';
-        intent = 'crop_prices';
-    } else if (schemeKeywords.test(lower)) {
-        domain = 'schemes';
-        intent = 'scheme_eligibility';
-    } else if (reportKeywords.test(lower)) {
-        domain = 'health';
-        intent = 'medical_report_analysis';
-    } else if (healthKeywords.test(lower)) {
-        domain = 'health';
-        intent = 'symptom_guidance';
-    }
+    const agriCore = /\b(crop|crops|farm|farming|soil|seed|harvest|irrigat(?:e|ion)?|pest|disease|fertili[sz]er|field|plant|farmer|wheat|rice|cotton|maize|millet|soybean|mustard|onion|tomato|potato|khet|fasal|kheti|beej|mitti|sinchai|khad|गेहूं|धान|फसल|खेती|खेत|कीड़े?)\b/i.test(normalized);
+    const weather = /\b(weather|temperature|forecast|rain(?:fall)?|humidity|wind|climate|mausam|baarish|barish|temp)\b/i.test(normalized);
+    const aqi = /\b(aqi|air quality|pollution|smog|pm2\.?5|pm10|hawa)\b/i.test(normalized);
+    const cropWeatherImpact = agriCore && weather;
+
+    const produceTerms = /\b(crop|produce|vegetable|vegetables|fruit|fruits|grain|grains|wheat|rice|cotton|maize|millet|soybean|mustard|onion|tomato|potato|gehu|gehun|धान|फसल|उपज)\b/i;
+    const listingManage = /\b(cancel listing|remove listing|delete listing|close listing|mark(?:\s+\w+){0,2}\s+sold|sold(?:\s+\w+){0,2}\s+listing)\b|बंद लिस्टिंग|हटा लिस्टिंग/i.test(normalized);
+    const contactBuyer = /\b(contact buyer|call buyer|connect buyer|buyer number|buyer phone|buyer details)\b/i.test(normalized);
+    const orders = /\b(my orders|order updates|buyer requests?|request orders?|orders?)\b|ऑर्डर|रिक्वेस्ट/i.test(normalized);
+    const listingCreate = /\b(create listing|post listing|list my produce|list my crop|sell order|sale order|listing)\b/i.test(normalized)
+        || (/\bsell\b/i.test(normalized) && (produceTerms.test(normalized) || /\blisting\b/i.test(normalized)))
+        || /बेचना|लिस्टिंग/i.test(normalized);
+    const marketPrice = /\b(price|prices|mandi|msp|market price|bazaar|bhav|daam)\b/i.test(normalized)
+        || (/\brate\b/i.test(normalized) && (produceTerms.test(normalized) || /\bbazaar\b/i.test(normalized)))
+        || (/₹|\brupees?\b/i.test(normalized) && /\b(?:quintal|per\s+(?:kg|kilo|quintal))\b/i.test(normalized))
+        || ((/₹|\brupees?\b|\bquintal\b|\bper\s+(?:kg|kilo|quintal)\b/i.test(normalized))
+            && (produceTerms.test(normalized) || /\b(?:market|mandi|price)\b/i.test(normalized)));
+
+    const schemeLoan = /\b(loan|crop loan|bank loan|credit|kcc|interest|कर्ज|लोन)\b/i.test(normalized);
+    const schemeInsurance = /\b(insurance|claim|pmfby|bima|बीमा|क्लेम)\b/i.test(normalized);
+    const schemeGeneral = /\b(scheme|schemes|yojana|subsid(?:y|ies)|pm-kisan|kisan samman|sarkari|sarkar|योजना|सब्सिडी|सरकारी)\b/i.test(normalized)
+        || schemeLoan
+        || schemeInsurance;
+
+    const medicalReport = /\b(upload (?:a )?(?:medical |lab |blood )?report|medical report|lab report|blood report|report insights|get insights|x[\s-]?ray|mri|ct(?:\s+scan)?|ultrasound|pathology|scan result|analy[sz]e (?:my )?(?:report|scan|x[\s-]?ray|mri|ct|ultrasound))\b|(?:अपलोड|रिपोर्ट|स्कैन|एमआरआई|एक्सरे).*(?:इंसाइट|विश्लेषण|अपलोड|जांच)/i.test(normalized);
+    const healthPlatformHelp = /\b(health screening|symptom checker|upload report|get insights)\b.*\b(how|what|use|screen)\b|\bwhat can i do\b.*\bhealth\b|स्वास्थ्य स्क्रीन|हेल्थ स्क्रीन/i.test(normalized);
+    const healthSymptom = /\b(health|doctor|hospital|pain|fever|symptom|medicine|nutrition|pregnant|tabiyat|bukhar|cough|headache|vomit(?:ing)?|dizziness|weakness|rash|triage|screening)\b|लक्षण|खांसी|दर्द|बुखार/i.test(normalized)
+        && !medicalReport;
+
+    const knowledgeVideo = (/\b(?:show|find|play|watch|suggest|need|want)\b.*\bvideos?\b/i.test(normalized)
+        || /\bvideos?\b.*\b(?:about|on|for)\b/i.test(normalized)
+        || /(?:वीडियो.*(?:दिखा|ढूंढ|खोज)|(?:दिखा|ढूंढ|खोज).*(?:वीडियो))/i.test(normalized));
+    const knowledgeArticle = (/\b(?:show|find|read|suggest|need|want)\b.*\barticles?\b/i.test(normalized)
+        || /\barticles?\b.*\b(?:about|on|for)\b/i.test(normalized)
+        || /(?:आर्टिकल|लेख).*(?:दिखा|ढूंढ|खोज)|(?:दिखा|ढूंढ|खोज).*(?:आर्टिकल|लेख)/i.test(normalized));
+    const knowledgeCourse = (/\b(?:show|find|suggest|need|want|learn)\b.*\b(courses?|training|tutorials?|lessons?|classes?|webinars?)\b/i.test(normalized)
+        || /\b(courses?|training|tutorials?|lessons?|classes?|webinars?)\b.*\b(?:about|on|for)\b/i.test(normalized)
+        || /(?:कोर्स|प्रशिक्षण|ट्रेनिंग).*(?:दिखा|ढूंढ|खोज)|(?:दिखा|ढूंढ|खोज).*(?:कोर्स|प्रशिक्षण|ट्रेनिंग)/i.test(normalized));
+    const knowledgeGeneric = /\b(learning resources?|study materials?|resource links?|official resources?|training resources?)\b/i.test(normalized);
 
     return {
-        english_text: text, // Can't translate without LLM
+        location,
+        greeting,
+        appHelp,
+        agriCore,
+        weather,
+        aqi,
+        cropWeatherImpact,
+        listingManage,
+        contactBuyer,
+        orders,
+        listingCreate,
+        marketPrice,
+        schemeLoan,
+        schemeInsurance,
+        schemeGeneral,
+        medicalReport,
+        healthPlatformHelp,
+        healthSymptom,
+        knowledgeVideo,
+        knowledgeArticle,
+        knowledgeCourse,
+        knowledgeGeneric,
+    };
+}
+
+function inferIntentFromSignals(signals) {
+    const entities = {};
+    if (signals.location && (signals.weather || signals.aqi)) {
+        entities.location = signals.location;
+    }
+
+    if (signals.greeting) {
+        return { domain: 'general', intent: 'greeting', entities };
+    }
+
+    if (signals.appHelp) {
+        return { domain: 'general', intent: 'app_help', entities };
+    }
+
+    if (signals.knowledgeVideo) {
+        return { domain: 'knowledge', intent: 'request_video', entities };
+    }
+
+    if (signals.knowledgeArticle) {
+        return { domain: 'knowledge', intent: 'request_article', entities };
+    }
+
+    if (signals.knowledgeCourse) {
+        return { domain: 'knowledge', intent: 'request_course', entities };
+    }
+
+    if (signals.knowledgeGeneric) {
+        return { domain: 'knowledge', intent: 'learning_content', entities };
+    }
+
+    if (signals.medicalReport) {
+        return { domain: 'health', intent: 'medical_report_analysis', entities };
+    }
+
+    if (signals.healthPlatformHelp) {
+        return { domain: 'health', intent: 'health_platform_help', entities };
+    }
+
+    if (signals.listingManage) {
+        return { domain: 'market', intent: 'listing_management', entities };
+    }
+
+    if (signals.contactBuyer) {
+        return { domain: 'market', intent: 'contact_buyer', entities };
+    }
+
+    if (signals.orders) {
+        return { domain: 'market', intent: 'orders', entities };
+    }
+
+    if (signals.listingCreate) {
+        return { domain: 'market', intent: 'create_listing', entities };
+    }
+
+    if (signals.aqi) {
+        return { domain: 'general', intent: 'air_quality_info', entities };
+    }
+
+    if (signals.weather && !signals.cropWeatherImpact) {
+        return { domain: 'general', intent: 'weather_info', entities };
+    }
+
+    if (signals.healthSymptom) {
+        return { domain: 'health', intent: 'symptom_guidance', entities };
+    }
+
+    if (signals.schemeInsurance) {
+        return { domain: 'schemes', intent: 'insurance_claim', entities };
+    }
+
+    if (signals.schemeLoan) {
+        return { domain: 'schemes', intent: 'loan_info', entities };
+    }
+
+    if (signals.marketPrice) {
+        return { domain: 'market', intent: 'crop_prices', entities };
+    }
+
+    if (signals.cropWeatherImpact) {
+        return { domain: 'agriculture', intent: 'weather_impact', entities };
+    }
+
+    if (signals.agriCore) {
+        return { domain: 'agriculture', intent: 'crop_advice', entities };
+    }
+
+    if (signals.schemeGeneral) {
+        return { domain: 'schemes', intent: 'scheme_eligibility', entities };
+    }
+
+    return { domain: 'general', intent: 'general_question', entities };
+}
+
+function classifyTextWithFallback(text, detectedLang = 'unknown') {
+    const normalizedText = normalizeText(text);
+    const keywordRoute = inferIntentFromSignals(collectIntentSignals(normalizedText));
+
+    return {
+        english_text: normalizedText || String(text || ''),
         original_language: detectedLang || 'unknown',
-        domain,
-        intent,
-        entities,
+        domain: keywordRoute.domain,
+        intent: keywordRoute.intent,
+        entities: keywordRoute.entities,
         complexity: 'simple',
         summary: '',
         can_answer_directly: false,
         direct_response: null,
     };
+}
+
+function shouldPreferHeuristicRoute(current, heuristic) {
+    if (!heuristic || heuristic.intent === 'general_question') {
+        return false;
+    }
+
+    if (current.intent === heuristic.intent && current.domain === heuristic.domain) {
+        return false;
+    }
+
+    const currentIntentDomain = agentRegistry.resolveDomain(current.intent);
+    const currentLooksWeak = current.intent === 'unknown'
+        || current.intent === 'general_question'
+        || (current.domain === 'general' && currentIntentDomain === 'general');
+
+    if (currentLooksWeak) {
+        return true;
+    }
+
+    if (DIRECT_ANSWER_BLOCKED_INTENTS.has(heuristic.intent)) {
+        return true;
+    }
+
+    if ((heuristic.intent === 'weather_info' || heuristic.intent === 'air_quality_info') && current.intent !== heuristic.intent) {
+        return true;
+    }
+
+    return heuristic.domain !== current.domain && heuristic.domain !== 'general';
+}
+
+function normalizeAnalysisResult(analysis) {
+    const englishText = normalizeText(analysis.english_text || '');
+    const heuristic = classifyTextWithFallback(englishText, analysis.original_language || 'unknown');
+    const normalizedIntent = normalizeIntentAlias(analysis.intent);
+    const entities = analysis.entities && typeof analysis.entities === 'object' ? { ...analysis.entities } : {};
+
+    let result = {
+        english_text: englishText || String(analysis.english_text || ''),
+        original_language: analysis.original_language || 'unknown',
+        domain: validDomain(analysis.domain),
+        intent: normalizedIntent || 'unknown',
+        entities,
+        complexity: validComplexity(analysis.complexity),
+        summary: analysis.summary || '',
+        can_answer_directly: !!analysis.can_answer_directly,
+        direct_response: analysis.can_answer_directly ? (analysis.direct_response || null) : null,
+    };
+
+    const intentDomain = agentRegistry.resolveDomain(result.intent);
+    if (intentDomain !== 'general' && result.domain !== intentDomain) {
+        result.domain = intentDomain;
+    }
+
+    if (shouldPreferHeuristicRoute(result, heuristic)) {
+        result = {
+            ...result,
+            domain: heuristic.domain,
+            intent: heuristic.intent,
+            entities: { ...result.entities, ...heuristic.entities },
+        };
+    } else if (
+        !result.entities.location
+        && heuristic.entities.location
+        && (result.intent === 'weather_info' || result.intent === 'air_quality_info')
+    ) {
+        result.entities.location = heuristic.entities.location;
+    }
+
+    if (
+        DIRECT_ANSWER_BLOCKED_DOMAINS.has(result.domain)
+        || DIRECT_ANSWER_BLOCKED_INTENTS.has(result.intent)
+    ) {
+        result.can_answer_directly = false;
+        result.direct_response = null;
+    }
+
+    return result;
 }
 
 function extractLocationEntity(text = '') {
@@ -352,11 +579,13 @@ const VALID_DOMAINS = ['agriculture', 'market', 'schemes', 'health', 'knowledge'
 const VALID_COMPLEXITIES = ['simple', 'moderate', 'complex'];
 
 function validDomain(d) {
-    return VALID_DOMAINS.includes(d) ? d : 'general';
+    const normalized = String(d || '').trim().toLowerCase();
+    return VALID_DOMAINS.includes(normalized) ? normalized : 'general';
 }
 
 function validComplexity(c) {
-    return VALID_COMPLEXITIES.includes(c) ? c : 'simple';
+    const normalized = String(c || '').trim().toLowerCase();
+    return VALID_COMPLEXITIES.includes(normalized) ? normalized : 'simple';
 }
 
 module.exports = {

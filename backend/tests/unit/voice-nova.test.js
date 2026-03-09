@@ -56,6 +56,41 @@ describe('AWS Nova Service', () => {
       expect(result.domain).toBe('general');
       expect(result.complexity).toBe('simple');
     });
+
+    test('corrects knowledge requests mislabeled as general chat', () => {
+      const text = JSON.stringify({
+        english_text: 'Show me videos on drip irrigation',
+        original_language: 'en-IN',
+        intent: 'general_question',
+        domain: 'general',
+        entities: {},
+        complexity: 'simple',
+        can_answer_directly: true,
+        direct_response: 'Here are some tips.',
+      });
+
+      const result = nova.parseAnalysisResponse(text);
+      expect(result.domain).toBe('knowledge');
+      expect(result.intent).toBe('request_video');
+      expect(result.can_answer_directly).toBe(false);
+      expect(result.direct_response).toBeNull();
+    });
+
+    test('realigns city weather queries away from wrong domain labels', () => {
+      const text = JSON.stringify({
+        english_text: 'What is the weather in Pune today?',
+        original_language: 'en-IN',
+        intent: 'crop_advice',
+        domain: 'agriculture',
+        entities: {},
+        complexity: 'simple',
+      });
+
+      const result = nova.parseAnalysisResponse(text);
+      expect(result.domain).toBe('general');
+      expect(result.intent).toBe('weather_info');
+      expect(result.entities.location).toBe('Pune');
+    });
   });
 
   describe('basicRoute', () => {
@@ -92,6 +127,30 @@ describe('AWS Nova Service', () => {
     test('routes Hindi market keywords', () => {
       const result = nova.basicRoute('bazaar mein bhav kya hai aaj');
       expect(result.domain).toBe('market');
+    });
+
+    test('routes video requests to knowledge domain', () => {
+      const result = nova.basicRoute('show me videos on drip irrigation');
+      expect(result.domain).toBe('knowledge');
+      expect(result.intent).toBe('request_video');
+    });
+
+    test('routes crop weather questions to agriculture weather impact', () => {
+      const result = nova.basicRoute('what is the weather for my wheat crop in Punjab');
+      expect(result.domain).toBe('agriculture');
+      expect(result.intent).toBe('weather_impact');
+    });
+
+    test('routes medical report uploads to health report analysis', () => {
+      const result = nova.basicRoute('please upload my MRI report for insights');
+      expect(result.domain).toBe('health');
+      expect(result.intent).toBe('medical_report_analysis');
+    });
+
+    test('does not treat non-market rate language as a crop price query', () => {
+      const result = nova.basicRoute('my heart rate is high');
+      expect(result.domain).toBe('general');
+      expect(result.intent).toBe('general_question');
     });
   });
 

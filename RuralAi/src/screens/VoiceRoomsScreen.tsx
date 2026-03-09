@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useVoiceRooms } from '../hooks/useData';
 import type { VoiceRoom } from '../services/api';
+import { useDemoScreenActions } from '../demo/DemoActions';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList>;
 
@@ -54,6 +55,18 @@ export default function VoiceRoomsScreen() {
       }),
     [data?.rooms],
   );
+
+  const demoActions = useMemo(
+    () => ({
+      openFirstRoom: () => {
+        if (!rooms[0]?.roomId) return;
+        nav.navigate('VoiceRoom', { roomId: rooms[0].roomId });
+      },
+    }),
+    [nav, rooms],
+  );
+
+  useDemoScreenActions('VoiceRooms', demoActions);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

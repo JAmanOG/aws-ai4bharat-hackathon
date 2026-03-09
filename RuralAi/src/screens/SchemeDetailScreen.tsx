@@ -1,12 +1,33 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Linking, Alert } from "react-native";
+import React, { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { colors } from "../theme/colors";
 import { useSchemeDetail } from "../hooks/useData";
-import { LoadingView, ErrorView } from "../components/ui";
 import { logger } from "../utils/logger";
+import { ruralPalette as P } from "../theme/ruralPalette";
+
+function getTypeAccent(type?: string) {
+  switch ((type ?? "").toLowerCase()) {
+    case "loan":
+      return { bg: P.economics, ink: P.economicsIcon, icon: "cash-outline" as const };
+    case "insurance":
+      return { bg: P.health, ink: P.healthIcon, icon: "shield-checkmark-outline" as const };
+    case "subsidy":
+      return { bg: P.goldSoft, ink: P.goldDark, icon: "wallet-outline" as const };
+    default:
+      return { bg: P.surfaceSoft, ink: P.mutedDark, icon: "document-text-outline" as const };
+  }
+}
 
 export default function SchemeDetailScreen() {
   const nav = useNavigation<any>();
@@ -15,207 +36,509 @@ export default function SchemeDetailScreen() {
 
   const { data: detail, loading, error, refresh } = useSchemeDetail(schemeId);
   const [saved, setSaved] = useState(false);
-
-  if (loading) return <LoadingView message="Loading scheme…" />;
-  if (error) return <ErrorView message={error.message} onRetry={refresh} />;
-  if (!detail) return <ErrorView message="Scheme not found" onRetry={() => nav.goBack()} />;
+  const typeAccent = useMemo(() => getTypeAccent(detail?.type), [detail?.type]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => nav.goBack()}>
-            <Ionicons name="chevron-back" size={22} color={colors.ink} />
-          </Pressable>
-          <Text style={styles.title} numberOfLines={1}>Scheme Detail</Text>
-          <Pressable style={styles.saveBtn} onPress={() => setSaved((v) => !v)}>
-            <Ionicons name={saved ? "bookmark" : "bookmark-outline"} size={18} color={colors.earth} />
-            <Text style={styles.saveText}>{saved ? "Saved" : "Save"}</Text>
-          </Pressable>
-        </View>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={() => nav.goBack()} hitSlop={10}>
+          <Ionicons name="arrow-back" size={28} color={P.ink} />
+        </Pressable>
+        <Text style={styles.title} numberOfLines={1}>Scheme Detail</Text>
+        <Pressable style={styles.saveButton} onPress={() => setSaved((value) => !value)}>
+          <Ionicons name={saved ? "bookmark" : "bookmark-outline"} size={18} color={P.ink} />
+          <Text style={styles.saveText}>{saved ? "Saved" : "Save"}</Text>
+        </Pressable>
+      </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Main card */}
-          <View style={styles.card}>
-            <Text style={styles.schemeTitle}>{detail.name}</Text>
-            <Text style={styles.benefit}>{detail.benefit_summary}</Text>
-            <Text style={styles.eligibility}>{detail.summary}</Text>
-            {detail.provider ? (
-              <Text style={styles.provider}>Provider: {detail.provider}</Text>
-            ) : null}
-            {detail.type ? (
-              <View style={styles.typePill}>
-                <Text style={styles.typeText}>{detail.type.toUpperCase()}</Text>
+      {loading ? (
+        <View style={styles.stateWrap}>
+          <View style={styles.stateCard}>
+            <ActivityIndicator size="large" color={P.goldDark} />
+            <Text style={styles.stateTitle}>Loading scheme details</Text>
+            <Text style={styles.stateText}>Pulling benefits, documents, and official contact information.</Text>
+          </View>
+        </View>
+      ) : error ? (
+        <View style={styles.stateWrap}>
+          <View style={styles.stateCard}>
+            <Ionicons name="cloud-offline-outline" size={28} color={P.mutedDark} />
+            <Text style={styles.stateTitle}>Could not load this scheme</Text>
+            <Text style={styles.stateText}>{error.message}</Text>
+            <Pressable style={styles.primaryButton} onPress={refresh}>
+              <Text style={styles.primaryText}>Retry</Text>
+              <Ionicons name="refresh" size={18} color={P.ink} />
+            </Pressable>
+          </View>
+        </View>
+      ) : !detail ? (
+        <View style={styles.stateWrap}>
+          <View style={styles.stateCard}>
+            <Ionicons name="alert-circle-outline" size={28} color={P.mutedDark} />
+            <Text style={styles.stateTitle}>Scheme not found</Text>
+            <Text style={styles.stateText}>This entry is no longer available in the current directory.</Text>
+            <Pressable style={styles.primaryButton} onPress={() => nav.goBack()}>
+              <Text style={styles.primaryText}>Go back</Text>
+              <Ionicons name="arrow-back" size={18} color={P.ink} />
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.heroCard}>
+            <View style={styles.heroHeader}>
+              <View style={[styles.heroIcon, { backgroundColor: typeAccent.bg }]}>
+                <Ionicons name={typeAccent.icon} size={22} color={typeAccent.ink} />
               </View>
+              <View style={styles.heroCopy}>
+                <Text style={styles.heroEyebrow}>Verified scheme directory</Text>
+                <Text style={styles.schemeTitle}>{detail.name}</Text>
+                <Text style={styles.providerText}>{detail.provider || "Government support program"}</Text>
+              </View>
+            </View>
+
+            <View style={styles.heroPillRow}>
+              <View style={[styles.typePill, { backgroundColor: typeAccent.bg }]}>
+                <Text style={[styles.typeText, { color: typeAccent.ink }]}>
+                  {(detail.type || "scheme").toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.verifiedPill}>
+                <Ionicons name="checkmark-circle" size={14} color={P.healthIcon} />
+                <Text style={styles.verifiedText}>
+                  {detail.verified === false ? "Check latest notice" : "Official details"}
+                </Text>
+              </View>
+            </View>
+
+            {detail.benefit_summary ? (
+              <Text style={styles.benefit}>{detail.benefit_summary}</Text>
+            ) : null}
+            {detail.summary ? (
+              <Text style={styles.summary}>{detail.summary}</Text>
             ) : null}
 
             {saved ? (
               <View style={styles.savedPill}>
-                <Ionicons name="cloud-done-outline" size={14} color={colors.primary} />
-                <Text style={styles.savedText}>Available offline</Text>
+                <Ionicons name="cloud-done-outline" size={14} color={P.healthIcon} />
+                <Text style={styles.savedText}>Saved for offline review</Text>
               </View>
             ) : null}
           </View>
 
-          {/* Docs checklist */}
-          <Text style={styles.section}>What you need</Text>
-          <View style={styles.card}>
-            {(detail.documents_required ?? []).map((d: string, idx: number) => (
-              <View key={idx} style={styles.checkRow}>
-                <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
-                <Text style={styles.checkText}>{d}</Text>
-              </View>
-            ))}
+          <View style={styles.factsRow}>
+            <View style={styles.factCard}>
+              <Text style={styles.factLabel}>Documents</Text>
+              <Text style={styles.factValue}>{detail.documents_required?.length ?? 0}</Text>
+              <Text style={styles.factMeta}>items to prepare</Text>
+            </View>
+            <View style={styles.factCard}>
+              <Text style={styles.factLabel}>Best fit</Text>
+              <Text style={styles.factValue}>{detail.recommended_for?.length ?? 0}</Text>
+              <Text style={styles.factMeta}>profiles noted</Text>
+            </View>
           </View>
 
-          {/* Recommended for */}
-          {detail.recommended_for?.length > 0 && (
-            <>
-              <Text style={styles.section}>Recommended for</Text>
-              <View style={styles.card}>
-                {detail.recommended_for.map((r: string, idx: number) => (
-                  <View key={idx} style={styles.checkRow}>
-                    <Ionicons name="star-outline" size={16} color={colors.earth} />
-                    <Text style={styles.checkText}>{r}</Text>
+          <View style={styles.factsRow}>
+            <View style={styles.factCard}>
+              <Text style={styles.factLabel}>Bank account</Text>
+              <Text style={styles.factValueSmall}>{detail.requires_bank_account ? "Required" : "Optional"}</Text>
+              <Text style={styles.factMeta}>application readiness</Text>
+            </View>
+            <View style={styles.factCard}>
+              <Text style={styles.factLabel}>Land rule</Text>
+              <Text style={styles.factValueSmall}>
+                {detail.min_land_acres > 0 ? `${detail.min_land_acres} acre min` : "No minimum"}
+              </Text>
+              <Text style={styles.factMeta}>based on scheme data</Text>
+            </View>
+          </View>
+
+          <View style={styles.detailCard}>
+            <Text style={styles.sectionTitle}>Documents you need</Text>
+            {(detail.documents_required ?? []).length > 0 ? (
+              detail.documents_required.map((document: string, index: number) => (
+                <View key={`${document}-${index}`} style={styles.rowItem}>
+                  <Ionicons name="checkmark-circle" size={18} color={P.healthIcon} />
+                  <Text style={styles.rowText}>{document}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.sectionHint}>Open the official portal for the latest required document list.</Text>
+            )}
+          </View>
+
+          {detail.recommended_for?.length > 0 ? (
+            <View style={styles.detailCard}>
+              <Text style={styles.sectionTitle}>Recommended for</Text>
+              {detail.recommended_for.map((item: string, index: number) => (
+                <View key={`${item}-${index}`} style={styles.rowItem}>
+                  <Ionicons name="sparkles-outline" size={18} color={P.goldDark} />
+                  <Text style={styles.rowText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {detail.states?.length > 0 ? (
+            <View style={styles.detailCard}>
+              <Text style={styles.sectionTitle}>Available in</Text>
+              <View style={styles.stateChips}>
+                {detail.states.map((state) => (
+                  <View key={state} style={styles.stateChip}>
+                    <Text style={styles.stateChipText}>{state}</Text>
                   </View>
                 ))}
               </View>
-            </>
-          )}
+            </View>
+          ) : null}
 
-          {/* CTA */}
-          <Pressable style={styles.primaryBtn} onPress={() => {
-            logger.info("SchemeDetail", "Open Apply Portal", { schemeId });
-            const url = (detail as any).apply_url || "https://services.india.gov.in";
-            Linking.openURL(url).catch(() => Alert.alert("Cannot Open", "Could not open the portal. Try again later."));
-          }}>
-            <Ionicons name="open-outline" size={18} color={colors.ink} />
-            <Text style={styles.primaryText}>Open Apply Portal</Text>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() => {
+              logger.info("SchemeDetail", "Open Apply Portal", { schemeId });
+              const url = detail.apply_url || "https://services.india.gov.in";
+              Linking.openURL(url).catch(() => {
+                Alert.alert("Cannot Open", "Could not open the portal. Try again later.");
+              });
+            }}
+          >
+            <Text style={styles.primaryText}>Open apply portal</Text>
+            <Ionicons name="open-outline" size={18} color={P.ink} />
           </Pressable>
 
-          <Pressable style={styles.secondaryBtn} onPress={() => {
-            logger.info("SchemeDetail", "Call Helpline");
-            const phone = (detail as any).helpline || "14444";
-            Linking.openURL(`tel:${phone}`).catch(() => Alert.alert("Call", `Helpline: ${phone}`));
-          }}>
-            <Ionicons name="call-outline" size={18} color={colors.earth} />
-            <Text style={styles.secondaryText}>Call Helpline</Text>
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
+              logger.info("SchemeDetail", "Call Helpline");
+              const phone = detail.helpline || "14444";
+              Linking.openURL(`tel:${phone}`).catch(() => Alert.alert("Call", `Helpline: ${phone}`));
+            }}
+          >
+            <Text style={styles.secondaryText}>Call helpline</Text>
+            <Ionicons name="call-outline" size={18} color={P.ink} />
           </Pressable>
-
-          <View style={{ height: 24 }} />
         </ScrollView>
-      </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  container: { flex: 1, paddingHorizontal: 14, paddingTop: 6 },
-
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  title: { flex: 1, fontSize: 16, fontWeight: "900", color: colors.ink },
-
-  saveBtn: {
+  safe: {
+    flex: 1,
+    backgroundColor: P.bg,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 6,
+    paddingBottom: 12,
+    backgroundColor: P.bgWarm,
+    borderBottomWidth: 1,
+    borderBottomColor: P.lineSoft,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  saveButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: "rgba(139,94,60,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(139,94,60,0.22)",
-  },
-  saveText: { fontSize: 11, fontWeight: "900", color: colors.earth },
-
-  content: { paddingTop: 12, paddingBottom: 18, gap: 12 },
-
-  section: { marginTop: 6, fontSize: 18, fontWeight: "900", color: colors.ink },
-
-  card: {
-    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderRadius: 18,
+    backgroundColor: "#FFF1C9",
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
+    borderColor: "#E8D59F",
+  },
+  saveText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 160,
+    gap: 16,
+  },
+  stateWrap: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: "center",
+  },
+  stateCard: {
+    borderRadius: 28,
+    padding: 22,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.line,
+    alignItems: "center",
     gap: 8,
   },
-  schemeTitle: { fontSize: 14, fontWeight: "900", color: colors.ink },
-  benefit: { fontSize: 12, fontWeight: "900", color: colors.earth },
-  eligibility: { fontSize: 11, fontWeight: "700", color: colors.muted, lineHeight: 16 },
-  provider: { fontSize: 11, fontWeight: "700", color: colors.muted, marginTop: 4 },
+  stateTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: P.ink,
+    textAlign: "center",
+  },
+  stateText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "600",
+    color: P.mutedDark,
+    textAlign: "center",
+  },
+  heroCard: {
+    borderRadius: 30,
+    padding: 18,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: "#E2D0A4",
+    shadowColor: P.goldShadow,
+    shadowOpacity: 0.15,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  heroHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  heroIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroCopy: {
+    flex: 1,
+  },
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.goldDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  schemeTitle: {
+    marginTop: 4,
+    fontSize: 20,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  providerText: {
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.mutedDark,
+  },
+  heroPillRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 16,
+  },
   typePill: {
-    alignSelf: "flex-start",
-    marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(139,94,60,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(139,94,60,0.22)",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 18,
   },
-  typeText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.7, color: colors.earth },
-
+  typeText: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+  },
+  verifiedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#D7E7CA",
+    borderRadius: 18,
+    backgroundColor: "#EDF5E4",
+  },
+  verifiedText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  benefit: {
+    marginTop: 16,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "800",
+    color: P.goldDark,
+  },
+  summary: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "600",
+    color: P.mutedDark,
+  },
   savedPill: {
-    marginTop: 6,
+    marginTop: 16,
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(19,236,91,0.12)",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.22)",
+    borderColor: "#D7E7CA",
+    borderRadius: 18,
+    backgroundColor: "#EDF5E4",
   },
-  savedText: { fontSize: 10, fontWeight: "900", color: colors.ink },
-
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  checkText: { flex: 1, fontSize: 12, fontWeight: "800", color: colors.ink },
-
-  stepRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
-  num: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "rgba(19,236,91,0.14)",
+  savedText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  factsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  factCard: {
+    flex: 1,
+    borderRadius: 26,
+    padding: 16,
+    backgroundColor: P.surface,
     borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.22)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
+    borderColor: P.line,
   },
-  numText: { fontSize: 11, fontWeight: "900", color: colors.ink },
-  stepText: { flex: 1, fontSize: 12, fontWeight: "700", color: colors.muted, lineHeight: 16 },
-
-  primaryBtn: {
+  factLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.mutedDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  factValue: {
+    marginTop: 14,
+    fontSize: 28,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  factValueSmall: {
+    marginTop: 14,
+    fontSize: 16,
+    fontWeight: "900",
+    color: P.ink,
+  },
+  factMeta: {
     marginTop: 6,
-    backgroundColor: colors.primary,
-    borderRadius: 18,
-    paddingVertical: 14,
+    fontSize: 12,
+    fontWeight: "600",
+    color: P.mutedDark,
+  },
+  detailCard: {
+    borderRadius: 28,
+    padding: 18,
+    backgroundColor: "#F9F4E8",
+    borderWidth: 1,
+    borderColor: P.lineSoft,
+    gap: 12,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: P.ink,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  sectionHint: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "600",
+    color: P.mutedDark,
+  },
+  rowItem: {
     flexDirection: "row",
-    gap: 8,
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  rowText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
+    color: P.ink,
+  },
+  stateChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  stateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 18,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.line,
+  },
+  stateChipText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: P.mutedDark,
+  },
+  primaryButton: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    backgroundColor: "#EFD27A",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(19,236,91,0.35)",
+    gap: 10,
   },
-  primaryText: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: colors.ink },
-
-  secondaryBtn: {
-    backgroundColor: "rgba(139,94,60,0.10)",
-    borderRadius: 18,
-    paddingVertical: 14,
+  primaryText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: P.ink,
+    textTransform: "capitalize",
+  },
+  secondaryButton: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.line,
     flexDirection: "row",
-    gap: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(139,94,60,0.22)",
+    gap: 10,
   },
-  secondaryText: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: colors.earth },
+  secondaryText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: P.ink,
+    textTransform: "capitalize",
+  },
 });

@@ -3,10 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
-  Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -16,6 +14,26 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useHealthPortals, useHealthProviders } from "../hooks/useData";
 import { useScreenContext } from "../context/ScreenContext";
+import { useDemoScreenActions } from "../demo/DemoActions";
+import {
+  PALETTE,
+  styles,
+} from "../features/health/healthDashboardTheme";
+import {
+  buildHealthProviderList,
+  buildHealthSchemeList,
+  findTelemedicinePortal,
+} from "../features/health/dashboardData";
+import {
+  DashboardSheet,
+  IconTile,
+  ProviderBadge,
+} from "../features/health/components/HealthDashboardPrimitives";
+import {
+  REPORT_TYPES,
+  formatReportType,
+  normalizeMimeType,
+} from "../features/health/healthDashboardUtils";
 import {
   healthApi,
   type HealthImagingAnalysisResponse,
@@ -23,73 +41,6 @@ import {
   type HealthPortal,
   type HealthProvider,
 } from "../services/api";
-
-const PALETTE = {
-  screen: "#F6EFDF",
-  screenGlow: "#FBF7EE",
-  card: "#FFFFFF",
-  tile: "#F4ECD8",
-  line: "#D8C8A5",
-  ink: "#111111",
-  muted: "#3F3527",
-  dim: "#776A57",
-  gold: "#D8AF47",
-  goldDeep: "#C79A2E",
-  goldSoft: "#F2E0A8",
-  shadow: "rgba(120, 86, 26, 0.16)",
-  outline: "#5E4B31",
-  badge: "#F4E6B9",
-  success: "#5E8B43",
-  danger: "#B53B30",
-};
-
-const REPORT_TYPES: Array<{ label: string; value: HealthImagingType }> = [
-  { label: "Lab report", value: "pathology" },
-  { label: "X-ray", value: "xray" },
-  { label: "MRI", value: "mri" },
-  { label: "CT", value: "ct_scan" },
-  { label: "Ultrasound", value: "ultrasound" },
-];
-
-const FALLBACK_SCHEMES: HealthPortal[] = [
-  {
-    id: "fallback-pmjay",
-    name: "Ayushman Bharat (PM-JAY)",
-    description: "Health cover for secondary and tertiary hospitalization support.",
-    category: "insurance",
-    url: "https://pmjay.gov.in",
-  },
-  {
-    id: "fallback-nhm",
-    name: "National Health Mission (NHM)",
-    description: "Maternal, child, immunization, and PHC-linked services across rural India.",
-    category: "maternal",
-    url: "https://nhm.gov.in",
-  },
-  {
-    id: "fallback-cghs",
-    name: "Central Government Health Scheme (CGHS)",
-    description: "Government-backed care network for eligible central government beneficiaries.",
-    category: "insurance",
-    url: "https://www.cghs.gov.in",
-  },
-  {
-    id: "fallback-esanjeevani",
-    name: "eSanjeevani",
-    description: "National telemedicine service for online consultations and follow-up guidance.",
-    category: "telemedicine",
-    url: "https://esanjeevani.in",
-  },
-];
-
-const FALLBACK_PROVIDERS: HealthProvider[] = [
-  { id: "apollo", name: "Apollo Hospitals", type: "hospital", city: "Pan-India", address: "Hospital network", website: "https://www.apollohospitals.com" },
-  { id: "pharmeasy", name: "PharmEasy", type: "pharmacy", city: "Pan-India", address: "Online provider", website: "https://pharmeasy.in" },
-  { id: "practo", name: "Practo", type: "telemedicine", city: "Pan-India", address: "Online provider", website: "https://www.practo.com" },
-  { id: "tata1mg", name: "Tata 1mg", type: "pharmacy", city: "Pan-India", address: "Online provider", website: "https://www.1mg.com" },
-  { id: "mfine", name: "mFine", type: "telemedicine", city: "Pan-India", address: "Online provider", website: "https://www.mfine.co" },
-  { id: "fortis", name: "Fortis Hospital", type: "hospital", city: "Pan-India", address: "Hospital network", website: "https://www.fortishealthcare.com" },
-];
 
 type PickerAsset = DocumentPicker.DocumentPickerAsset;
 type BusyState = "idle" | "uploading" | "analyzing";
@@ -112,60 +63,56 @@ export default function HealthDashboardScreen() {
   const [busyState, setBusyState] = useState<BusyState>("idle");
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
 
-  const schemeList = useMemo(() => {
-    const live = Array.isArray(portals.data) ? portals.data : [];
-    const byName = new Map(live.map((entry) => [entry.name.toLowerCase(), entry]));
-    const ordered = [
-      "Ayushman Bharat (PM-JAY)",
-      "National Health Mission (NHM)",
-      "Central Government Health Scheme (CGHS)",
-      "eSanjeevani",
-    ]
-      .map((name) => byName.get(name.toLowerCase()))
-      .filter(Boolean) as HealthPortal[];
+  const demoActions = useMemo(
+    () => ({
+      openSchemes: () => setActiveSheet("schemes"),
+      openProviders: () => setActiveSheet("providers"),
+      openInsights: () => setActiveSheet("insights"),
+      closeSheet: () => setActiveSheet(null),
+    }),
+    [],
+  );
 
-    const remaining = live
-      .filter((entry) => !ordered.some((item) => item.id === entry.id))
-      .sort((left, right) => left.name.localeCompare(right.name));
+  useDemoScreenActions("HealthDashboard", demoActions);
 
-    return [...ordered, ...remaining].slice(0, 8);
-  }, [portals.data]);
-
-  const visibleSchemes = schemeList.length > 0 ? schemeList : FALLBACK_SCHEMES;
-  const schemePreview = visibleSchemes.slice(0, 4);
-
-  const thirdPartyProviders = useMemo(() => {
-    const live = Array.isArray((providers.data as any)?.providers)
-      ? ((providers.data as any)?.providers as HealthProvider[])
-      : [];
-    const byName = new Map(live.map((entry) => [entry.name.toLowerCase(), entry]));
-    const orderedNames = [
-      "Apollo Hospitals",
-      "PharmEasy",
-      "Practo",
-      "Tata 1mg",
-      "mFine",
-      "Fortis Hospital",
-    ];
-
-    const ordered = orderedNames
-      .map((name) => byName.get(name.toLowerCase()))
-      .filter(Boolean) as HealthProvider[];
-
-    const remaining = live
-      .filter((entry) => entry.website && entry.type !== "govt-hospital" && !ordered.some((item) => item.id === entry.id))
-      .slice(0, 6 - ordered.length);
-
-    const result = [...ordered, ...remaining];
-    return result.length > 0 ? result.slice(0, 6) : FALLBACK_PROVIDERS;
-  }, [providers.data]);
-
-  const telemedicinePortal = useMemo(
+  const livePortals = useMemo(
+    () => (Array.isArray(portals.data) ? (portals.data as HealthPortal[]) : []),
+    [portals.data],
+  );
+  const liveProviderRows = useMemo(
     () =>
-      visibleSchemes.find((entry) => entry.name.toLowerCase().includes("esanjeevani"))
-      ?? FALLBACK_SCHEMES.find((entry) => entry.name.toLowerCase().includes("esanjeevani"))
-      ?? FALLBACK_SCHEMES[0],
-    [visibleSchemes],
+      Array.isArray((providers.data as any)?.providers)
+        ? (((providers.data as any)?.providers as HealthProvider[]))
+        : [],
+    [providers.data],
+  );
+
+  const visibleSchemes = useMemo(
+    () => buildHealthSchemeList(livePortals).slice(0, 8),
+    [livePortals],
+  );
+  const schemePreview = visibleSchemes.slice(0, 4);
+  const thirdPartyProviders = useMemo(
+    () => buildHealthProviderList(liveProviderRows).slice(0, 6),
+    [liveProviderRows],
+  );
+  const telemedicinePortal = useMemo(
+    () => findTelemedicinePortal(livePortals),
+    [livePortals],
+  );
+  const availableActions = useMemo(
+    () =>
+      [
+        "Start Screening",
+        "Upload Report",
+        "Get Insights",
+        visibleSchemes.length > 0 ? "View All Schemes" : null,
+        telemedicinePortal?.url ? "Visit Telemedicine Site" : null,
+        thirdPartyProviders.length > 0 ? "Explore Providers" : null,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    [telemedicinePortal?.url, thirdPartyProviders.length, visibleSchemes.length],
   );
 
   const reportStatus = useMemo(() => {
@@ -186,7 +133,7 @@ export default function HealthDashboardScreen() {
       screen: "HealthDashboard",
       tab: activeSheet || "overview",
       meta: {
-        availableActions: "Start Screening, Upload Report, Get Insights, View All Schemes, Visit Site, Explore Providers",
+        availableActions,
         availableReportTypes: REPORT_TYPES.map((entry) => entry.label).join(", "),
         selectedReportType: formatReportType(reportType),
         selectedReportName: pickedFile?.name || "None",
@@ -202,6 +149,7 @@ export default function HealthDashboardScreen() {
   }, [
     activeSheet,
     analysis,
+    availableActions,
     pickedFile?.name,
     portals.loading,
     providers.loading,
@@ -442,12 +390,22 @@ export default function HealthDashboardScreen() {
             </View>
             <View style={styles.schemeBody}>
               <Text style={styles.featureTitle}>Government Health Schemes</Text>
-              {schemePreview.map((entry) => (
-                <Text key={entry.id} style={styles.schemeLine}>
-                  {entry.name}
-                </Text>
-              ))}
-              <Pressable style={styles.primaryButton} onPress={() => setActiveSheet("schemes")}>
+              {schemePreview.length > 0 ? (
+                schemePreview.map((entry) => (
+                  <Text key={entry.id} style={styles.schemeLine}>
+                    {entry.name}
+                  </Text>
+                ))
+              ) : portals.loading ? (
+                <Text style={styles.schemeHint}>Loading government scheme directory…</Text>
+              ) : (
+                <Text style={styles.schemeHint}>No government scheme records are available right now.</Text>
+              )}
+              <Pressable
+                style={[styles.primaryButton, schemePreview.length === 0 && !portals.loading && styles.primaryButtonDisabled]}
+                onPress={() => setActiveSheet("schemes")}
+                disabled={schemePreview.length === 0 && !portals.loading}
+              >
                 <Text style={styles.primaryButtonText}>View All Schemes</Text>
               </Pressable>
             </View>
@@ -458,24 +416,48 @@ export default function HealthDashboardScreen() {
 
         <View style={styles.consultRow}>
           <View style={styles.consultCard}>
-            <ProviderBadge label="eSanjeevani" mono />
-            <Text style={styles.consultTitle}>Government Telemedicine{"\n"}(eSanjeevani)</Text>
-            <Text style={styles.consultCopy}>
-              Quick access to doctors &amp; specialists via smartphone.
-            </Text>
-            <Pressable style={styles.primaryButton} onPress={() => openExternal(telemedicinePortal.url)}>
-              <Text style={styles.primaryButtonText}>Visit Site</Text>
-            </Pressable>
+            {telemedicinePortal ? (
+              <>
+                <ProviderBadge label={telemedicinePortal.name} mono />
+                <Text style={styles.consultTitle}>Government Telemedicine{"\n"}({telemedicinePortal.name})</Text>
+                <Text style={styles.consultCopy}>
+                  {telemedicinePortal.description || "Quick access to doctors and specialists via smartphone."}
+                </Text>
+                <Pressable style={styles.primaryButton} onPress={() => openExternal(telemedicinePortal.url)}>
+                  <Text style={styles.primaryButtonText}>Visit Site</Text>
+                </Pressable>
+              </>
+            ) : portals.loading ? (
+              <>
+                <Text style={styles.consultTitle}>Government Telemedicine</Text>
+                <Text style={styles.consultUnavailable}>Loading telemedicine directory…</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.consultTitle}>Government Telemedicine</Text>
+                <Text style={styles.consultUnavailable}>No government telemedicine portal is available right now.</Text>
+              </>
+            )}
           </View>
 
           <View style={styles.consultCard}>
             <Text style={styles.consultTitle}>Third-Party{"\n"}Consultations</Text>
-            <View style={styles.providerGrid}>
-              {thirdPartyProviders.slice(0, 6).map((provider) => (
-                <ProviderBadge key={provider.id} label={provider.name} />
-              ))}
-            </View>
-            <Pressable style={styles.primaryButton} onPress={() => setActiveSheet("providers")}>
+            {thirdPartyProviders.length > 0 ? (
+              <View style={styles.providerGrid}>
+                {thirdPartyProviders.slice(0, 6).map((provider) => (
+                  <ProviderBadge key={provider.id} label={provider.name} />
+                ))}
+              </View>
+            ) : providers.loading ? (
+              <Text style={styles.consultUnavailable}>Loading provider directory…</Text>
+            ) : (
+              <Text style={styles.consultUnavailable}>No provider listings are available right now.</Text>
+            )}
+            <Pressable
+              style={[styles.primaryButton, thirdPartyProviders.length === 0 && !providers.loading && styles.primaryButtonDisabled]}
+              onPress={() => setActiveSheet("providers")}
+              disabled={thirdPartyProviders.length === 0 && !providers.loading}
+            >
               <Text style={styles.primaryButtonText}>Explore Providers</Text>
             </Pressable>
           </View>
@@ -489,6 +471,8 @@ export default function HealthDashboardScreen() {
       >
         {portals.loading ? (
           <ActivityIndicator color={PALETTE.goldDeep} style={styles.sheetLoader} />
+        ) : visibleSchemes.length === 0 ? (
+          <Text style={styles.sheetEmpty}>No government health scheme records are available right now.</Text>
         ) : (
           visibleSchemes.map((scheme) => (
             <Pressable key={scheme.id} style={styles.sheetCard} onPress={() => openExternal(scheme.url)}>
@@ -506,6 +490,8 @@ export default function HealthDashboardScreen() {
       >
         {providers.loading ? (
           <ActivityIndicator color={PALETTE.goldDeep} style={styles.sheetLoader} />
+        ) : thirdPartyProviders.length === 0 ? (
+          <Text style={styles.sheetEmpty}>No consultation provider records are available right now.</Text>
         ) : (
           thirdPartyProviders.map((provider) => (
             <Pressable key={provider.id} style={styles.sheetCard} onPress={() => openExternal(provider.website)}>
@@ -566,486 +552,3 @@ export default function HealthDashboardScreen() {
     </SafeAreaView>
   );
 }
-
-function DashboardSheet({
-  visible,
-  title,
-  onClose,
-  children,
-}: {
-  visible: boolean;
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.sheetBackdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.sheetWrap}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>{title}</Text>
-            <Pressable style={styles.sheetClose} onPress={onClose}>
-              <Ionicons name="close" size={22} color={PALETTE.ink} />
-            </Pressable>
-          </View>
-          <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
-            {children}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function IconTile({ icon }: { icon: keyof typeof Ionicons.glyphMap }) {
-  return (
-    <View style={styles.iconTile}>
-      <Ionicons name={icon} size={42} color={PALETTE.ink} />
-    </View>
-  );
-}
-
-function ProviderBadge({ label, mono = false }: { label: string; mono?: boolean }) {
-  return (
-    <View style={[styles.providerBadge, mono && styles.providerBadgeMono]}>
-      <Text style={[styles.providerBadgeText, mono && styles.providerBadgeTextMono]}>
-        {badgeLabel(label)}
-      </Text>
-    </View>
-  );
-}
-
-function normalizeMimeType(asset: PickerAsset): "application/pdf" | "image/jpeg" | "image/png" | null {
-  const raw = String(asset.mimeType || "").toLowerCase();
-  if (raw === "application/pdf") return "application/pdf";
-  if (raw === "image/png") return "image/png";
-  if (raw === "image/jpeg" || raw === "image/jpg") return "image/jpeg";
-
-  const lowerName = String(asset.name || "").toLowerCase();
-  if (lowerName.endsWith(".pdf")) return "application/pdf";
-  if (lowerName.endsWith(".png")) return "image/png";
-  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
-  return null;
-}
-
-function formatReportType(value: HealthImagingType) {
-  const match = REPORT_TYPES.find((entry) => entry.value === value);
-  return match?.label || value.replace(/_/g, " ");
-}
-
-function badgeLabel(label: string) {
-  const clean = label
-    .replace("Hospitals", "")
-    .replace("Hospital", "")
-    .replace(/\(.*?\)/g, "")
-    .trim();
-
-  if (clean.length <= 12) {
-    return clean;
-  }
-  return clean.split(/\s+/).slice(0, 2).join(" ");
-}
-
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: PALETTE.screen,
-  },
-  content: {
-    paddingHorizontal: 18,
-    paddingBottom: 34,
-    paddingTop: 8,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    marginBottom: 18,
-  },
-  backButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: PALETTE.gold,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: PALETTE.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  title: {
-    flex: 1,
-    fontSize: 28,
-    fontWeight: "900",
-    color: PALETTE.ink,
-  },
-  featureCard: {
-    backgroundColor: PALETTE.card,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-    padding: 16,
-    marginBottom: 14,
-    flexDirection: "row",
-    gap: 16,
-    shadowColor: PALETTE.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  iconTile: {
-    width: 86,
-    height: 86,
-    borderRadius: 20,
-    backgroundColor: PALETTE.tile,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  featureBody: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginBottom: 4,
-  },
-  featureSub: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: PALETTE.muted,
-    marginBottom: 12,
-  },
-  primaryButton: {
-    minHeight: 54,
-    borderRadius: 27,
-    backgroundColor: PALETTE.gold,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    shadowColor: PALETTE.shadow,
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  primaryButtonText: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: PALETTE.ink,
-  },
-  reportTypeRow: {
-    gap: 8,
-    paddingBottom: 6,
-  },
-  reportTypePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-    backgroundColor: PALETTE.screenGlow,
-  },
-  reportTypePillActive: {
-    backgroundColor: PALETTE.badge,
-    borderColor: PALETTE.goldDeep,
-  },
-  reportTypeText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: PALETTE.dim,
-  },
-  reportTypeTextActive: {
-    color: PALETTE.ink,
-  },
-  secondaryButtonRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 8,
-  },
-  outlineButton: {
-    flex: 1,
-    minHeight: 52,
-    borderRadius: 26,
-    borderWidth: 2,
-    borderColor: PALETTE.outline,
-    backgroundColor: PALETTE.screenGlow,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  outlineButtonText: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: PALETTE.ink,
-  },
-  reportStatus: {
-    marginTop: 10,
-    fontSize: 12,
-    lineHeight: 18,
-    color: PALETTE.dim,
-  },
-  insightPreview: {
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: PALETTE.screenGlow,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-  },
-  insightPreviewTitle: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: PALETTE.goldDeep,
-    marginBottom: 4,
-  },
-  insightPreviewText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: PALETTE.muted,
-  },
-  schemeCard: {
-    backgroundColor: PALETTE.card,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-    padding: 16,
-    marginBottom: 22,
-    shadowColor: PALETTE.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  schemeHeaderRow: {
-    flexDirection: "row",
-    gap: 16,
-  },
-  schemeSeal: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 1.5,
-    borderColor: PALETTE.line,
-    backgroundColor: "#FFFDF7",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  schemeSealTop: {
-    fontSize: 10,
-    fontWeight: "900",
-    color: PALETTE.dim,
-    letterSpacing: 0.6,
-  },
-  schemeSealBottom: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginTop: 2,
-  },
-  schemeBody: {
-    flex: 1,
-  },
-  schemeLine: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: PALETTE.muted,
-    marginBottom: 2,
-  },
-  sectionHeading: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginBottom: 14,
-  },
-  consultRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  consultCard: {
-    flex: 1,
-    backgroundColor: PALETTE.card,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-    padding: 16,
-    minHeight: 250,
-    shadowColor: PALETTE.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  consultTitle: {
-    fontSize: 18,
-    lineHeight: 23,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginTop: 12,
-    marginBottom: 10,
-  },
-  consultCopy: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: PALETTE.muted,
-    marginBottom: 16,
-  },
-  providerGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 10,
-    marginBottom: 18,
-  },
-  providerBadge: {
-    minWidth: 58,
-    minHeight: 50,
-    borderRadius: 12,
-    backgroundColor: "#F2F4F7",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 8,
-  },
-  providerBadgeMono: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    backgroundColor: "#FFFDF7",
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-  },
-  providerBadgeText: {
-    fontSize: 11,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    textAlign: "center",
-  },
-  providerBadgeTextMono: {
-    fontSize: 12,
-  },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(17, 17, 17, 0.28)",
-    justifyContent: "flex-end",
-  },
-  sheetWrap: {
-    backgroundColor: PALETTE.screenGlow,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 10,
-    maxHeight: "82%",
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 54,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: PALETTE.line,
-    marginBottom: 12,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    marginBottom: 12,
-  },
-  sheetTitle: {
-    fontSize: 21,
-    fontWeight: "900",
-    color: PALETTE.ink,
-  },
-  sheetClose: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PALETTE.card,
-  },
-  sheetContent: {
-    paddingHorizontal: 18,
-    paddingBottom: 30,
-    gap: 12,
-  },
-  sheetLoader: {
-    marginTop: 24,
-  },
-  sheetCard: {
-    backgroundColor: PALETTE.card,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-    padding: 14,
-  },
-  sheetCardTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginBottom: 4,
-  },
-  sheetCardMeta: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: PALETTE.goldDeep,
-    marginBottom: 4,
-  },
-  sheetCardCopy: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: PALETTE.muted,
-  },
-  analysisCard: {
-    backgroundColor: PALETTE.card,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: PALETTE.line,
-    padding: 16,
-  },
-  analysisHeading: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: PALETTE.ink,
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  analysisCopy: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: PALETTE.muted,
-  },
-  analysisDisclaimer: {
-    marginTop: 16,
-    fontSize: 11,
-    lineHeight: 16,
-    color: PALETTE.dim,
-  },
-  sheetEmpty: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: PALETTE.muted,
-  },
-  bulletRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    marginTop: 6,
-  },
-  bulletDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: PALETTE.goldDeep,
-    marginTop: 5,
-  },
-  bulletText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
-    color: PALETTE.muted,
-  },
-});

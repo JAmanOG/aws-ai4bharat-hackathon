@@ -107,6 +107,8 @@ export default function VoiceOverlay({
     currentVisualization,
     lastCommand,
     autoListen,
+    ttsEnabled,
+    lowDataMode,
     language,
     sessionId,
     processResult,
@@ -246,6 +248,7 @@ export default function VoiceOverlay({
           language_code: language,
           session_id: sessionId ?? undefined,
           screen_context: screenCtx.toPromptContext(),
+          generate_audio: ttsEnabled && !lowDataMode,
         });
         handleResult(result);
       } catch (err: any) {
@@ -265,7 +268,7 @@ export default function VoiceOverlay({
         setState("idle");
       }
     }
-  }, [state, hasMicPermission, language, sessionId, voice]);
+  }, [state, hasMicPermission, language, lowDataMode, sessionId, ttsEnabled, voice]);
 
   const startListening = useCallback(async () => {
     if (hasMicPermission === false) {
@@ -290,7 +293,7 @@ export default function VoiceOverlay({
       processResult(result);
 
       // Play audio if available
-      if (result.audio_base64) {
+      if (ttsEnabled && result.audio_base64) {
         setState("speaking");
         voice
           .playBase64Audio(result.audio_base64)
@@ -307,7 +310,7 @@ export default function VoiceOverlay({
         setState("visualizing");
       }
     },
-    [processResult, voice, autoListen, startListening, setState]
+    [processResult, voice, autoListen, startListening, setState, ttsEnabled]
   );
 
   /* ── Navigate callback (used by VoiceContext for auto-navigation) ── */

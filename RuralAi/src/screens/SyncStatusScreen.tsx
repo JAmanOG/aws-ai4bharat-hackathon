@@ -1,26 +1,27 @@
 /**
- * Sync Status Screen — offline/bandwidth status, category filters,
- * per-domain sync items, cached KB size, sync badges.
+ * Sync Status Screen — renders actual voice pipeline health reported by the backend.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
   Pressable,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { useHealthCheck, usePipelineHealth } from "../hooks/useData";
-
-const CATEGORIES = ["All", "Agriculture", "Economics", "Health", "Knowledge"];
-
-type SyncItem = { id: string; domain: string; icon: string; items: string; kb: number; synced: boolean; ago: string };
+import {
+  buildPipelineCategories,
+  buildPipelineStatusItems,
+  countAvailableComponents,
+  countDegradedComponents,
+} from "../features/sync/pipelineHealth";
 
 export default function SyncStatusScreen() {
   const nav = useNavigation<any>();
@@ -29,38 +30,24 @@ export default function SyncStatusScreen() {
   const isOnline = health.data?.status === "ok";
   const [filter, setFilter] = useState("All");
 
-  /* Build sync items from real pipeline health or fallback */
   const pipelineData = pipeline.data as any;
-  const SYNC_ITEMS: SyncItem[] = React.useMemo(() => {
-    const components = pipelineData?.components ?? pipelineData?.services ?? {};
-    const base: SyncItem[] = [
-      { id: "agri", domain: "Agriculture", icon: "leaf", items: "Market prices, crop data", kb: 14, synced: true, ago: "2 min" },
-      { id: "econ", domain: "Economics", icon: "business", items: "Savings, schemes", kb: 8, synced: true, ago: "5 min" },
-      { id: "health", domain: "Health", icon: "heart-circle", items: "Symptom data, providers", kb: 22, synced: false, ago: "Pending" },
-      { id: "knowledge", domain: "Knowledge", icon: "bulb", items: "Courses, credentials", kb: 18, synced: true, ago: "10 min" },
-      { id: "weather", domain: "Weather", icon: "cloud", items: "7-day forecast, alerts", kb: 6, synced: true, ago: "1 min" },
-    ];
-    // Override sync state from pipeline health if available
-    if (components && typeof components === "object") {
-      const keys = Object.keys(components);
-      keys.forEach((k) => {
-        const item = base.find((b) => b.id === k || b.domain.toLowerCase() === k.toLowerCase());
-        if (item) {
-          item.synced = components[k]?.healthy !== false;
-          item.ago = components[k]?.latency ? `${components[k].latency}ms` : item.ago;
-        }
-      });
-    }
-    return base.map((s) => ({ ...s, synced: isOnline ? s.synced : false }));
-  }, [pipelineData, isOnline]);
+  const items = useMemo(() => buildPipelineStatusItems(pipelineData), [pipelineData]);
+  const categories = useMemo(() => buildPipelineCategories(items), [items]);
+  const filtered = filter === "All" ? items : items.filter((item) => item.category === filter);
+  const availableCount = countAvailableComponents(items);
+  const degradedCount = countDegradedComponents(items);
+  const agentCount = Array.isArray(pipelineData?.agents) ? pipelineData.agents.length : 0;
+  const pipelineDescription = String(pipelineData?.pipeline ?? "").trim();
+  const pipelineHealthy = pipelineData?.healthy === true;
 
-  const filtered = filter === "All" ? SYNC_ITEMS : SYNC_ITEMS.filter((s) => s.domain === filter);
-  const totalKb = SYNC_ITEMS.reduce((s, i) => s + i.kb, 0);
-  const syncedCount = SYNC_ITEMS.filter((s) => s.synced).length;
+  useEffect(() => {
+    if (!categories.includes(filter)) {
+      setFilter("All");
+    }
+  }, [categories, filter]);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => nav.goBack()} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
@@ -70,94 +57,233 @@ export default function SyncStatusScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Network status card */}
-        <View style={[styles.netCard, { backgroundColor: isOnline ? "#ECFDF5" : "#FEF2F2", borderColor: isOnline ? "#BBF7D0" : "#FECACA" }]}>
-          <Ionicons name={isOnline ? "wifi" : "cloud-offline"} size={22} color={isOnline ? colors.success : colors.danger} />
+        <View
+          style={[
+            styles.netCard,
+            {
+              backgroundColor: isOnline ? "#ECFDF5" : "#FEF2F2",
+              borderColor: isOnline ? "#BBF7D0" : "#FECACA",
+            },
+          ]}
+        >
+          <Ionicons
+            name={isOnline ? "wifi" : "cloud-offline"}
+            size={22}
+            color={isOnline ? colors.success : colors.danger}
+          />
           <View style={{ flex: 1 }}>
             <Text style={[styles.netTitle, { color: isOnline ? "#166534" : "#991B1B" }]}>
-              {isOnline ? "Connected — syncing data" : "Offline mode — using cached data"}
+              {isOnline ? "Backend reachable" : "Backend unreachable"}
             </Text>
-            <Text style={styles.netSub}>{totalKb}kB cached • {syncedCount}/{SYNC_ITEMS.length} synced • 2G compressed</Text>
+            <Text style={styles.netSub}>
+              {items.length > 0
+                ? `${availableCount}/${items.length} components available • ${agentCount} agents registered`
+                : pipeline.loading
+                  ? "Checking pipeline health…"
+                  : "No pipeline health data reported yet"}
+            </Text>
           </View>
         </View>
 
-        {/* Category filter pills */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll} contentContainerStyle={styles.pillRow}>
-          {CATEGORIES.map((c) => (
-            <Pressable key={c} style={[styles.pill, filter === c && styles.pillActive]} onPress={() => setFilter(c)}>
-              <Text style={[styles.pillText, filter === c && styles.pillTextActive]}>{c}</Text>
+          {categories.map((category) => (
+            <Pressable
+              key={category}
+              style={[styles.pill, filter === category && styles.pillActive]}
+              onPress={() => setFilter(category)}
+            >
+              <Text style={[styles.pillText, filter === category && styles.pillTextActive]}>{category}</Text>
             </Pressable>
           ))}
         </ScrollView>
 
-        {/* Sync items */}
-        {filtered.map((item) => (
-          <View key={item.id} style={styles.syncCard}>
-            <View style={styles.syncRow}>
-              <View style={[styles.syncIcon, { backgroundColor: item.synced ? colors.successTint : colors.warnTint }]}>
-                <Ionicons name={item.icon as any} size={18} color={item.synced ? colors.success : colors.warn} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.syncDomain}>{item.domain}</Text>
-                <Text style={styles.syncItems}>{item.items}</Text>
-              </View>
-              <View style={[styles.syncBadge, { backgroundColor: item.synced ? colors.successTint : colors.warnTint }]}>
-                <Ionicons name={item.synced ? "checkmark-circle" : "time"} size={11} color={item.synced ? colors.success : colors.warn} />
-                <Text style={[styles.syncBadgeText, { color: item.synced ? colors.success : colors.warn }]}>
-                  {item.synced ? "Synced" : "Pending"}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.syncMeta}>
-              <Text style={styles.syncKb}>{item.kb}kB cached</Text>
-              <Text style={styles.syncAgo}>{item.ago} ago</Text>
-            </View>
+        {pipeline.loading && items.length === 0 ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.stateTitle}>Checking pipeline status</Text>
+            <Text style={styles.stateText}>Fetching real component health from the backend.</Text>
           </View>
-        ))}
+        ) : null}
 
-        {/* Sync Now CTA */}
-        <Pressable style={[styles.cta, !isOnline && { opacity: 0.5 }]} disabled={!isOnline}>
+        {!pipeline.loading && pipeline.error ? (
+          <View style={styles.stateCard}>
+            <Ionicons name="alert-circle-outline" size={30} color={colors.danger} />
+            <Text style={styles.stateTitle}>Could not load sync status</Text>
+            <Text style={styles.stateText}>The backend did not return pipeline health. Retry once the server is reachable.</Text>
+          </View>
+        ) : null}
+
+        {!pipeline.loading && !pipeline.error && items.length === 0 ? (
+          <View style={styles.stateCard}>
+            <Ionicons name="server-outline" size={30} color={colors.warn} />
+            <Text style={styles.stateTitle}>No pipeline data reported</Text>
+            <Text style={styles.stateText}>This screen only shows live component status returned by the backend.</Text>
+          </View>
+        ) : null}
+
+        {filtered.map((item) => {
+          const appearance = getStatusAppearance(item.status);
+          return (
+            <View key={item.id} style={styles.syncCard}>
+              <View style={styles.syncRow}>
+                <View style={[styles.syncIcon, { backgroundColor: appearance.tint }]}>
+                  <Ionicons name={getCategoryIcon(item.category)} size={18} color={appearance.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.syncDomain}>{item.label}</Text>
+                  <Text style={styles.syncItems}>{item.category} • {item.detail}</Text>
+                </View>
+                <View style={[styles.syncBadge, { backgroundColor: appearance.tint }]}>
+                  <Ionicons name={appearance.icon} size={11} color={appearance.color} />
+                  <Text style={[styles.syncBadgeText, { color: appearance.color }]}>{item.statusLabel}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })}
+
+        <Pressable style={styles.cta} onPress={pipeline.refresh}>
           <Ionicons name="sync" size={20} color="#FFF" />
-          <Text style={styles.ctaText}>Sync Now</Text>
+          <Text style={styles.ctaText}>Refresh Status</Text>
         </Pressable>
 
-        {/* Storage info */}
         <View style={styles.storageRow}>
           <Ionicons name="server" size={14} color={colors.muted} />
-          <Text style={styles.storageText}>Total cache: {totalKb}kB • Last full sync: 25 min ago</Text>
+          <Text style={styles.storageText}>
+            {pipelineDescription
+              ? `${pipelineDescription} • ${pipelineHealthy ? "Healthy" : `${degradedCount} degraded`}`
+              : `Agents registered: ${agentCount}`}
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function getCategoryIcon(category: string) {
+  if (category === "Voice Input") return "mic";
+  if (category === "AI Routing") return "git-network";
+  if (category === "Voice Output") return "volume-high";
+  if (category === "Storage") return "server";
+  return "construct";
+}
+
+function getStatusAppearance(status: string) {
+  if (status === "available") {
+    return { color: colors.success, tint: colors.successTint, icon: "checkmark-circle" as const };
+  }
+  if (status === "missing_key") {
+    return { color: colors.warn, tint: colors.warnTint, icon: "key-outline" as const };
+  }
+  return { color: colors.danger, tint: colors.dangerTint, icon: "alert-circle" as const };
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: "900", color: colors.ink },
   onlineDot: { width: 8, height: 8, borderRadius: 4 },
   content: { padding: 16, paddingBottom: 100 },
-  netCard: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, padding: 14, borderWidth: 1, marginBottom: 14 },
+  netCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
   netTitle: { fontSize: 13, fontWeight: "800" },
   netSub: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 3 },
   pillScroll: { marginBottom: 14, flexGrow: 0 },
   pillRow: { gap: 8 },
-  pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 11, fontWeight: "800", color: colors.muted },
   pillTextActive: { color: "#FFF" },
-  syncCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border, gap: 8 },
+  stateCard: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 18,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  stateTitle: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: "900",
+    color: colors.ink,
+    textAlign: "center",
+  },
+  stateText: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 17,
+    color: colors.muted,
+    textAlign: "center",
+  },
+  syncCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   syncRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  syncIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  syncIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   syncDomain: { fontSize: 13, fontWeight: "900", color: colors.ink },
   syncItems: { fontSize: 10, fontWeight: "600", color: colors.muted, marginTop: 2 },
-  syncBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  syncBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
   syncBadgeText: { fontSize: 10, fontWeight: "800" },
-  syncMeta: { flexDirection: "row", justifyContent: "space-between", paddingLeft: 48 },
-  syncKb: { fontSize: 10, fontWeight: "700", color: colors.muted },
-  syncAgo: { fontSize: 10, fontWeight: "700", color: colors.muted },
-  cta: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 16, shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  cta: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 16,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
   ctaText: { fontSize: 15, fontWeight: "900", color: "#FFF" },
   storageRow: { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
-  storageText: { fontSize: 10, fontWeight: "600", color: colors.muted },
+  storageText: { flex: 1, fontSize: 10, fontWeight: "600", color: colors.muted, textAlign: "center" },
 });
