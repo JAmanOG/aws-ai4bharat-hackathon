@@ -258,7 +258,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
                   <ActivityIndicator size="small" color={P.surface} />
                 ) : (
                   <Ionicons
-                    name={voiceState === "listening" ? "stop" : (askFocused ? ICONS.Ask[1] : ICONS.Ask[0]) as any}
+                    name={(voiceState === "listening" || askFocused ? ICONS.Ask[1] : ICONS.Ask[0]) as any}
                     size={34}
                     color={P.surface}
                   />

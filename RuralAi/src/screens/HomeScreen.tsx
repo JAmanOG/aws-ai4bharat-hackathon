@@ -137,7 +137,7 @@ export default function HomeScreen() {
             <Ionicons name="chatbubbles-outline" size={40} color={colors.border} />
             <Text style={styles.emptyTitle}>No conversations yet</Text>
             <Text style={styles.emptyHint}>
-              Tap the mic button to start speaking.{"\n"}
+              Hold the mic button to start speaking.{"\n"}
               Ask about market prices, schemes, weather, or anything else.
             </Text>
           </View>

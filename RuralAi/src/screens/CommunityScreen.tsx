@@ -129,7 +129,7 @@ export default function CommunityScreen() {
             <Ionicons name="chatbubbles-outline" size={40} color={colors.muted} />
             <Text style={{ fontSize: 14, fontWeight: "800", color: colors.ink, marginTop: 10 }}>No posts yet</Text>
             <Text style={{ fontSize: 12, fontWeight: "600", color: colors.muted, textAlign: "center", marginTop: 4 }}>
-              Tap the mic to share with your community by voice.
+              Hold the mic to share with your community by voice.
             </Text>
           </View>
 

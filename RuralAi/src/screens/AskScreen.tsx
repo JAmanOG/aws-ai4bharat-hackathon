@@ -28,7 +28,6 @@ import {
   type VisionAttachmentAnalysis,
 } from "../services/api";
 import { askDomains, ruralPalette as P } from "../theme/ruralPalette";
-import { useDemo } from "../demo/DemoContext";
 const HERO_SIZE = 120;
 
 type AskAttachmentMimeType = "application/pdf" | "image/jpeg" | "image/png";
@@ -171,10 +170,10 @@ function statusCopy(state: string, hasResult: boolean, attachment?: AskAttachmen
   switch (state) {
     case "listening":
       return {
-        title: "Listening...",
+        title: "Release to Send",
         subtitle: attachment
-          ? "Ask what you want to know about this photo or report."
-          : "Describe your problem in Hindi, English, or your preferred language.",
+          ? "Keep holding while you ask about this photo or report, then release."
+          : "Keep holding while you speak in Hindi, English, or your preferred language.",
       };
     case "processing":
       return {
@@ -192,13 +191,13 @@ function statusCopy(state: string, hasResult: boolean, attachment?: AskAttachmen
       return {
         title: "Response Ready",
         subtitle: hasResult
-          ? "The latest answer is visible below. Tap again to ask the next question."
-          : "Tap again to continue.",
+          ? "The latest answer is visible below. Hold again when you want to ask the next question."
+          : "Hold again when you want to continue.",
       };
     default:
       return {
-        title: "Tap to Speak",
-        subtitle: attachment ? attachmentHint : "Example: Ask about crop prices in Hindi...",
+        title: "Hold to Speak",
+        subtitle: attachment ? attachmentHint : "Example: Hold and ask about crop prices in Hindi...",
       };
   }
 }
@@ -253,7 +252,6 @@ export default function AskScreen() {
     currentVisualization,
     lastCommand,
     language,
-    autoListen,
     ttsEnabled,
     lowDataMode,
     sessionId,
@@ -261,7 +259,6 @@ export default function AskScreen() {
     clearVisualization,
   } = useVoice();
 
-  const { isActive: isDemoActive, startDemo } = useDemo();
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [selectedAttachment, setSelectedAttachment] = useState<AskAttachment | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
@@ -269,6 +266,9 @@ export default function AskScreen() {
   const orbitSpin = useRef(new Animated.Value(0)).current;
   const mountedRef = useRef(true);
   const attachmentJobRef = useRef(0);
+  const isHoldRecordingRef = useRef(false);
+  const isStartingRef = useRef(false);
+  const pendingReleaseRef = useRef(false);
 
   const hasResult = !!(transcript || responseText || currentVisualization);
   const attachmentPromptContext = useMemo(
@@ -322,6 +322,9 @@ export default function AskScreen() {
       mountedRef.current = false;
       voiceService.cancelRecording();
       voiceService.stopPlayback();
+      isHoldRecordingRef.current = false;
+      isStartingRef.current = false;
+      pendingReleaseRef.current = false;
       setState("idle");
     };
   }, []);
@@ -646,26 +649,6 @@ export default function AskScreen() {
     setSelectedAttachment(null);
   }, [selectedAttachment?.status]);
 
-  const startListening = useCallback(async () => {
-    if (hasMicPermission === false) {
-      Alert.alert("Microphone permission needed", "Allow microphone access to speak with the assistant.");
-      return;
-    }
-
-    if (selectedAttachment?.status === "analyzing") {
-      Alert.alert("Attachment is still processing", "Wait for the selected photo or report to finish analyzing.");
-      return;
-    }
-
-    try {
-      clearVisualization();
-      await voiceService.startRecording();
-      if (mountedRef.current) setState("listening");
-    } catch {
-      if (mountedRef.current) setState("idle");
-    }
-  }, [clearVisualization, hasMicPermission, selectedAttachment?.status, setState, voiceService]);
-
   const handleResult = useCallback(
     (result: ChatResult) => {
       processResult(result);
@@ -680,21 +663,28 @@ export default function AskScreen() {
 
       voiceService
         .playBase64Audio(result.audio_base64)
-        .then(async () => {
-          if (autoListen && mountedRef.current) {
-            await startListening();
-            return;
-          }
+        .then(() => {
           if (mountedRef.current) setState("visualizing");
         })
         .catch(() => {
           if (mountedRef.current) setState("visualizing");
         });
     },
-    [autoListen, navigateForHealthResult, processResult, setState, startListening, ttsEnabled, voiceService]
+    [navigateForHealthResult, processResult, setState, ttsEnabled, voiceService]
   );
 
   const stopAndSend = useCallback(async () => {
+    if (isStartingRef.current && !isHoldRecordingRef.current) {
+      pendingReleaseRef.current = true;
+      return;
+    }
+
+    if (!isHoldRecordingRef.current) {
+      return;
+    }
+
+    isHoldRecordingRef.current = false;
+    pendingReleaseRef.current = false;
     if (mountedRef.current) setState("processing");
 
     try {
@@ -720,19 +710,59 @@ export default function AskScreen() {
       });
       handleResult(result);
     } catch {
+      isStartingRef.current = false;
+      pendingReleaseRef.current = false;
       if (mountedRef.current) setState("idle");
     }
   }, [buildVoiceScreenContext, handleResult, language, lowDataMode, sessionId, setState, ttsEnabled, voiceService]);
 
-  const handleHeroPress = useCallback(async () => {
-    if (state === "processing" || state === "speaking") return;
-    if (state === "listening") {
-      await stopAndSend();
+  const startHoldRecording = useCallback(async () => {
+    if (state === "processing" || state === "speaking" || isStartingRef.current || isHoldRecordingRef.current) {
       return;
     }
 
-    await startListening();
-  }, [startListening, state, stopAndSend]);
+    isStartingRef.current = true;
+    pendingReleaseRef.current = false;
+
+    if (hasMicPermission === false) {
+      isStartingRef.current = false;
+      Alert.alert("Microphone permission needed", "Allow microphone access to speak with the assistant.");
+      return;
+    }
+
+    if (selectedAttachment?.status === "analyzing") {
+      isStartingRef.current = false;
+      Alert.alert("Attachment is still processing", "Wait for the selected photo or report to finish analyzing.");
+      return;
+    }
+
+    try {
+      clearVisualization();
+      await voiceService.startRecording();
+      isStartingRef.current = false;
+      isHoldRecordingRef.current = true;
+      if (mountedRef.current) {
+        setState("listening");
+      }
+
+      if (pendingReleaseRef.current) {
+        void stopAndSend();
+      }
+    } catch {
+      isStartingRef.current = false;
+      isHoldRecordingRef.current = false;
+      pendingReleaseRef.current = false;
+      if (mountedRef.current) setState("idle");
+    }
+  }, [clearVisualization, hasMicPermission, selectedAttachment?.status, setState, state, stopAndSend, voiceService]);
+
+  const handleHeroPressOut = useCallback(() => {
+    if (!isHoldRecordingRef.current && !isStartingRef.current) {
+      return;
+    }
+
+    void stopAndSend();
+  }, [stopAndSend]);
 
   const openAlerts = useCallback(() => {
     nav.navigate("Home", { screen: "Alerts" });
@@ -746,12 +776,6 @@ export default function AskScreen() {
             <Image source={APP_LOGO} style={styles.brandLogo} resizeMode="contain" />
             <Text style={styles.brand}>{APP_NAME_UPPER}</Text>
           </View>
-          {!isDemoActive && (
-            <Pressable style={styles.demoBtnAsk} onPress={startDemo} hitSlop={8}>
-              <Ionicons name="videocam" size={14} color="#EF4444" />
-              <Text style={styles.demoBtnAskText}>DEMO</Text>
-            </Pressable>
-          )}
           <Pressable style={styles.topIconBtn} onPress={openAlerts}>
             <Ionicons name="notifications" size={24} color={P.mutedDark} />
           </Pressable>
@@ -775,7 +799,11 @@ export default function AskScreen() {
           <View style={styles.heroRing}>
             <Animated.View style={{ transform: [{ scale: pulse }] }}>
               <Pressable
-                onPress={handleHeroPress}
+                delayLongPress={140}
+                onLongPress={() => {
+                  void startHoldRecording();
+                }}
+                onPressOut={handleHeroPressOut}
                 style={({ pressed }) => [
                   styles.heroButton,
                   state === "listening" && styles.heroButtonActive,
@@ -785,11 +813,7 @@ export default function AskScreen() {
                 {state === "processing" ? (
                   <ActivityIndicator size="small" color={P.surface} />
                 ) : (
-                  <Ionicons
-                    name={state === "listening" ? "stop" : "mic"}
-                    size={54}
-                    color={P.surface}
-                  />
+                  <Ionicons name="mic" size={54} color={P.surface} />
                 )}
               </Pressable>
             </Animated.View>
@@ -983,23 +1007,6 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: "center",
     justifyContent: "center",
-  },
-  demoBtnAsk: {
-    position: "absolute",
-    right: 40,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "rgba(239,68,68,0.10)",
-  },
-  demoBtnAskText: {
-    fontSize: 9,
-    fontWeight: "900",
-    color: "#EF4444",
-    letterSpacing: 0.6,
   },
   brandLockup: {
     flexDirection: "row",

@@ -51,8 +51,6 @@ export default function ProfileScreen() {
   const {
     language,
     setLanguage,
-    autoListen,
-    setAutoListen,
     ttsEnabled,
     setTtsEnabled,
     lowDataMode,
@@ -195,7 +193,7 @@ export default function ProfileScreen() {
           <SettingsRow
             icon="mic-outline"
             title="Voice Settings"
-            subtitle={autoListen ? "Mic, speech, clarity" : "Mic, speech, manual replay"}
+            subtitle={ttsEnabled ? "Hold to talk, spoken replies" : "Hold to talk, manual reading"}
             onPress={() => setVoiceModalVisible(true)}
           />
           <Divider />
@@ -265,19 +263,10 @@ export default function ProfileScreen() {
       <SheetModal
         visible={voiceModalVisible}
         title="Voice Settings"
-        subtitle="Control how the assistant listens and continues."
+        subtitle="Control voice language and session reset."
         onClose={() => setVoiceModalVisible(false)}
       >
         <View style={styles.voiceSheetBlock}>
-          <ToggleRow
-            icon="repeat-outline"
-            title="Auto-listen"
-            subtitle="Start listening again after each spoken answer"
-            value={autoListen}
-            onChange={setAutoListen}
-            embedded
-          />
-          <Divider inset />
           <SettingsRow
             icon="language-outline"
             title="Voice language"

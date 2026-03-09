@@ -106,7 +106,6 @@ export default function VoiceOverlay({
     responseText,
     currentVisualization,
     lastCommand,
-    autoListen,
     ttsEnabled,
     lowDataMode,
     language,
@@ -297,12 +296,7 @@ export default function VoiceOverlay({
         setState("speaking");
         voice
           .playBase64Audio(result.audio_base64)
-          .then(async () => {
-            if (autoListen && stateRef.current !== "idle") {
-              await startListening();
-              return;
-            }
-
+          .then(() => {
             setState("visualizing");
           })
           .catch(() => setState("visualizing"));
@@ -310,7 +304,7 @@ export default function VoiceOverlay({
         setState("visualizing");
       }
     },
-    [processResult, voice, autoListen, startListening, setState, ttsEnabled]
+    [processResult, voice, setState, ttsEnabled]
   );
 
   /* ── Navigate callback (used by VoiceContext for auto-navigation) ── */

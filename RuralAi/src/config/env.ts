@@ -6,6 +6,9 @@
  *   EXPO_PUBLIC_API_URL=http://192.168.x.x:3000 npx expo start
  * Or point to the production ALB:
  *   EXPO_PUBLIC_API_URL=http://rural-alb-dev-2139845854.ap-south-1.elb.amazonaws.com
+ *
+ * Note: Current ALB endpoint is HTTP-only. Android release builds require
+ * `expo.android.usesCleartextTraffic = true` in app.json for this URL.
  */
 
 import { Platform } from 'react-native';
