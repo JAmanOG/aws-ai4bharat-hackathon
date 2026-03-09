@@ -1,0 +1,27 @@
+--------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                 DescribeStacks                                                                 |
++-----------------------------+------------------------------------------------------------------------------------------------------------------+
+|  [1m[34mNovaRegion[0m                 |  [1m[34mus-east-1[0m                                                                                                       |
+|  [1m[34mDbPassword[0m                 |  [1m[34m****[0m                                                                                                            |
+|  [1m[34mCommunityMediaBucket[0m       |  [1m[34mrural-community-media-dev-111418871333[0m                                                                          |
+|  [1m[34mNovaModelId[0m                |  [1m[34mamazon.nova-micro-v1:0[0m                                                                                          |
+|  [1m[34mHealthImagingBucket[0m        |  [1m[34mrural-health-imaging-dev-111418871333[0m                                                                           |
+|  [1m[34mLearningNotificationsTopic[0m |  [1m[34marn:aws:sns:ap-south-1:111418871333:rural-learning-notifications-dev[0m                                            |
+|  [1m[34mDbPort[0m                     |  [1m[34m5432[0m                                                                                                            |
+|  [1m[34mImageUri[0m                   |  [1m[34m111418871333.dkr.ecr.ap-south-1.amazonaws.com/rural-platform-backend:25a3f47f15c40715371003b3a3b4455f9490a494[0m   |
+|  [1m[34mSubnetIds[0m                  |  [1m[34msubnet-00102fd8f02546f3f,subnet-0de9101cc6a6f388f,subnet-0372f717ad5bf8f18[0m                                      |
+|  [1m[34mFinancialNotificationsTopic[0m|  [1m[34marn:aws:sns:ap-south-1:111418871333:rural-financial-notifications-dev[0m                                           |
+|  [1m[34mGeminiApiKey[0m               |  [1m[34m****[0m                                                                                                            |
+|  [1m[34mCognitoUserPoolId[0m          |  [1m[34map-south-1_5eGqm0JvM[0m                                                                                            |
+|  [1m[34mContentBucket[0m              |  [1m[34mrural-platform-content-dev-111418871333[0m                                                                         |
+|  [1m[34mVpcId[0m                      |  [1m[34mvpc-0caeb0d2ebe85e669[0m                                                                                           |
+|  [1m[34mDbHost[0m                     |  [1m[34m[0m                                                                                                                |
+|  [1m[34mStage[0m                      |  [1m[34mdev[0m                                                                                                             |
+|  [1m[34mDbName[0m                     |  [1m[34mrural_platform[0m                                                                                                  |
+|  [1m[34mCommunityNotificationsTopic[0m|  [1m[34marn:aws:sns:ap-south-1:111418871333:rural-community-notifications-dev[0m                                           |
+|  [1m[34mCognitoAppClientId[0m         |  [1m[34m7037npivotg1kmnf5pm0cd1und[0m                                                                                      |
+|  [1m[34mPriceAlertSnsTopic[0m         |  [1m[34marn:aws:sns:ap-south-1:111418871333:rural-price-alerts-dev[0m                                                      |
+|  [1m[34mBedrockModelId[0m             |  [1m[34manthropic.claude-3-haiku-20240307-v1:0[0m                                                                          |
+|  [1m[34mSarvamApiKey[0m               |  [1m[34m****[0m                                                                                                            |
+|  [1m[34mDbUser[0m                     |  [1m[34madmin[0m                                                                                                           |
++-----------------------------+------------------------------------------------------------------------------------------------------------------+

@@ -82,7 +82,7 @@ function buildHeroCopy(
   hasResult: boolean,
 ) {
   if (voiceState === "listening") {
-    return "Listening. Answer the AI Doctor clearly in your preferred language.";
+    return "Keep holding while you answer the AI Doctor, then release when you finish.";
   }
   if (voiceState === "processing") {
     return "AI Doctor is reviewing the latest answer and preparing the next step.";
@@ -125,6 +125,9 @@ export default function SymptomCheckerScreen() {
   } = useVoice();
 
   const mountedRef = useRef(true);
+  const isHoldRecordingRef = useRef(false);
+  const isStartingRef = useRef(false);
+  const pendingReleaseRef = useRef(false);
   const sessionRef = useRef(
     lastCommand?.domain === "health" && lastCommand.intent?.includes("symptom") && sessionId
       ? sessionId
@@ -175,6 +178,9 @@ export default function SymptomCheckerScreen() {
       mountedRef.current = false;
       voiceService.cancelRecording().catch(() => {});
       voiceService.stopPlayback().catch(() => {});
+      isHoldRecordingRef.current = false;
+      isStartingRef.current = false;
+      pendingReleaseRef.current = false;
       setState("idle");
     };
   }, []);
@@ -274,23 +280,18 @@ export default function SymptomCheckerScreen() {
     [appendTurn, processResult, setState, ttsEnabled, voiceService],
   );
 
-  const startListening = useCallback(async () => {
-    if (hasMicPermission === false) {
-      Alert.alert("Microphone permission needed", "Allow microphone access to speak with the AI Doctor.");
+  const stopAndSend = useCallback(async () => {
+    if (isStartingRef.current && !isHoldRecordingRef.current) {
+      pendingReleaseRef.current = true;
       return;
     }
 
-    try {
-      clearVisualization();
-      setConversationStage((current) => (current === "complete" ? "collecting" : current));
-      await voiceService.startRecording();
-      if (mountedRef.current) setState("listening");
-    } catch {
-      if (mountedRef.current) setState("idle");
+    if (!isHoldRecordingRef.current) {
+      return;
     }
-  }, [clearVisualization, hasMicPermission, setState, voiceService]);
 
-  const stopAndSend = useCallback(async () => {
+    isHoldRecordingRef.current = false;
+    pendingReleaseRef.current = false;
     if (mountedRef.current) setState("processing");
 
     try {
@@ -317,19 +318,55 @@ export default function SymptomCheckerScreen() {
       await handleResult(chatResult);
     } catch (error: any) {
       Alert.alert("Unable to continue", error?.message ?? "Please try speaking again.");
+      isStartingRef.current = false;
+      pendingReleaseRef.current = false;
       if (mountedRef.current) setState("idle");
       setConversationStage("error");
     }
   }, [handleResult, language, lowDataMode, sessionId, setState, toPromptContext, ttsEnabled, voiceService]);
 
-  const handleMicPress = useCallback(async () => {
-    if (state === "processing" || state === "speaking") return;
-    if (state === "listening") {
-      await stopAndSend();
+  const startHoldRecording = useCallback(async () => {
+    if (state === "processing" || state === "speaking" || isStartingRef.current || isHoldRecordingRef.current) {
       return;
     }
-    await startListening();
-  }, [startListening, state, stopAndSend]);
+
+    isStartingRef.current = true;
+    pendingReleaseRef.current = false;
+
+    if (hasMicPermission === false) {
+      isStartingRef.current = false;
+      Alert.alert("Microphone permission needed", "Allow microphone access to speak with the AI Doctor.");
+      return;
+    }
+
+    try {
+      clearVisualization();
+      setConversationStage((current) => (current === "complete" ? "collecting" : current));
+      await voiceService.startRecording();
+      isStartingRef.current = false;
+      isHoldRecordingRef.current = true;
+      if (mountedRef.current) {
+        setState("listening");
+      }
+
+      if (pendingReleaseRef.current) {
+        void stopAndSend();
+      }
+    } catch {
+      isStartingRef.current = false;
+      isHoldRecordingRef.current = false;
+      pendingReleaseRef.current = false;
+      if (mountedRef.current) setState("idle");
+    }
+  }, [clearVisualization, hasMicPermission, setState, state, stopAndSend, voiceService]);
+
+  const handleMicPressOut = useCallback(() => {
+    if (!isHoldRecordingRef.current && !isStartingRef.current) {
+      return;
+    }
+
+    void stopAndSend();
+  }, [stopAndSend]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -346,11 +383,18 @@ export default function SymptomCheckerScreen() {
 
         <Text style={styles.eyebrow}>AI DOCTOR CONSULTATION</Text>
 
-        <Pressable style={[styles.micButton, state === "listening" && styles.micButtonActive]} onPress={handleMicPress}>
+        <Pressable
+          delayLongPress={140}
+          style={[styles.micButton, state === "listening" && styles.micButtonActive]}
+          onLongPress={() => {
+            void startHoldRecording();
+          }}
+          onPressOut={handleMicPressOut}
+        >
           {loading ? (
             <ActivityIndicator size="small" color={PALETTE.card} />
           ) : (
-            <Ionicons name={state === "listening" ? "stop" : "mic"} size={54} color={PALETTE.card} />
+            <Ionicons name="mic" size={54} color={PALETTE.card} />
           )}
         </Pressable>
 
@@ -370,7 +414,7 @@ export default function SymptomCheckerScreen() {
             <SummaryTile
               title="Next Step"
               loading={loading}
-              value={missingField ? humanizeSlot(missingField) : hasResult ? "Review result" : "Start speaking"}
+              value={missingField ? humanizeSlot(missingField) : hasResult ? "Review result" : "Hold to speak"}
             />
           </View>
         </View>
